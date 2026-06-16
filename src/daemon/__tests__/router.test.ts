@@ -78,6 +78,7 @@ const mockCtx: Context = {
   adapter: mockAdapter as never,
   gh: mockGh as never,
   registry: mockRegistry as never,
+  broadcaster: { publish: vi.fn(), subscribe: vi.fn(), subscriberCount: 0 } as never,
 };
 
 // ---------------------------------------------------------------------------
@@ -970,13 +971,16 @@ describe("runs.logEvent procedure", () => {
       eventType: "run:started",
     });
 
-    expect(mockAdapter.recordPipelineEvent).toHaveBeenCalledWith({
-      projectId: "proj-123",
-      runId: "550e8400-e29b-41d4-a716-446655440001",
-      taskId: undefined,
-      eventType: "run:started",
-      payload: undefined,
-    });
+    expect(mockAdapter.recordPipelineEvent).toHaveBeenCalledWith(
+      {
+        projectId: "proj-123",
+        runId: "550e8400-e29b-41d4-a716-446655440001",
+        taskId: undefined,
+        eventType: "run:started",
+        payload: undefined,
+      },
+      expect.objectContaining({ publish: expect.any(Function) }),
+    );
     expect(result.id).toBe("evt-1");
   });
 

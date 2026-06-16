@@ -2045,13 +2045,16 @@ export class PostgresAdapter {
     return rows[0] ?? null;
   }
 
-  async recordPipelineEvent(data: {
-    projectId: string;
-    runId: string | null;
-    taskId?: string;
-    eventType: string;
-    payload?: Record<string, unknown>;
-  }): Promise<PipelineEventRow> {
+  async recordPipelineEvent(
+    data: {
+      projectId: string;
+      runId: string | null;
+      taskId?: string;
+      eventType: string;
+      payload?: Record<string, unknown>;
+    },
+    broadcaster?: { publish(e: import("../../daemon/broadcast-event.js").BroadcastEvent): void },
+  ): Promise<PipelineEventRow> {
     const rows = await query<PipelineEventRow>(
       `INSERT INTO events (project_id, run_id, task_id, event_type, payload, created_at)
        VALUES ($1, $2, $3, $4, $5, clock_timestamp())
@@ -2064,7 +2067,44 @@ export class PostgresAdapter {
         data.payload ? JSON.stringify(data.payload) : null,
       ]
     );
-    return rows[0];
+    const row = rows[0];
+    broadcaster?.publish({
+      id: row.id,
+      seq: Number(row.seq),
+      projectId: row.project_id,
+      runId: row.run_id ?? null,
+      taskId: row.task_id ?? null,
+      eventType: row.event_type,
+      payload: row.payload,
+      createdAt: row.created_at,
+    });
+    return row;
+  }
+
+  async listEventsSince(
+    afterSeq: number,
+    projectId: string | null,
+    limit = 500,
+  ): Promise<import("../../daemon/broadcast-event.js").BroadcastEvent[]> {
+    const rows = projectId
+      ? await query<PipelineEventRow>(
+          `SELECT * FROM events WHERE seq > $1 AND project_id = $2 ORDER BY seq ASC LIMIT $3`,
+          [afterSeq, projectId, limit],
+        )
+      : await query<PipelineEventRow>(
+          `SELECT * FROM events WHERE seq > $1 ORDER BY seq ASC LIMIT $2`,
+          [afterSeq, limit],
+        );
+    return rows.map((row) => ({
+      id: row.id,
+      seq: Number(row.seq),
+      projectId: row.project_id,
+      runId: row.run_id ?? null,
+      taskId: row.task_id ?? null,
+      eventType: row.event_type,
+      payload: row.payload,
+      createdAt: row.created_at,
+    }));
   }
 
   async recordSentinelEvent(data: {

@@ -28,6 +28,7 @@ import { ProjectRegistry } from "../lib/project-registry.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getPrState, type PrState } from "../lib/pr-state.js";
+import { eventBroadcaster, type EventBroadcaster } from "./event-broadcaster.js";
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -43,6 +44,8 @@ export interface Context {
   registry: ProjectRegistry;
   /** Current project ID (from X-Project-Id header or FOREMAN_PROJECT_ID env var). */
   projectId?: string;
+  /** Event broadcaster — passed to recordPipelineEvent for SSE push. */
+  broadcaster: EventBroadcaster;
 }
 export async function createContext({
   req,
@@ -61,6 +64,7 @@ export async function createContext({
     registry,
     // Pre-extract projectId from headers for convenience
     projectId: req.headers?.["x-project-id"] as string | undefined,
+    broadcaster: eventBroadcaster,
   };
 }
 export type ContextFn = typeof createContext;
@@ -622,7 +626,7 @@ const runsRouter = t.router({
         taskId: input.taskId,
         eventType: input.eventType,
         payload: input.payload,
-      });
+      }, ctx.broadcaster);
     }),
 
   /**
