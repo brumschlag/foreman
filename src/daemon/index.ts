@@ -28,6 +28,8 @@ import { JiraIssuesPoller } from "./jira-poller.js";
 import { decrypt } from "../lib/encryption.js";
 import type { JiraConfig, JiraProjectConfig } from "../lib/project-config.js";
 import { JiraTriggerHandler } from "../orchestrator/jira-trigger-handler.js";
+import { sseHandler } from "./sse-handler.js";
+import { eventBroadcaster } from "./event-broadcaster.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -201,6 +203,12 @@ export class ForemanDaemon {
 
     // 4. Health endpoint (no tRPC).
     this.fastify.get("/health", async () => ({ status: "ok" }));
+
+    // 4b. SSE event stream endpoint.
+    this.fastify.get("/events", async (req, res) => {
+      const adapter = new PostgresAdapter();
+      return sseHandler(req, res, eventBroadcaster, adapter);
+    });
 
     // 5. Webhook endpoint (TRD-061/062/063/064).
     // 5. Webhook endpoint (TRD-061/062/063/064).
