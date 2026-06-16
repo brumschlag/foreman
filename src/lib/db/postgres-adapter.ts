@@ -180,6 +180,7 @@ export interface PipelineEventRow {
   event_type: string;
   payload: Record<string, unknown> | null;
   created_at: string;
+  seq: number;
 }
 
 export interface RateLimitEventRow {
