@@ -48,14 +48,17 @@ export async function sseHandler(
     "X-Accel-Buffering": "no",  // Nginx proxy: disable buffering
   });
   // Flush headers immediately so the client gets them before any events.
-  res.raw.write("");
+  // Send a comment so the chunk is non-empty (empty writes become HTTP/1.1
+  // terminal chunks with chunked transfer-encoding).
+  res.raw.write(": connected\n\n");
 
   const write = (chunk: string): void => {
     if (!res.raw.writableEnded) res.raw.write(chunk);
   };
 
   // Replay missed events when Last-Event-ID is provided.
-  if (afterSeq > 0) {
+  // afterSeq = 0 means "replay from the beginning" (valid — seq starts at 1).
+  if (rawSeq !== undefined) {
     try {
       const missed = await adapter.listEventsSince(afterSeq, projectId);
       for (const ev of missed) {
