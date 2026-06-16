@@ -23,6 +23,7 @@ export type FactoryWsMessage =
   | { kind: "runs_snapshot";   data: RunSummary[] }
   | { kind: "tasks_snapshot";  data: TaskRow[] }
   | { kind: "stats_snapshot";  data: ProjectStats }
+  | { kind: "log_line";        data: { runId: string; ts: string; level: string; message: string } }
   | { kind: "error";           data: { message: string } };
 
 // ── Foreman domain types (minimal subset used by the bridge) ──────────────
