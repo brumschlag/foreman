@@ -19,6 +19,7 @@
 import { DaemonSseClient } from "./daemon-sse-client.js";
 import { TrpcPoller } from "./trpc-poller.js";
 import { WsRelay } from "./ws-relay.js";
+import { LogTailer } from "./log-tailer.js";
 
 // ── Config from env ───────────────────────────────────────────────────────
 
@@ -83,12 +84,18 @@ const poller = new TrpcPoller({
 
 poller.start();
 
+// ── Start log tailer ──────────────────────────────────────────────────────
+
+const logTailer = new LogTailer(relay);
+logTailer.start();
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────
 
 const shutdown = (): void => {
   console.log("\n[bridge] shutting down...");
   sseClient.stop();
   poller.stop();
+  logTailer.stop();
   relay.stop();
   process.exit(0);
 };

@@ -79,6 +79,14 @@ export class WsRelay {
     this.broadcast({ kind: "pipeline_event", data: ev });
   }
 
+  /** Broadcast a log line — not cached, just fan out to live clients. */
+  broadcastLogLine(line: import("./log-tailer.js").LogLine): void {
+    this.broadcast({
+      kind: "log_line",
+      data: { runId: line.runId, ts: line.ts, level: line.level, message: line.message },
+    });
+  }
+
   private onConnect(ws: WebSocket): void {
     console.log(`[ws-relay] client connected (total: ${(this.wss?.clients.size ?? 0)})`);
 

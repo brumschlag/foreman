@@ -4,14 +4,16 @@ import { useFactoryStore } from "./store/factoryStore";
 import { FloorView } from "./views/FloorView";
 import { ShiftBoard } from "./views/ShiftBoard";
 import { EventFeed } from "./views/EventFeed";
+import { AgentLogs } from "./views/AgentLogs";
 import { MetricsView } from "./views/MetricsView";
 
-type Tab = "floor" | "board" | "feed" | "metrics";
+type Tab = "floor" | "board" | "feed" | "logs" | "metrics";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "floor",   label: "⬡ Factory Floor" },
   { id: "board",   label: "⬡ Shift Board" },
   { id: "feed",    label: "⬡ Event Feed" },
+  { id: "logs",    label: "⬡ Agent Logs" },
   { id: "metrics", label: "⬡ Metrics" },
 ];
 
@@ -20,6 +22,7 @@ function ConnectionBadge() {
   const projectId = useFactoryStore((s) => s.projectId);
   const runs = useFactoryStore((s) => s.runs);
   const events = useFactoryStore((s) => s.events);
+  const logLines = useFactoryStore((s) => s.logLines);
 
   const color =
     status === "connected"    ? "bg-[#22c55e]" :
@@ -42,6 +45,7 @@ function ConnectionBadge() {
       )}
       <span>{runs.length} runs</span>
       <span>{events.length} events</span>
+      <span>{logLines.length} log lines</span>
     </div>
   );
 }
@@ -94,6 +98,7 @@ export function App() {
         {tab === "floor"   && <FloorView />}
         {tab === "board"   && <ShiftBoard />}
         {tab === "feed"    && <EventFeed />}
+        {tab === "logs"    && <AgentLogs />}
         {tab === "metrics" && <MetricsView />}
       </main>
     </div>
