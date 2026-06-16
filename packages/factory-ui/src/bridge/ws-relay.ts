@@ -11,11 +11,12 @@
  */
 
 import { WebSocketServer, WebSocket } from "ws";
-import type { FactoryWsMessage, RunSummary, TaskRow, ProjectStats } from "./types.js";
+import type { FactoryWsMessage, BroadcastEvent, RunSummary, TaskRow, ProjectStats } from "./types.js";
 
 export interface WsRelayOptions {
   port: number;
   projectId: string;
+  eventCacheSize?: number;
 }
 
 export class WsRelay {
@@ -25,8 +26,13 @@ export class WsRelay {
   private cachedRuns: RunSummary[] = [];
   private cachedTasks: TaskRow[] = [];
   private cachedStats: ProjectStats | null = null;
+  // Ring buffer of recent pipeline events (newest first)
+  private cachedEvents: BroadcastEvent[] = [];
+  private readonly eventCacheSize: number;
 
-  constructor(private readonly opts: WsRelayOptions) {}
+  constructor(private readonly opts: WsRelayOptions) {
+    this.eventCacheSize = opts.eventCacheSize ?? 200;
+  }
 
   start(): void {
     this.wss = new WebSocketServer({ port: this.opts.port });
@@ -67,6 +73,12 @@ export class WsRelay {
     this.broadcast({ kind: "stats_snapshot", data: stats });
   }
 
+  /** Cache and broadcast a single pipeline event. */
+  broadcastEvent(ev: BroadcastEvent): void {
+    this.cachedEvents = [ev, ...this.cachedEvents].slice(0, this.eventCacheSize);
+    this.broadcast({ kind: "pipeline_event", data: ev });
+  }
+
   private onConnect(ws: WebSocket): void {
     console.log(`[ws-relay] client connected (total: ${(this.wss?.clients.size ?? 0)})`);
 
@@ -81,6 +93,12 @@ export class WsRelay {
     if (this.cachedRuns.length > 0) send({ kind: "runs_snapshot", data: this.cachedRuns });
     if (this.cachedTasks.length > 0) send({ kind: "tasks_snapshot", data: this.cachedTasks });
     if (this.cachedStats) send({ kind: "stats_snapshot", data: this.cachedStats });
+
+    // Replay cached events oldest-first so the UI sees them in chronological order
+    const ordered = [...this.cachedEvents].reverse();
+    for (const ev of ordered) {
+      send({ kind: "pipeline_event", data: ev });
+    }
 
     ws.on("close", () => {
       console.log(`[ws-relay] client disconnected (total: ${(this.wss?.clients.size ?? 0)})`);

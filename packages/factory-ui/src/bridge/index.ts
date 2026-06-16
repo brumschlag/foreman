@@ -48,7 +48,7 @@ relay.start();
 const sseClient = new DaemonSseClient({
   projectId: PROJECT_ID,
   onEvent: (event) => {
-    relay.broadcast({ kind: "pipeline_event", data: event });
+    relay.broadcastEvent(event);
     // Log interesting events to console
     if (!["heartbeat"].includes(event.eventType)) {
       console.log(`[event] seq=${event.seq} ${event.eventType}${event.taskId ? ` task=${event.taskId.slice(0, 8)}` : ""}`);
