@@ -1612,8 +1612,13 @@ async function runPhaseSequence(
         phaseMeta,
       );
       const artifactPath = resolveArtifactPath(worktreePath, interpolatedSkip);
-      if (existsSync(artifactPath)) {
-        ctx.log(`[${phaseName.toUpperCase()}] Skipping — ${phase.skipIfArtifact} already exists at ${artifactPath}`);
+      // Also check the worktree root — agents sometimes write artifacts there
+      // instead of the run-specific reports dir (e.g. EXPLORER_REPORT.md).
+      const basename = interpolatedSkip.split("/").pop() ?? interpolatedSkip;
+      const worktreeRootPath = join(worktreePath, basename);
+      if (existsSync(artifactPath) || existsSync(worktreeRootPath)) {
+        const foundAt = existsSync(artifactPath) ? artifactPath : worktreeRootPath;
+        ctx.log(`[${phaseName.toUpperCase()}] Skipping — ${phase.skipIfArtifact} already exists at ${foundAt}`);
         await appendFile(logFile, `\n[PHASE: ${phaseName.toUpperCase()}] SKIPPED (artifact already present: ${artifactPath})\n`);
         phaseRecords.push({ name: phaseName, skipped: true });
         i++;
@@ -1696,7 +1701,10 @@ async function runPhaseSequence(
             }
           }
         }
-        const shouldRunFinalizeValidation = !qaValidatedTargetRef || !currentTargetRef || qaValidatedTargetRef !== currentTargetRef;
+        // Only run target-drift validation when QA actually passed and recorded a ref.
+        // If qaValidatedTargetRef is empty, QA never passed cleanly — skip drift check
+        // to avoid false-positive failures when finalize runs after QA verdict loops.
+        const shouldRunFinalizeValidation = !!qaValidatedTargetRef && !!currentTargetRef && qaValidatedTargetRef !== currentTargetRef;
         progress.currentTargetRef = currentTargetRef || undefined;
         await writeNormalPhaseProgress(store, runId, progress, observabilityWriter);
         vcsPromptVars.qaValidatedTargetRef = qaValidatedTargetRef ?? "";
