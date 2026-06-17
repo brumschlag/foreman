@@ -37,6 +37,7 @@ export interface RunSummary {
   agentType: string | null;
   worktreePath: string | null;
   startedAt: string | null;
+  finishedAt: string | null;
   createdAt: string;
   progress: RunProgress | null;
 }
@@ -58,10 +59,16 @@ export interface TaskRow {
   status: string;
   type: string;
   priority: number;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectStats {
   activeRuns: number;
+  successRate24h: number;
+  costUsd24h: number;
+  avgCostPerRun: number;
   tasks: {
     backlog: number;
     ready: number;

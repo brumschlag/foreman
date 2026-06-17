@@ -100,8 +100,13 @@ export class TrpcPoller {
 
   private async fetchRuns(projectId: string): Promise<void> {
     try {
-      const raw = await this.trpcQuery<unknown[]>("runs.listActive", { projectId });
-      const runs: RunSummary[] = (raw ?? []).map((r: Record<string, unknown>) => ({
+      // Fetch both active (pending/running) and recent (last 20) in parallel
+      const [activeRaw, recentRaw] = await Promise.all([
+        this.trpcQuery<unknown[]>("runs.listActive", { projectId }),
+        this.trpcQuery<unknown[]>("runs.list", { projectId, limit: 20 }),
+      ]);
+
+      const mapActive = (r: Record<string, unknown>): RunSummary => ({
         id: r["id"] as string,
         beadId: (r["bead_id"] ?? r["seed_id"] ?? "") as string,
         status: r["status"] as string,
@@ -109,10 +114,41 @@ export class TrpcPoller {
         agentType: (r["agent_type"] ?? null) as string | null,
         worktreePath: (r["worktree_path"] ?? null) as string | null,
         startedAt: (r["started_at"] ?? null) as string | null,
+        finishedAt: (r["finished_at"] ?? null) as string | null,
         createdAt: (r["created_at"] ?? r["queued_at"] ?? "") as string,
         progress: r["progress"] ? (r["progress"] as RunSummary["progress"]) : null,
-      }));
-      this.opts.onRuns?.(runs);
+      });
+
+      const mapRecent = (r: Record<string, unknown>): RunSummary => ({
+        id: r["id"] as string,
+        beadId: (r["bead_id"] ?? "") as string,
+        status: r["status"] as string,
+        branch: (r["branch"] ?? "") as string,
+        agentType: (r["agent_type"] ?? null) as string | null,
+        worktreePath: (r["worktree_path"] ?? null) as string | null,
+        startedAt: (r["started_at"] ?? null) as string | null,
+        finishedAt: (r["finished_at"] ?? null) as string | null,
+        createdAt: (r["queued_at"] ?? r["created_at"] ?? "") as string,
+        // PipelineRunRow returns progress as JSON string — parse it
+        progress: r["progress"]
+          ? (typeof r["progress"] === "string"
+              ? JSON.parse(r["progress"])
+              : r["progress"]) as RunSummary["progress"]
+          : null,
+      });
+
+      // Build merged map: active takes precedence over recent
+      const merged = new Map<string, RunSummary>();
+      for (const r of (recentRaw ?? []) as Record<string, unknown>[]) {
+        const run = mapRecent(r);
+        merged.set(run.id, run);
+      }
+      for (const r of (activeRaw ?? []) as Record<string, unknown>[]) {
+        const run = mapActive(r);
+        merged.set(run.id, run);
+      }
+
+      this.opts.onRuns?.(Array.from(merged.values()));
     } catch (err) {
       // Non-fatal — poll will retry
       console.warn("[trpc-poller] runs fetch failed:", (err as Error).message);
@@ -128,6 +164,9 @@ export class TrpcPoller {
         status: (t["status"] ?? "backlog") as string,
         type: (t["type"] ?? "task") as string,
         priority: (t["priority"] ?? 2) as number,
+        description: (t["description"] ?? null) as string | null,
+        createdAt: (t["created_at"] ?? t["createdAt"] ?? "") as string,
+        updatedAt: (t["updated_at"] ?? t["updatedAt"] ?? "") as string,
       }));
       this.opts.onTasks?.(tasks);
     } catch (err) {
@@ -142,6 +181,9 @@ export class TrpcPoller {
       const runs = (raw?.["runs"] ?? {}) as Record<string, number>;
       const stats: ProjectStats = {
         activeRuns: (runs["active"] ?? 0) + (runs["pending"] ?? 0),
+        successRate24h: (raw?.["successRate24h"] as number) ?? 0,
+        costUsd24h: (raw?.["costUsd24h"] as number) ?? 0,
+        avgCostPerRun: (raw?.["avgCostPerRun"] as number) ?? 0,
         tasks: {
           backlog:    tasks["backlog"] ?? 0,
           ready:      tasks["ready"] ?? 0,
