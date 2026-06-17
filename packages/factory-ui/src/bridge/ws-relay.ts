@@ -11,7 +11,8 @@
  */
 
 import { WebSocketServer, WebSocket } from "ws";
-import type { FactoryWsMessage, BroadcastEvent, RunSummary, TaskRow, ProjectStats } from "./types.js";
+import type { FactoryWsMessage, BroadcastEvent, RunSummary, TaskRow, ProjectStats, ForemanConfig, ChatTurn } from "./types.js";
+import { TranscriptReader } from "./transcript-reader.js";
 
 export interface WsRelayOptions {
   port: number;
@@ -26,12 +27,15 @@ export class WsRelay {
   private cachedRuns: RunSummary[] = [];
   private cachedTasks: TaskRow[] = [];
   private cachedStats: ProjectStats | null = null;
+  private cachedConfig: ForemanConfig | null = null;
   // Ring buffer of recent pipeline events (newest first)
   private cachedEvents: BroadcastEvent[] = [];
   private readonly eventCacheSize: number;
+  private readonly transcriptReader: TranscriptReader;
 
   constructor(private readonly opts: WsRelayOptions) {
     this.eventCacheSize = opts.eventCacheSize ?? 200;
+    this.transcriptReader = new TranscriptReader();
   }
 
   start(): void {
@@ -73,6 +77,12 @@ export class WsRelay {
     this.broadcast({ kind: "stats_snapshot", data: stats });
   }
 
+  /** Cache and broadcast a config snapshot. */
+  updateConfig(config: ForemanConfig): void {
+    this.cachedConfig = config;
+    this.broadcast({ kind: "config_snapshot", data: config });
+  }
+
   /** Cache and broadcast a single pipeline event. */
   broadcastEvent(ev: BroadcastEvent): void {
     this.cachedEvents = [ev, ...this.cachedEvents].slice(0, this.eventCacheSize);
@@ -101,6 +111,7 @@ export class WsRelay {
     if (this.cachedRuns.length > 0) send({ kind: "runs_snapshot", data: this.cachedRuns });
     if (this.cachedTasks.length > 0) send({ kind: "tasks_snapshot", data: this.cachedTasks });
     if (this.cachedStats) send({ kind: "stats_snapshot", data: this.cachedStats });
+    if (this.cachedConfig) send({ kind: "config_snapshot", data: this.cachedConfig });
 
     // Replay cached events oldest-first so the UI sees them in chronological order
     const ordered = [...this.cachedEvents].reverse();
@@ -114,6 +125,27 @@ export class WsRelay {
 
     ws.on("error", (err) => {
       console.error("[ws-relay] client error:", err.message);
+    });
+
+    ws.on("message", (rawData) => {
+      try {
+        const data = rawData.toString();
+        const msg = JSON.parse(data) as FactoryWsMessage;
+
+        if (msg.kind === "transcript_request") {
+          const { runId } = msg.data;
+          this.transcriptReader
+            .read(runId)
+            .then((turns) => {
+              send({ kind: "transcript_snapshot", data: { runId, turns } });
+            })
+            .catch((err) => {
+              console.error(`[ws-relay] error reading transcript for ${runId}:`, err);
+            });
+        }
+      } catch (err) {
+        // Ignore non-JSON messages (e.g., text from client)
+      }
     });
   }
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useFactoryStore } from "../store/factoryStore";
 import type { BroadcastEvent } from "../store/factoryStore";
+import { ChatTranscript } from "./ChatTranscript";
 
 interface PhaseEntry {
   name: string;
@@ -60,6 +61,7 @@ export function RunDetailPanel() {
   const logLines = useFactoryStore((s) => s.logLines);
 
   const [visible, setVisible] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   useEffect(() => {
     if (selectedRunId) {
@@ -125,6 +127,23 @@ export function RunDetailPanel() {
               <div className="flex gap-2">
                 <span className="text-[#6b7280] w-20 shrink-0">Status</span>
                 <span className="text-white">{run.status}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-[#6b7280] w-20 shrink-0">PR</span>
+                {run.prUrl ? (
+                  <a
+                    href={run.prUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#f59e0b] hover:underline font-mono"
+                  >
+                    #{run.prNumber} ↗
+                  </a>
+                ) : (run.status === "running" || run.status === "pending") ? (
+                  <span className="text-[#6b7280] animate-pulse">pending…</span>
+                ) : (
+                  <span className="text-[#4b5563]">—</span>
+                )}
               </div>
               {run.startedAt && (
                 <div className="flex gap-2">
@@ -212,6 +231,23 @@ export function RunDetailPanel() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Chat Transcript */}
+          <div className="px-4 py-3">
+            <button
+              onClick={() => setShowTranscript(!showTranscript)}
+              className="flex items-center gap-2 text-[#6b7280] hover:text-white transition-colors mb-2"
+            >
+              <span className="text-lg leading-none">⬡</span>
+              <span className="text-xs font-semibold uppercase tracking-wider">Chat Transcript</span>
+              {showTranscript ? (
+                <span className="ml-auto text-xs">Hide</span>
+              ) : (
+                <span className="text-xs">Show</span>
+              )}
+            </button>
+            {showTranscript && <ChatTranscript runId={selectedRunId} />}
           </div>
         </div>
       </div>
