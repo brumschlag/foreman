@@ -21,11 +21,15 @@ export function ChatTranscript({ runId }: { runId: string }) {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (transcripts.size === 0 || !transcripts.has(runId)) {
-      setIsLoading(true);
-      requestTranscript(runId);
+    if (transcripts.has(runId)) {
+      setIsLoading(false);
     }
   }, [runId, transcripts]);
+
+  function handleLoad() {
+    setIsLoading(true);
+    requestTranscript(runId);
+  }
 
   return (
     <div className="px-4 py-3 border-b border-[#2a2f38]">
@@ -41,7 +45,16 @@ export function ChatTranscript({ runId }: { runId: string }) {
 
       {turns.length === 0 ? (
         <div className="text-xs text-[#4b5563]">
-          {isLoading ? "Fetching transcript..." : "No transcript available"}
+          {isLoading ? (
+            <span className="text-[#f59e0b] animate-pulse">Fetching transcript…</span>
+          ) : (
+            <button
+              onClick={handleLoad}
+              className="text-[#f59e0b] hover:text-white transition-colors underline"
+            >
+              Load transcript
+            </button>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

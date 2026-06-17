@@ -5,15 +5,13 @@ import type { FactoryWsMessage } from "../../bridge/types";
 const WS_URL = "ws://localhost:4747";
 const BACKOFF = [500, 1000, 2000, 4000, 8000, 15000];
 
+// Module-level ref to the live persistent socket so requestTranscript can use it
+let liveWs: WebSocket | null = null;
+
 export function requestTranscript(runId: string): void {
-  const ws = new WebSocket(WS_URL);
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ kind: "transcript_request", data: { runId } }));
-    ws.close();
-  };
-  ws.onerror = () => {
-    // Silently fail if WS is not available
-  };
+  if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+    liveWs.send(JSON.stringify({ kind: "transcript_request", data: { runId } }));
+  }
 }
 
 export function useFactorySocket() {
@@ -30,6 +28,7 @@ export function useFactorySocket() {
       store.setConnectionStatus("connecting");
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
+      liveWs = ws;
 
       ws.onopen = () => {
         attemptRef.current = 0;

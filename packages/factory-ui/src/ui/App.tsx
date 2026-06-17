@@ -8,8 +8,9 @@ import { AgentLogs } from "./views/AgentLogs";
 import { MetricsView } from "./views/MetricsView";
 import { ProcessesView } from "./views/ProcessesView";
 import { TasksView } from "./views/TasksView";
+import { ConfigPanel } from "./views/ConfigPanel";
 
-type Tab = "floor" | "board" | "feed" | "logs" | "metrics" | "processes" | "tasks";
+type Tab = "floor" | "board" | "feed" | "logs" | "metrics" | "processes" | "tasks" | "config";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "floor",     label: "⬡ Factory Floor" },
@@ -19,6 +20,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "metrics",   label: "⬡ Metrics" },
   { id: "processes", label: "⚙ Processes" },
   { id: "tasks",     label: "⬡ Tasks" },
+  { id: "config",    label: "⚙ Config" },
 ];
 
 function ConnectionBadge() {
@@ -113,6 +115,7 @@ export function App() {
         {tab === "metrics"   && <MetricsView />}
         {tab === "processes" && <ProcessesView />}
         {tab === "tasks"     && <TasksView />}
+        {tab === "config"    && <ConfigPanel />}
       </main>
     </div>
   );
