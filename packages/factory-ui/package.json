@@ -9,7 +9,8 @@
     "start:bridge": "tsx src/bridge/index.ts",
     "dev": "vite --config vite.config.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run -c vitest.config.ts"
   },
   "dependencies": {
     "react": "^19.2.7",
