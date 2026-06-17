@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import type { BroadcastEvent, RunSummary, TaskRow, ProjectStats } from "../../bridge/types";
+import type { BroadcastEvent, RunSummary, TaskRow, ProjectStats, ProcessInfo } from "../../bridge/types";
 
 // Re-export types for UI consumers
-export type { BroadcastEvent, RunSummary, TaskRow, ProjectStats };
+export type { BroadcastEvent, RunSummary, TaskRow, ProjectStats, ProcessInfo };
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
@@ -33,6 +33,12 @@ export interface FactoryState {
   // Agent log lines (last 500, newest first)
   logLines: LogLineEntry[];
 
+  // OS processes
+  processes: ProcessInfo[];
+
+  // Selected run for detail panel
+  selectedRunId: string | null;
+
   // Actions
   setConnectionStatus: (s: ConnectionStatus) => void;
   setProjectId: (id: string) => void;
@@ -41,6 +47,8 @@ export interface FactoryState {
   setStats: (stats: ProjectStats) => void;
   addEvent: (ev: BroadcastEvent) => void;
   addLogLine: (line: LogLineEntry) => void;
+  setProcesses: (procs: ProcessInfo[]) => void;
+  setSelectedRunId: (id: string | null) => void;
   reset: () => void;
 }
 
@@ -52,6 +60,8 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
   stats: null,
   events: [],
   logLines: [],
+  processes: [],
+  selectedRunId: null,
 
   setConnectionStatus: (s) => set({ connectionStatus: s }),
   setProjectId: (id) => set({ projectId: id }),
@@ -66,6 +76,8 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
     set((state) => ({
       logLines: [line, ...state.logLines].slice(0, 500),
     })),
+  setProcesses: (procs) => set({ processes: procs }),
+  setSelectedRunId: (id) => set({ selectedRunId: id }),
   reset: () =>
     set({
       connectionStatus: "connecting",
@@ -75,5 +87,7 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
       stats: null,
       events: [],
       logLines: [],
+      processes: [],
+      selectedRunId: null,
     }),
 }));

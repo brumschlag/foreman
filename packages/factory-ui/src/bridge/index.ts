@@ -20,6 +20,7 @@ import { DaemonSseClient } from "./daemon-sse-client.js";
 import { TrpcPoller } from "./trpc-poller.js";
 import { WsRelay } from "./ws-relay.js";
 import { LogTailer } from "./log-tailer.js";
+import { ProcessPoller } from "./process-poller.js";
 
 // ── Config from env ───────────────────────────────────────────────────────
 
@@ -89,6 +90,11 @@ poller.start();
 const logTailer = new LogTailer(relay);
 logTailer.start();
 
+// ── Start process poller ──────────────────────────────────────────────────
+
+const processPoller = new ProcessPoller(relay);
+processPoller.start();
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────
 
 const shutdown = (): void => {
@@ -96,6 +102,7 @@ const shutdown = (): void => {
   sseClient.stop();
   poller.stop();
   logTailer.stop();
+  processPoller.stop();
   relay.stop();
   process.exit(0);
 };

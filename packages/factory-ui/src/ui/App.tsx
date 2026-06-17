@@ -6,15 +6,17 @@ import { ShiftBoard } from "./views/ShiftBoard";
 import { EventFeed } from "./views/EventFeed";
 import { AgentLogs } from "./views/AgentLogs";
 import { MetricsView } from "./views/MetricsView";
+import { ProcessesView } from "./views/ProcessesView";
 
-type Tab = "floor" | "board" | "feed" | "logs" | "metrics";
+type Tab = "floor" | "board" | "feed" | "logs" | "metrics" | "processes";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "floor",   label: "⬡ Factory Floor" },
-  { id: "board",   label: "⬡ Shift Board" },
-  { id: "feed",    label: "⬡ Event Feed" },
-  { id: "logs",    label: "⬡ Agent Logs" },
-  { id: "metrics", label: "⬡ Metrics" },
+  { id: "floor",     label: "⬡ Factory Floor" },
+  { id: "board",     label: "⬡ Shift Board" },
+  { id: "feed",      label: "⬡ Event Feed" },
+  { id: "logs",      label: "⬡ Agent Logs" },
+  { id: "metrics",   label: "⬡ Metrics" },
+  { id: "processes", label: "⚙ Processes" },
 ];
 
 function ConnectionBadge() {
@@ -95,11 +97,12 @@ export function App() {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto p-6">
-        {tab === "floor"   && <FloorView />}
-        {tab === "board"   && <ShiftBoard />}
-        {tab === "feed"    && <EventFeed />}
-        {tab === "logs"    && <AgentLogs />}
-        {tab === "metrics" && <MetricsView />}
+        {tab === "floor"     && <FloorView />}
+        {tab === "board"     && <ShiftBoard />}
+        {tab === "feed"      && <EventFeed />}
+        {tab === "logs"      && <AgentLogs />}
+        {tab === "metrics"   && <MetricsView />}
+        {tab === "processes" && <ProcessesView />}
       </main>
     </div>
   );
