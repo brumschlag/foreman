@@ -27,6 +27,7 @@ function ConnectionBadge() {
   const runs = useFactoryStore((s) => s.runs);
   const events = useFactoryStore((s) => s.events);
   const logLines = useFactoryStore((s) => s.logLines);
+  const stats = useFactoryStore((s) => s.stats);
 
   const color =
     status === "connected"    ? "bg-[#22c55e]" :
@@ -50,6 +51,12 @@ function ConnectionBadge() {
       <span>{runs.length} runs</span>
       <span>{events.length} events</span>
       <span>{logLines.length} log lines</span>
+      {stats && (stats.costUsd24h ?? 0) > 0 && (
+        <span>
+          <span className="text-[#f59e0b] font-mono">${(stats.costUsd24h ?? 0).toFixed(2)}</span>
+          {" today"}
+        </span>
+      )}
     </div>
   );
 }
