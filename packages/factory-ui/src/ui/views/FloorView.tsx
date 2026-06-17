@@ -68,6 +68,18 @@ function RunCard({ run }: { run: RunSummary }) {
         </div>
       )}
 
+      {run.prUrl && (
+        <a
+          href={run.prUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-xs text-[#f59e0b] hover:underline font-mono"
+        >
+          PR #{run.prNumber} ↗
+        </a>
+      )}
+
       {progress && (
         <div className="flex gap-3 text-xs text-[#6b7280]">
           <span>turns: <span className="text-white">{progress.turns ?? 0}</span></span>

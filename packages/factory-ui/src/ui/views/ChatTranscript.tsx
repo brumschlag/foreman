@@ -15,13 +15,12 @@ function formatUsage(usage?: { input: number; output: number; cost: { total: num
 
 export function ChatTranscript({ runId }: { runId: string }) {
   const transcripts = useFactoryStore((s) => s.transcripts);
-  const turns = transcripts.get(runId) || [];
-  const setTranscript = useFactoryStore((s) => s.setTranscript);
+  const turns = transcripts[runId] || [];
 
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (transcripts.has(runId)) {
+    if (transcripts[runId]) {
       setIsLoading(false);
     }
   }, [runId, transcripts]);

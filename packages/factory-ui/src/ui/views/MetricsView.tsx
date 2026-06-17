@@ -111,11 +111,11 @@ export function MetricsView() {
         <MetricCard label="Tasks Total"       value={stats.tasks.total}       accent="text-white" />
         <MetricCard
           label="Success Rate 24h"
-          value={`${stats.successRate24h.toFixed(0)}%`}
-          accent={stats.successRate24h >= 80 ? "text-[#22c55e]" : stats.successRate24h >= 50 ? "text-[#f59e0b]" : "text-[#ef4444]"}
+          value={`${(stats.successRate24h ?? 0).toFixed(0)}%`}
+          accent={(stats.successRate24h ?? 0) >= 80 ? "text-[#22c55e]" : (stats.successRate24h ?? 0) >= 50 ? "text-[#f59e0b]" : "text-[#ef4444]"}
         />
-        <MetricCard label="Cost 24h"      value={`$${stats.costUsd24h.toFixed(2)}`}    accent="text-[#f59e0b]" />
-        <MetricCard label="Avg Cost/Run"  value={`$${stats.avgCostPerRun.toFixed(4)}`} accent="text-[#6b7280]" />
+        <MetricCard label="Cost 24h"      value={`$${(stats.costUsd24h ?? 0).toFixed(2)}`}    accent="text-[#f59e0b]" />
+        <MetricCard label="Avg Cost/Run"  value={`$${(stats.avgCostPerRun ?? 0).toFixed(4)}`} accent="text-[#6b7280]" />
       </div>
       <BreakdownBar tasks={stats.tasks} />
     </div>

@@ -43,7 +43,7 @@ export interface FactoryState {
   config: ForemanConfig | null;
 
   // Chat transcripts (runId -> turns)
-  transcripts: Map<string, ChatTurn[]>;
+  transcripts: Record<string, ChatTurn[]>;
 
   // Actions
   setConnectionStatus: (s: ConnectionStatus) => void;
@@ -71,7 +71,7 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
   processes: [],
   selectedRunId: null,
   config: null,
-  transcripts: new Map(),
+  transcripts: {},
 
   setConnectionStatus: (s) => set({ connectionStatus: s }),
   setProjectId: (id) => set({ projectId: id }),
@@ -91,7 +91,7 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
   setConfig: (config) => set({ config }),
   setTranscript: (runId, turns) =>
     set((state) => ({
-      transcripts: new Map(state.transcripts).set(runId, turns),
+      transcripts: { ...state.transcripts, [runId]: turns },
     })),
   reset: () =>
     set({
@@ -104,6 +104,6 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
       logLines: [],
       processes: [],
       selectedRunId: null,
-      transcripts: new Map(),
+      transcripts: {},
     }),
 }));
