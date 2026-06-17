@@ -13,7 +13,7 @@
 
 import chalk from "chalk";
 import type { BoardStatus } from "../board.js";
-import { type PanelId, type WatchState } from "./WatchState.js";
+import { type PanelId, type WatchState, type PipelineEventEntry } from "./WatchState.js";
 import { renderAgentCard } from "../../watch-ui.js";
 import { elapsed } from "../../watch-ui.js";
 
@@ -353,7 +353,7 @@ const EVENT_ICONS: Record<string, string> = {
   "sentinel-pass":         "✓",
   "sentinel-fail":          "✗",
   "heartbeat":             "·",
-  "guardrail-veto":        "⊘",
+  "guardrail-veto":        "🛡",
   "guardrail-corrected":   "✓",
   "worktree-rebased":      "↻",
   "worktree-rebase-failed": "✗",
@@ -381,8 +381,8 @@ const EVENT_COLORS: Record<string, (t: string) => string> = {
   "sentinel-start":        chalk.blue,
   "sentinel-pass":         chalk.green,
   "sentinel-fail":         chalk.red,
-  "heartbeat":             chalk.dim,
-  "guardrail-veto":        chalk.red,
+  "heartbeat":             chalk.gray,
+  "guardrail-veto":        chalk.hex("#FFA500"), // amber
   "guardrail-corrected":   chalk.green,
   "worktree-rebased":      chalk.green,
   "worktree-rebase-failed": chalk.red,
@@ -403,6 +403,21 @@ function renderEventsPanel(state: WatchState, width: number): string {
 
   const innerWidth = width - 2;
 
+  // Filter bar
+  const filterAll = state.eventFilterMode === "all" ? chalk.bold.cyan("[1] All") : chalk.dim("[1] All");
+  const filterActive = state.eventFilterMode === "active" ? chalk.bold.cyan("[2] Active") : chalk.dim("[2] Active");
+  const filterErrors = state.eventFilterMode === "errors" ? chalk.bold.cyan("[3] Errors") : chalk.dim("[3] Errors");
+  lines.push(`  ${filterAll}  ${filterActive}  ${filterErrors}`);
+  lines.push("");
+
+  // Apply filter
+  const filteredEvents = filterEventsForDisplay(state.events.events, state.eventFilterMode);
+
+  if (filteredEvents.length === 0) {
+    lines.push(chalk.dim("  (no events matching filter)"));
+    return lines.join("\n");
+  }
+
   // Header with live indicator
   if (state.events.newestTimestamp) {
     const age = elapsed(state.events.newestTimestamp);
@@ -410,101 +425,138 @@ function renderEventsPanel(state: WatchState, width: number): string {
   }
 
   // Render events (most recent first)
-  for (const entry of state.events.events) {
+  for (const entry of filteredEvents) {
     const ts = formatInboxTime(entry.createdAt);
     const icon = EVENT_ICONS[entry.eventType] ?? "·";
     const colorFn = EVENT_COLORS[entry.eventType] ?? chalk.white;
-    const newMarker = entry.isNew ? chalk.green("✦ ") : chalk.dim(" ");
+    const newMarker = entry.isNew ? chalk.green("✦ ") : "  ";
 
-    // Build event summary from event type and details
-    let summary = formatEventSummary(entry);
-    summary = truncate(summary, innerWidth - 25); // room for ts, icon, marker
+    // Build human-readable event description
+    const description = formatEventDescription(entry);
+    
+    // Badge and description line
+    const badge = colorFn(`[${icon}]`);
+    const descMaxLen = Math.max(20, innerWidth - ts.length - 12); // leave room for markers, badge, timestamp
+    const truncatedDesc = truncate(description, descMaxLen);
+    const line = `${newMarker}${badge} ${chalk.dim(ts)}  ${truncatedDesc}`;
+    lines.push(`  ${line}`);
 
-    const line = `${newMarker}${colorFn(icon)} [${ts}] ${summary}`;
-    lines.push(`  ${truncate(line, innerWidth)}`);
+    // Expanded raw payload
+    if (state.expandedEventId === entry.id) {
+      lines.push("");
+      const rawJson = JSON.stringify(entry.details, null, 2);
+      const jsonLines = rawJson.split("\n");
+      for (const jsonLine of jsonLines) {
+        // Only truncate very long lines (allow up to innerWidth - 4)
+        const displayLine = jsonLine.length > innerWidth - 4 
+          ? truncate(jsonLine, innerWidth - 4) 
+          : jsonLine;
+        lines.push(`    ${chalk.dim(displayLine)}`);
+      }
+      lines.push("");
+    }
   }
 
   // Footer
   lines.push("");
-  lines.push(chalk.dim(`  ${state.events.totalCount} event(s)`));
+  const totalFiltered = filteredEvents.length;
+  const totalAll = state.events.totalCount;
+  const footerText = state.eventFilterMode === "all" 
+    ? `${totalAll} event(s)` 
+    : `${totalFiltered} / ${totalAll} event(s)`;
+  lines.push(chalk.dim(`  ${footerText}`));
 
   return lines.join("\n");
 }
 
 /**
- * Format a pipeline event into a human-readable summary line.
+ * Filter events for display based on the current filter mode.
  */
-function formatEventSummary(entry: {
+function filterEventsForDisplay(events: PipelineEventEntry[], mode: string): PipelineEventEntry[] {
+  switch (mode) {
+    case "active":
+      return events.filter(e => e.eventType !== "heartbeat");
+    case "errors":
+      return events.filter(e => 
+        e.eventType === "fail" || 
+        e.eventType === "stuck" || 
+        e.eventType === "guardrail-veto"
+      );
+    default:
+      return events;
+  }
+}
+
+/**
+ * Format a pipeline event into a human-readable description.
+ */
+function formatEventDescription(entry: {
   eventType: string;
   details: Record<string, unknown> | null;
 }): string {
   const et = entry.eventType;
   const d = entry.details;
+  const seedId = d?.seedId ? String(d.seedId).slice(0, 8) : null;
+  const beadId = d?.bead_id ? String(d.bead_id).slice(0, 8) : null;
 
   switch (et) {
     case "phase-start":
-    case "phase-complete":
-      return d?.phase
-        ? `${et === "phase-start" ? "Start" : "Complete"}: ${d.phase}`
-        : et;
+      return seedId 
+        ? `phase started for ${seedId}` 
+        : `phase started`;
 
-    case "dispatch":
-      return d?.bead_id ? `Dispatch: ${d.bead_id}` : "Dispatch";
+    case "phase-complete":
+      return seedId 
+        ? `phase complete for ${seedId}` 
+        : `phase complete`;
 
     case "complete":
-      return d?.seedId ? `Complete: ${d.seedId}` : "Complete";
+      return seedId 
+        ? `${seedId} completed` 
+        : "task completed";
 
     case "fail":
-      return d?.seedId ? `Failed: ${d.seedId}` : "Failed";
+      return seedId 
+        ? `${seedId} failed` 
+        : "task failed";
+
+    case "stuck":
+      return seedId 
+        ? `${seedId} stuck` 
+        : "task stuck";
+
+    case "guardrail-veto":
+      return seedId 
+        ? `guardrail veto on ${seedId}` 
+        : "guardrail veto";
+
+    case "dispatch":
+      return beadId ? `dispatched ${beadId}` : "task dispatched";
 
     case "merge":
-      return d?.bead_id ? `Merged: ${d.bead_id}` : "Merged";
+      return beadId ? `merged ${beadId}` : "task merged";
 
     case "pr-created":
       return d?.pr_number ? `PR #${d.pr_number} created` : "PR created";
 
-    case "merge-queue-enqueue":
-      return d?.bead_id ? `Enqueued: ${d.bead_id}` : "Enqueued";
-
-    case "merge-queue-dequeue":
-      return d?.bead_id ? `Dequeued: ${d.bead_id}` : "Dequeued";
-
-    case "merge-queue-resolve":
-      return d?.bead_id ? `Resolved: ${d.bead_id}` : "Resolved";
-
-    case "merge-queue-fallback":
-      return d?.bead_id ? `Fallback: ${d.bead_id}` : "Fallback";
-
-    case "merge-cleanup-fallback":
-      return d?.bead_id ? `Cleanup: ${d.bead_id}` : "Cleanup";
-
     case "conflict":
-      return d?.bead_id ? `Conflict: ${d.bead_id}` : "Conflict";
+      return beadId ? `conflict: ${beadId}` : "merge conflict";
 
     case "test-fail":
-      return d?.bead_id ? `Test fail: ${d.bead_id}` : "Test fail";
+      return beadId ? `test failed: ${beadId}` : "test failed";
 
-    case "stuck":
-      return d?.seedId ? `Stuck: ${d.seedId}` : "Stuck";
-
-    case "sentinel-start":
-    case "sentinel-pass":
-    case "sentinel-fail":
-      return d?.bead_id ? `Sentinel ${et.split("-")[1]}: ${d.bead_id}` : `Sentinel ${et.split("-")[1]}`;
-
-    case "worktree-rebased":
-      return d?.worktreePath ? `Rebased: ${truncateMiddle(d.worktreePath as string, 30)}` : "Worktree rebased";
-
-    case "worktree-rebase-failed":
-      return d?.worktreePath ? `Rebase fail: ${truncateMiddle(d.worktreePath as string, 30)}` : "Rebase failed";
+    case "heartbeat":
+      return "heartbeat";
 
     default:
-      // Generic fallback: show event type + any known fields
-      if (d?.bead_id) return `${et}: ${d.bead_id}`;
-      if (d?.seedId) return `${et}: ${d.seedId}`;
+      // Generic fallback
+      if (seedId) return `${et}: ${seedId}`;
+      if (beadId) return `${et}: ${beadId}`;
       return et;
   }
 }
+
+
 
 // ── Full layout rendering ─────────────────────────────────────────────────
 

@@ -505,7 +505,7 @@ foreman board --project my-project        # Board for a specific project
 ```
 
 ### `foreman watch`
-Single-pane live dashboard: agents, board summary, inbox, and pipeline events. (`foreman dashboard` is a deprecated alias.)
+Single-pane live dashboard: agents, board summary, inbox, and pipeline events. (`foreman dashboard` is a deprecated alias.) The events panel provides human-readable descriptions with color-coded badges and can be filtered to show All, Active (no heartbeats), or Errors (fail/stuck/veto only). Press Tab to cycle panels, 1/2/3 to switch event filters, and Enter to expand raw event payloads.
 
 ```bash
 foreman watch                             # Live unified dashboard

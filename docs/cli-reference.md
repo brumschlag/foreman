@@ -169,6 +169,35 @@ foreman watch --no-events         # Hide the pipeline events panel
 | `--no-events` | — | Hide pipeline events panel |
 | `--project <id>` | — | Filter to a specific project ID |
 
+**Interactive controls:**
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle through panels (agents, tasks, inbox, events) |
+| `q` | Quit |
+| `?` | Show help overlay |
+
+**Panel-specific controls:**
+
+*Tasks panel:*
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Navigate tasks |
+| `a` | Approve selected backlog task → ready |
+| `r` | Retry selected failed/stuck task → backlog |
+
+*Events panel:*
+
+| Key | Action |
+|-----|--------|
+| `1` | Filter: All events |
+| `2` | Filter: Active (no heartbeats) |
+| `3` | Filter: Errors (fail/stuck/veto only) |
+| `Enter` | Expand/collapse raw event payload |
+
+The events panel displays human-readable descriptions with color-coded badges: phase-start (blue ▶), complete (green ✓), fail (red ✗), stuck (red ⚠), guardrail-veto (amber 🛡), heartbeat (gray ·). Each event shows a relative timestamp and truncated seed ID. Press Enter to toggle the raw JSON payload for the first filtered event.
+
 ### `foreman sentinel`
 
 Continuous QA testing agent that monitors a branch for test failures and auto-creates follow-up fix tasks.

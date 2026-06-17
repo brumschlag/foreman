@@ -87,6 +87,8 @@ export interface EventsState {
   oldestTimestamp: string | null;
 }
 
+export type EventFilterMode = "all" | "active" | "errors";
+
 // ── Watch state ──────────────────────────────────────────────────────────
 
 export interface WatchState {
@@ -110,6 +112,8 @@ export interface WatchState {
   selectedTaskIndex: number;
   showHelp: boolean;
   errorMessage: string | null;
+  eventFilterMode: EventFilterMode;
+  expandedEventId: string | null;
 
   // Offline indicators (graceful degradation)
   agentsOffline: boolean;
@@ -137,6 +141,8 @@ export function initialWatchState(): WatchState {
     selectedTaskIndex: -1,
     showHelp: false,
     errorMessage: null,
+    eventFilterMode: "all",
+    expandedEventId: null,
     agentsOffline: false,
     boardOffline: false,
     inboxOffline: false,
@@ -584,7 +590,56 @@ export function handleWatchKey(
     }
   }
 
+  if (state.focusedPanel === "events") {
+    // Filter toggles: 1 = All, 2 = Active, 3 = Errors
+    if (key === "1") {
+      state.eventFilterMode = "all";
+      return { render: true, wake: false, quit: false, none: false };
+    }
+    if (key === "2") {
+      state.eventFilterMode = "active";
+      return { render: true, wake: false, quit: false, none: false };
+    }
+    if (key === "3") {
+      state.eventFilterMode = "errors";
+      return { render: true, wake: false, quit: false, none: false };
+    }
+    // Enter = expand/collapse event details
+    if (key === "\r" || key === "\n") {
+      // Toggle expanded event (cycle through events list)
+      const filteredEvents = filterEvents(state.events?.events ?? [], state.eventFilterMode);
+      if (filteredEvents.length > 0) {
+        // For now, just expand the first event (could be extended to track selected index)
+        const firstEvent = filteredEvents[0];
+        if (state.expandedEventId === firstEvent.id) {
+          state.expandedEventId = null;
+        } else {
+          state.expandedEventId = firstEvent.id;
+        }
+      }
+      return { render: true, wake: false, quit: false, none: false };
+    }
+  }
+
   return { render: false, wake: false, quit: false, none: true };
+}
+
+/**
+ * Filter events based on the current filter mode.
+ */
+function filterEvents(events: PipelineEventEntry[], mode: EventFilterMode): PipelineEventEntry[] {
+  switch (mode) {
+    case "active":
+      return events.filter(e => e.eventType !== "heartbeat");
+    case "errors":
+      return events.filter(e => 
+        e.eventType === "fail" || 
+        e.eventType === "stuck" || 
+        e.eventType === "guardrail-veto"
+      );
+    default:
+      return events;
+  }
 }
 
 // ── Help overlay ──────────────────────────────────────────────────────────
@@ -609,6 +664,12 @@ export function renderHelpOverlay(width: number): string {
   lines.push("    k / ↑       Select previous task");
   lines.push("    a            Approve selected backlog task → ready");
   lines.push("    r            Retry selected failed/stuck task → backlog");
+  lines.push("");
+  lines.push("  Events panel:");
+  lines.push("    1            Filter: All events");
+  lines.push("    2            Filter: Active (no heartbeats)");
+  lines.push("    3            Filter: Errors (fail/stuck/veto)");
+  lines.push("    Enter        Expand/collapse raw event payload");
   lines.push("");
   lines.push("  ────────────────────────────────────────────────────────────");
   lines.push(chalk.dim("  Press any key to close help"));

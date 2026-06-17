@@ -151,7 +151,7 @@ foreman logs <run-id>
 foreman attach <run-id>
 ```
 
-Use `foreman board` for kanban-style task triage. Use `foreman status` or `foreman watch` when you need execution health and active run state. To detect and reset stuck runs, use `foreman reset --detect-stuck`.
+Use `foreman board` for kanban-style task triage. Use `foreman status` or `foreman watch` when you need execution health and active run state. The `foreman watch` dashboard includes an events panel with color-coded badges and filters (All/Active/Errors) to focus on specific event types. To detect and reset stuck runs, use `foreman reset --detect-stuck`.
 
 ### 6. Triage Failures
 
