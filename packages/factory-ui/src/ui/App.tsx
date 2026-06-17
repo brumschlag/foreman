@@ -114,6 +114,14 @@ export function App() {
         {tab === "processes" && <ProcessesView />}
         {tab === "tasks"     && <TasksView />}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2">
+        <div className="flex justify-between text-[#4b5563] text-xs">
+          <span>⬡ Foreman Dark Factory</span>
+          <span>2026 — brumschlag/foreman</span>
+        </div>
+      </footer>
     </div>
   );
 }
