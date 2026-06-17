@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useFactorySocket } from "./hooks/useFactorySocket";
 import { useFactoryStore } from "./store/factoryStore";
 import { FloorView } from "./views/FloorView";
@@ -63,13 +63,25 @@ function ConnectionBadge() {
   );
 }
 
-function Clock() {
-  const [time, setTime] = useState(() => new Date().toLocaleTimeString());
-  useState(() => {
-    const t = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
-    return () => clearInterval(t);
-  });
-  return <span className="font-mono text-xs text-[#6b7280]">{time}</span>;
+function FooterClock() {
+  const [time, setTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <span className="text-[#4b5563] text-xs">
+      {time.toLocaleString("en-US", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour12: false,
+      })} {time.toLocaleTimeString("en-US", { hour12: false })}
+    </span>
+  );
 }
 
 export function App() {
@@ -122,7 +134,7 @@ export function App() {
       <footer className="border-t border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2">
         <div className="flex justify-between text-[#4b5563] text-xs">
           <span>⬡ Foreman Dark Factory</span>
-          <span>2026 — Brian / brumschlag/foreman</span>
+          <FooterClock />
         </div>
       </footer>
     </div>
