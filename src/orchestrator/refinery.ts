@@ -666,7 +666,7 @@ export class Refinery {
           } catch (err: unknown) {
             lastError = err;
             const msg = err instanceof Error ? err.message : String(err);
-            if (!msg.includes("sha can't be blank") && !msg.includes("Head ref must be a branch")) {
+            if (!msg.includes("sha can't be blank") && !msg.includes("Head ref must be a branch") && !msg.includes("No commits between")) {
               throw err; // Not a timing issue — fail fast
             }
           }
