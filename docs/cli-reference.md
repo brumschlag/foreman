@@ -196,6 +196,7 @@ Active Agents
     developer  $1.25 (anthropic/sonnet-4-6)
   Turns      18
   Phase      qa
+  Pipeline   EXP·DEV·QA·REV·FIN
   Tools      70 (last: bash)
   bash     ███████████████ 27
   read     ██████████ 18
