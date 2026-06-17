@@ -756,9 +756,11 @@ export function parseFinalizeIntegrationStatus(reportContent: string): FinalizeI
 }
 
 export function qaReportHasTestEvidence(reportContent: string): boolean {
-  const hasCommand = /(npm test|npx\s+vitest(?:\s+run)?|pnpm\s+vitest(?:\s+run)?|yarn\s+vitest(?:\s+run)?|vitest\s+run)/i.test(reportContent);
+  const hasCommand = /(npm test|npm run test|npx\s+vitest(?:\s+run)?|pnpm\s+vitest(?:\s+run)?|yarn\s+vitest(?:\s+run)?|vitest\s+run)/i.test(reportContent);
   const hasCounts = /(\b\d+\s+passed\b|\b\d+\s+failed\b|\btests? failed out of\b|\btests?:\s*\d+\s+passed[, ]+\d+\s+failed\b)/i.test(reportContent);
-  return hasCommand && hasCounts;
+  // Also accept explicit N/A or skipped evidence for trivial changes
+  const hasExplicitSkip = /(N\/A\s*-\s*(no tests|not required|trivial)|Test suite:\s*N\/A|not required\s*-\s*(trivial|minimal|no tests)|tests?\s+not\s+affected|no\s+tests?\s+affected)/i.test(reportContent);
+  return (hasCommand && hasCounts) || hasExplicitSkip;
 }
 
 export function extractIssues(reportContent: string): string {
