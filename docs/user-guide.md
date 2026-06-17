@@ -148,6 +148,7 @@ foreman status
 foreman board
 foreman watch
 foreman logs <run-id>
+foreman logs <run-id> --live      # Interactive viewer with run tabs and log filtering
 foreman attach <run-id>
 ```
 
