@@ -1,6 +1,8 @@
 import { useFactoryStore } from '../store/factoryStore';
 import type { TaskRow } from '../store/factoryStore';
 
+// Hello World
+
 const ACTIVE_STATUSES = new Set([
   'in-progress', 'explorer', 'developer', 'qa', 'reviewer', 'finalize',
 ]);
