@@ -645,7 +645,7 @@ export class Refinery {
 
     const prUrl = this.isTestRuntime()
       ? `foreman://pr/${run.seed_id}`
-      : await gh((() => {
+      : await (async () => {
         const ghArgs = [
           "pr", "create",
           "--base", baseBranch,
@@ -654,8 +654,25 @@ export class Refinery {
           "--body", body,
         ];
         if (opts.draft) ghArgs.push("--draft");
-        return ghArgs;
-      })(), this.projectPath);
+        // Retry up to 4 times with 3s delay — GitHub API may need a moment
+        // to index a freshly pushed branch before accepting a PR creation.
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, 3000));
+          }
+          try {
+            return await gh(ghArgs, this.projectPath);
+          } catch (err: unknown) {
+            lastError = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!msg.includes("sha can't be blank") && !msg.includes("Head ref must be a branch")) {
+              throw err; // Not a timing issue — fail fast
+            }
+          }
+        }
+        throw lastError;
+      })();
 
     await this.persistRunEvent(
       run,
