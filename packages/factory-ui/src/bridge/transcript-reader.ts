@@ -31,6 +31,7 @@ export interface ChatTurn {
 const LOGS_DIR = join(homedir(), ".foreman", "logs");
 
 export class TranscriptReader {
+  /** Reads the log file for the given runId and returns parsed ChatTurn[]. */
   async read(runId: string): Promise<ChatTurn[]> {
     const logPath = join(LOGS_DIR, `${runId}.log`);
     
