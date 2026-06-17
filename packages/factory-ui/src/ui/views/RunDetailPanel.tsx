@@ -155,6 +155,38 @@ export function RunDetailPanel() {
             )}
           </div>
 
+          {/* Phase Costs */}
+          {(() => {
+            const costRegex = /\[PHASE:\s*(\w+)\]\s*COMPLETED\s*\(\$([0-9.]+)\)/;
+            const phaseCosts: { phase: string; cost: number }[] = [];
+            for (const l of runLogs) {
+              const m = l.message.match(costRegex);
+              if (m) phaseCosts.push({ phase: m[1], cost: parseFloat(m[2]) });
+            }
+            const total = phaseCosts.reduce((s, p) => s + p.cost, 0);
+            return (
+              <div className="px-4 py-3 border-b border-[#2a2f38]">
+                <div className="text-xs text-[#6b7280] uppercase tracking-wider font-semibold mb-2">Phase Costs</div>
+                {phaseCosts.length === 0 ? (
+                  <div className="text-xs text-[#4b5563]">No phase cost data yet</div>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {phaseCosts.map((p) => (
+                      <div key={p.phase} className="flex justify-between text-xs">
+                        <span className="text-[#9ca3af] font-mono">{p.phase}</span>
+                        <span className="text-white font-mono">${p.cost.toFixed(4)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs border-t border-[#2a2f38] mt-1 pt-1">
+                      <span className="text-[#6b7280] font-semibold">TOTAL</span>
+                      <span className="text-[#f59e0b] font-mono font-semibold">${total.toFixed(4)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Log Lines */}
           <div className="px-4 py-3">
             <div className="text-xs text-[#6b7280] uppercase tracking-wider font-semibold mb-2">

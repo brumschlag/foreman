@@ -87,8 +87,16 @@ function RunCard({ run }: { run: RunSummary }) {
 export function FloorView() {
   const runs = useFactoryStore((s) => s.runs);
   const active = runs.filter((r) => r.status === 'running' || r.status === 'pending');
+  const recent = runs
+    .filter((r) => r.status !== 'running' && r.status !== 'pending')
+    .sort((a, b) => {
+      const ta = a.finishedAt ?? a.createdAt;
+      const tb = b.finishedAt ?? b.createdAt;
+      return tb.localeCompare(ta);
+    })
+    .slice(0, 10);
 
-  if (active.length === 0) {
+  if (active.length === 0 && recent.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-[#6b7280] text-lg">
         ⬡ No active runs — factory floor is idle
@@ -97,10 +105,31 @@ export function FloorView() {
   }
 
   return (
-    <div className="p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-min">
-      {active.map((run) => (
-        <RunCard key={run.id} run={run} />
-      ))}
+    <div className="p-4 flex flex-col gap-6">
+      {active.length > 0 && (
+        <div>
+          <div className="text-xs text-[#6b7280] uppercase tracking-wider font-semibold mb-3">
+            Active <span className="text-[#f59e0b]">{active.length}</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {active.map((run) => (
+              <RunCard key={run.id} run={run} />
+            ))}
+          </div>
+        </div>
+      )}
+      {recent.length > 0 && (
+        <div>
+          <div className="text-xs text-[#6b7280] uppercase tracking-wider font-semibold mb-3">
+            Recent
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 opacity-60">
+            {recent.map((run) => (
+              <RunCard key={run.id} run={run} />
+            ))}
+          </div>
+        </div>
+      )}
       <RunDetailPanel />
     </div>
   );

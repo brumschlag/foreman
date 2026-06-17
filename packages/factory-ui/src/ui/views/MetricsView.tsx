@@ -3,7 +3,7 @@ import type { ProjectStats } from '../store/factoryStore';
 
 interface MetricCardProps {
   label: string;
-  value: number;
+  value: string | number;
   accent: string;
 }
 
@@ -109,6 +109,13 @@ export function MetricsView() {
         <MetricCard label="Tasks In Progress" value={stats.tasks.inProgress}  accent="text-[#3b82f6]" />
         <MetricCard label="Tasks Ready"       value={stats.tasks.ready}       accent="text-[#22c55e]" />
         <MetricCard label="Tasks Total"       value={stats.tasks.total}       accent="text-white" />
+        <MetricCard
+          label="Success Rate 24h"
+          value={`${stats.successRate24h.toFixed(0)}%`}
+          accent={stats.successRate24h >= 80 ? "text-[#22c55e]" : stats.successRate24h >= 50 ? "text-[#f59e0b]" : "text-[#ef4444]"}
+        />
+        <MetricCard label="Cost 24h"      value={`$${stats.costUsd24h.toFixed(2)}`}    accent="text-[#f59e0b]" />
+        <MetricCard label="Avg Cost/Run"  value={`$${stats.avgCostPerRun.toFixed(4)}`} accent="text-[#6b7280]" />
       </div>
       <BreakdownBar tasks={stats.tasks} />
     </div>
