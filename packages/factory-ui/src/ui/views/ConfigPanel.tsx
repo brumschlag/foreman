@@ -1,17 +1,18 @@
+import type { ReactNode } from "react";
 import { useFactoryStore } from "../store/factoryStore";
 
-function ConfigLabel({ children }: { children: React.ReactNode }) {
+function ConfigLabel({ children }: { children: ReactNode }) {
   return <span className="text-[#f59e0b] font-medium">{children}</span>;
 }
 
-function ConfigValue({ children, empty = false }: { children?: React.ReactNode; empty?: boolean }) {
+function ConfigValue({ children, empty = false }: { children?: ReactNode; empty?: boolean }) {
   if (empty) {
     return <span className="text-[#6b7280] italic">not set</span>;
   }
   return <span className="text-white">{children}</span>;
 }
 
-function ConfigRow({ label, children }: { label: string; children?: React.ReactNode }) {
+function ConfigRow({ label, children }: { label: string; children?: ReactNode }) {
   return (
     <div className="flex items-center gap-3 py-2 border-b border-[#2a2f38]">
       <div className="w-32 flex-shrink-0 text-xs uppercase tracking-wider text-[#6b7280]">
@@ -24,7 +25,7 @@ function ConfigRow({ label, children }: { label: string; children?: React.ReactN
   );
 }
 
-function ConfigSection({ title, children }: { title: string; children: React.ReactNode }) {
+function ConfigSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="bg-[#161a1f] rounded-lg p-4 mb-4">
       <div className="text-xs uppercase tracking-wider text-[#f59e0b] font-semibold mb-3">

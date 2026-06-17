@@ -78,8 +78,11 @@ function FooterClock() {
         year: "numeric",
         month: "short",
         day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
         hour12: false,
-      })} {time.toLocaleTimeString("en-US", { hour12: false })}
+      })}
     </span>
   );
 }
@@ -114,7 +117,7 @@ export function App() {
         </div>
         <div className="flex items-center gap-6">
           <ConnectionBadge />
-          <Clock />
+          <FooterClock />
         </div>
       </header>
 
