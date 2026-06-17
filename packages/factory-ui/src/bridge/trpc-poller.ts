@@ -28,9 +28,16 @@ export interface TrpcPollerOptions {
   onStats?: (stats: ProjectStats) => void;
 }
 
+interface CachedPrState {
+  prUrl: string | null;
+  prNumber: number | null;
+  lastStatus: string;
+}
+
 export class TrpcPoller {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly intervalMs: number;
+  private readonly prCache = new Map<string, CachedPrState>();
 
   constructor(private readonly opts: TrpcPollerOptions) {
     this.intervalMs = opts.pollIntervalMs ?? 4000;
@@ -62,7 +69,8 @@ export class TrpcPoller {
 
   private async trpcQuery<T>(procedure: string, input: Record<string, unknown>): Promise<T> {
     const socketPath = this.opts.socketPath ?? DEFAULT_SOCKET;
-    const useSocket = existsSync(socketPath);
+    // Always try unix socket first — existsSync is unreliable in WSL.
+    const useSocket = true;
     // tRPC batch format: input={"0":<input>}
     const batchPath = `/trpc/${procedure}?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": input }))}`;
 
@@ -116,7 +124,14 @@ export class TrpcPoller {
         startedAt: (r["started_at"] ?? null) as string | null,
         finishedAt: (r["finished_at"] ?? null) as string | null,
         createdAt: (r["created_at"] ?? r["queued_at"] ?? "") as string,
-        progress: r["progress"] ? (r["progress"] as RunSummary["progress"]) : null,
+        // listActive also returns progress as a JSON string — parse it
+        progress: r["progress"]
+          ? (typeof r["progress"] === "string"
+              ? JSON.parse(r["progress"])
+              : r["progress"]) as RunSummary["progress"]
+          : null,
+        prUrl: null,
+        prNumber: null,
       });
 
       const mapRecent = (r: Record<string, unknown>): RunSummary => ({
@@ -135,6 +150,8 @@ export class TrpcPoller {
               ? JSON.parse(r["progress"])
               : r["progress"]) as RunSummary["progress"]
           : null,
+        prUrl: null,
+        prNumber: null,
       });
 
       // Build merged map: active takes precedence over recent
@@ -148,7 +165,32 @@ export class TrpcPoller {
         merged.set(run.id, run);
       }
 
-      this.opts.onRuns?.(Array.from(merged.values()));
+      // Enrich with PR state — only refetch when run status changes
+      const runs = Array.from(merged.values());
+      await Promise.allSettled(runs.map(async (run) => {
+        if (!run.beadId) return;
+        const cached = this.prCache.get(run.beadId);
+        if (cached && cached.lastStatus === run.status) {
+          run.prUrl = cached.prUrl;
+          run.prNumber = cached.prNumber;
+          return;
+        }
+        try {
+          const pr = await this.trpcQuery<{ status: string; url?: string; number?: number }>(
+            "tasks.getPrState",
+            { projectId, taskId: run.beadId },
+          );
+          const prUrl = pr?.url ?? null;
+          const prNumber = pr?.number ?? null;
+          this.prCache.set(run.beadId, { prUrl, prNumber, lastStatus: run.status });
+          run.prUrl = prUrl;
+          run.prNumber = prNumber;
+        } catch {
+          // non-fatal — leave prUrl/prNumber as null
+        }
+      }));
+
+      this.opts.onRuns?.(runs);
     } catch (err) {
       // Non-fatal — poll will retry
       console.warn("[trpc-poller] runs fetch failed:", (err as Error).message);
@@ -158,16 +200,19 @@ export class TrpcPoller {
   private async fetchTasks(projectId: string): Promise<void> {
     try {
       const raw = await this.trpcQuery<unknown[]>("tasks.list", { projectId, limit: 500 });
-      const tasks: TaskRow[] = (raw ?? []).map((t: Record<string, unknown>) => ({
-        id: t["id"] as string,
-        title: (t["title"] ?? "") as string,
-        status: (t["status"] ?? "backlog") as string,
-        type: (t["type"] ?? "task") as string,
-        priority: (t["priority"] ?? 2) as number,
-        description: (t["description"] ?? null) as string | null,
-        createdAt: (t["created_at"] ?? t["createdAt"] ?? "") as string,
-        updatedAt: (t["updated_at"] ?? t["updatedAt"] ?? "") as string,
-      }));
+      const tasks: TaskRow[] = (raw ?? []).map((t) => {
+        const r = t as Record<string, unknown>;
+        return {
+          id: r["id"] as string,
+          title: (r["title"] ?? "") as string,
+          status: (r["status"] ?? "backlog") as string,
+          type: (r["type"] ?? "task") as string,
+          priority: (r["priority"] ?? 2) as number,
+          description: (r["description"] ?? null) as string | null,
+          createdAt: (r["created_at"] ?? r["createdAt"] ?? "") as string,
+          updatedAt: (r["updated_at"] ?? r["updatedAt"] ?? "") as string,
+        };
+      });
       this.opts.onTasks?.(tasks);
     } catch (err) {
       console.warn("[trpc-poller] tasks fetch failed:", (err as Error).message);

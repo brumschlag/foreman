@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import type { BroadcastEvent, RunSummary, TaskRow, ProjectStats, ProcessInfo } from "../../bridge/types";
+import type { BroadcastEvent, RunSummary, TaskRow, ProjectStats, ProcessInfo, ForemanConfig, ChatTurn } from "../../bridge/types";
 
 // Re-export types for UI consumers
-export type { BroadcastEvent, RunSummary, TaskRow, ProjectStats, ProcessInfo };
+export type { BroadcastEvent, RunSummary, TaskRow, ProjectStats, ProcessInfo, ForemanConfig, ChatTurn };
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
@@ -39,6 +39,12 @@ export interface FactoryState {
   // Selected run for detail panel
   selectedRunId: string | null;
 
+  // Config
+  config: ForemanConfig | null;
+
+  // Chat transcripts (runId -> turns)
+  transcripts: Map<string, ChatTurn[]>;
+
   // Actions
   setConnectionStatus: (s: ConnectionStatus) => void;
   setProjectId: (id: string) => void;
@@ -49,6 +55,8 @@ export interface FactoryState {
   addLogLine: (line: LogLineEntry) => void;
   setProcesses: (procs: ProcessInfo[]) => void;
   setSelectedRunId: (id: string | null) => void;
+  setConfig: (config: ForemanConfig | null) => void;
+  setTranscript: (runId: string, turns: ChatTurn[]) => void;
   reset: () => void;
 }
 
@@ -62,6 +70,8 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
   logLines: [],
   processes: [],
   selectedRunId: null,
+  config: null,
+  transcripts: new Map(),
 
   setConnectionStatus: (s) => set({ connectionStatus: s }),
   setProjectId: (id) => set({ projectId: id }),
@@ -78,6 +88,11 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
     })),
   setProcesses: (procs) => set({ processes: procs }),
   setSelectedRunId: (id) => set({ selectedRunId: id }),
+  setConfig: (config) => set({ config }),
+  setTranscript: (runId, turns) =>
+    set((state) => ({
+      transcripts: new Map(state.transcripts).set(runId, turns),
+    })),
   reset: () =>
     set({
       connectionStatus: "connecting",
@@ -89,5 +104,6 @@ export const useFactoryStore = create<FactoryState>()((set) => ({
       logLines: [],
       processes: [],
       selectedRunId: null,
+      transcripts: new Map(),
     }),
 }));

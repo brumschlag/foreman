@@ -21,6 +21,7 @@ import { TrpcPoller } from "./trpc-poller.js";
 import { WsRelay } from "./ws-relay.js";
 import { LogTailer } from "./log-tailer.js";
 import { ProcessPoller } from "./process-poller.js";
+import { ConfigPoller } from "./config-poller.js";
 
 // ── Config from env ───────────────────────────────────────────────────────
 
@@ -95,6 +96,13 @@ logTailer.start();
 const processPoller = new ProcessPoller(relay);
 processPoller.start();
 
+// ── Start config poller ───────────────────────────────────────────────────
+
+const configPoller = new ConfigPoller({
+  onConfig: (config) => relay.updateConfig(config),
+});
+configPoller.start();
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────
 
 const shutdown = (): void => {
@@ -103,6 +111,7 @@ const shutdown = (): void => {
   poller.stop();
   logTailer.stop();
   processPoller.stop();
+  configPoller.stop();
   relay.stop();
   process.exit(0);
 };

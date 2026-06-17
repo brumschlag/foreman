@@ -5,6 +5,17 @@ import type { FactoryWsMessage } from "../../bridge/types";
 const WS_URL = "ws://localhost:4747";
 const BACKOFF = [500, 1000, 2000, 4000, 8000, 15000];
 
+export function requestTranscript(runId: string): void {
+  const ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ kind: "transcript_request", data: { runId } }));
+    ws.close();
+  };
+  ws.onerror = () => {
+    // Silently fail if WS is not available
+  };
+}
+
 export function useFactorySocket() {
   const store = useFactoryStore();
   const attemptRef = useRef(0);
@@ -44,11 +55,17 @@ export function useFactorySocket() {
             case "stats_snapshot":
               store.setStats(msg.data);
               break;
+            case "config_snapshot":
+              store.setConfig(msg.data);
+              break;
             case "log_line":
               store.addLogLine(msg.data);
               break;
             case "processes_snapshot":
               store.setProcesses(msg.data);
+              break;
+            case "transcript_snapshot":
+              store.setTranscript(msg.data.runId, msg.data.turns);
               break;
             case "error":
               console.error("[ws] bridge error:", msg.data.message);
