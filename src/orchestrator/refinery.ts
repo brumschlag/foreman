@@ -438,7 +438,10 @@ export class Refinery {
 
   private async getExistingPrUrl(branchName: string): Promise<string | null> {
     try {
-      const prUrl = await gh(["pr", "view", branchName, "--json", "url", "--jq", ".url"], this.projectPath);
+      const originRepo = await getOriginRepo(this.projectPath);
+      const args = ["pr", "view", branchName, "--json", "url", "--jq", ".url",
+        ...(originRepo ? ["--repo", originRepo] : [])];
+      const prUrl = await gh(args, this.projectPath);
       return prUrl.trim() || null;
     } catch {
       return null;
@@ -447,7 +450,10 @@ export class Refinery {
 
   private async getExistingPrState(branchName: string): Promise<{ state: string; headRefName?: string; headRefOid?: string; url?: string } | null> {
     try {
-      const prRaw = await gh(["pr", "view", branchName, "--json", "state,headRefName,headRefOid,url", "--jq", "."], this.projectPath);
+      const originRepo = await getOriginRepo(this.projectPath);
+      const args = ["pr", "view", branchName, "--json", "state,headRefName,headRefOid,url", "--jq", ".",
+        ...(originRepo ? ["--repo", originRepo] : [])];
+      const prRaw = await gh(args, this.projectPath);
       const parsed = JSON.parse(prRaw) as { state?: string; headRefName?: string; headRefOid?: string; url?: string };
       if (!parsed.state) return null;
       return {
