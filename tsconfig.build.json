@@ -6,6 +6,7 @@
     ".foreman-worktrees",
     "**/.foreman-worktrees/**",
     "src/**/__tests__/**",
+    "src/test-support/**",
     "src/**/*.test.ts",
     "src/**/*.spec.ts"
   ]
