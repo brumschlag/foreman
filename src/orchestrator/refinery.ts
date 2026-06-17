@@ -73,6 +73,19 @@ async function gh(args: string[], cwd: string): Promise<string> {
   return stdout.trim();
 }
 
+/** Returns "owner/repo" from the origin remote URL, e.g. "brumschlag/foreman" */
+async function getOriginRepo(cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", ["remote", "get-url", "origin"], { cwd });
+    const url = stdout.trim();
+    // Handles https://github.com/owner/repo.git and git@github.com:owner/repo.git
+    const m = url.match(/github\.com[/:]([\w-]+\/[\w.-]+?)(?:\.git)?$/);
+    if (m) return m[1];
+  } catch { /* fall through */ }
+  return "";
+}
+
+
 function shouldCreateFreshPrAfterReopenFailure(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return message.includes("Could not open the pull request")
@@ -646,12 +659,14 @@ export class Refinery {
     const prUrl = this.isTestRuntime()
       ? `foreman://pr/${run.seed_id}`
       : await (async () => {
+        const originRepo = await getOriginRepo(this.projectPath);
         const ghArgs = [
           "pr", "create",
           "--base", baseBranch,
           "--head", branchName,
           "--title", prTitle,
           "--body", body,
+          ...(originRepo ? ["--repo", originRepo] : []),
         ];
         if (opts.draft) ghArgs.push("--draft");
         // Retry up to 4 times with 3s delay — GitHub API may need a moment
