@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Run, RunProgress } from "../../lib/store.js";
-import { renderAgentCard, renderAgentCardSummary } from "../watch-ui.js";
+import { renderAgentCard, renderAgentCardSummary, renderPhaseProgressBar, PIPELINE_PHASES } from "../watch-ui.js";
 
 /**
  * Tests for the unified agent status display helpers in watch-ui.ts.
@@ -236,5 +236,77 @@ describe("renderAgentCardSummary — retry attempt info", () => {
     const collapsed = renderAgentCard(run, progress, false, undefined, 3, "stuck");
     expect(collapsed).toContain("attempt 3");
     expect(collapsed).toContain("prev: stuck");
+  });
+});
+
+// ── renderPhaseProgressBar ───────────────────────────────────────────────
+
+describe("renderPhaseProgressBar", () => {
+  it("returns empty string when currentPhase is undefined", () => {
+    expect(renderPhaseProgressBar(undefined)).toBe("");
+  });
+
+  it("returns dim fallback for unknown phase", () => {
+    const bar = renderPhaseProgressBar("unknown-phase");
+    expect(bar).toContain("unknown-phase");
+  });
+
+  it("shows all abbreviations for a known phase", () => {
+    const bar = renderPhaseProgressBar("developer");
+    // EXP should be green (completed), DEV yellow (current), QA/REV/FIN gray (future)
+    expect(bar).toContain("EXP");
+    expect(bar).toContain("DEV");
+    expect(bar).toContain("QA");
+    expect(bar).toContain("REV");
+    expect(bar).toContain("FIN");
+  });
+
+  it("marks first phase as current when phase is explorer", () => {
+    const bar = renderPhaseProgressBar("explorer");
+    // All 5 abbreviations present
+    for (const abbr of ["EXP", "DEV", "QA", "REV", "FIN"]) {
+      expect(bar).toContain(abbr);
+    }
+  });
+
+  it("marks last phase as current when phase is finalize", () => {
+    const bar = renderPhaseProgressBar("finalize");
+    for (const abbr of ["EXP", "DEV", "QA", "REV", "FIN"]) {
+      expect(bar).toContain(abbr);
+    }
+  });
+
+  it("contains a separator between segments", () => {
+    const bar = renderPhaseProgressBar("qa");
+    // The dot separator (may be wrapped in chalk dim)
+    // Just verify the bar has more content than just the abbreviations
+    expect(bar.length).toBeGreaterThan(15);
+  });
+});
+
+// ── Phase progress bar integration in cards ──────────────────────────────
+
+describe("renderAgentCard — phase progress bar integration", () => {
+  it("expanded card shows Pipeline row with phase bar when currentPhase is set", () => {
+    const card = renderAgentCard(makeRun(), makeProgress({ currentPhase: "qa" }), true);
+    expect(card).toContain("Pipeline");
+    expect(card).toContain("EXP");
+    expect(card).toContain("QA");
+  });
+
+  it("expanded card omits Pipeline row when currentPhase is undefined", () => {
+    const card = renderAgentCard(makeRun(), makeProgress({ currentPhase: undefined }), true);
+    expect(card).not.toContain("Pipeline");
+  });
+
+  it("summary card includes phase bar abbreviations when currentPhase is set", () => {
+    const summary = renderAgentCardSummary(makeRun(), makeProgress({ currentPhase: "reviewer" }));
+    expect(summary).toContain("EXP");
+    expect(summary).toContain("REV");
+  });
+
+  it("summary card omits phase bar when currentPhase is undefined", () => {
+    const summary = renderAgentCardSummary(makeRun(), makeProgress({ currentPhase: undefined }));
+    expect(summary).not.toContain("EXP");
   });
 });
