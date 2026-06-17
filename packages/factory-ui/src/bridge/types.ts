@@ -18,13 +18,14 @@ export interface BroadcastEvent {
  * Each kind maps to one data source.
  */
 export type FactoryWsMessage =
-  | { kind: "connected";       data: { projectId: string } }
-  | { kind: "pipeline_event";  data: BroadcastEvent }
-  | { kind: "runs_snapshot";   data: RunSummary[] }
-  | { kind: "tasks_snapshot";  data: TaskRow[] }
-  | { kind: "stats_snapshot";  data: ProjectStats }
-  | { kind: "log_line";        data: { runId: string; ts: string; level: string; message: string } }
-  | { kind: "error";           data: { message: string } };
+  | { kind: "connected";        data: { projectId: string } }
+  | { kind: "pipeline_event";   data: BroadcastEvent }
+  | { kind: "runs_snapshot";    data: RunSummary[] }
+  | { kind: "tasks_snapshot";   data: TaskRow[] }
+  | { kind: "stats_snapshot";   data: ProjectStats }
+  | { kind: "log_line";         data: { runId: string; ts: string; level: string; message: string } }
+  | { kind: "processes_snapshot"; data: ProcessInfo[] }
+  | { kind: "error";            data: { message: string } };
 
 // ── Foreman domain types (minimal subset used by the bridge) ──────────────
 
@@ -69,4 +70,15 @@ export interface ProjectStats {
     closed: number;
     total: number;
   };
+}
+
+export interface ProcessInfo {
+  pid: number;
+  role: "daemon" | "dispatcher" | "worker" | "bridge" | "vite" | "other";
+  label: string;
+  taskId: string | null;
+  cpu: string;
+  mem: string;
+  elapsed: string;
+  command: string;
 }

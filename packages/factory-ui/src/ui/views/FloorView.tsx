@@ -1,5 +1,6 @@
 import { useFactoryStore } from '../store/factoryStore';
 import type { RunSummary } from '../store/factoryStore';
+import { RunDetailPanel } from './RunDetailPanel';
 
 function statusLed(status: string): string {
   switch (status) {
@@ -34,11 +35,15 @@ function worktreeSegment(path: string | null): string | null {
 }
 
 function RunCard({ run }: { run: RunSummary }) {
+  const setSelectedRunId = useFactoryStore((s) => s.setSelectedRunId);
   const { progress } = run;
   const segment = worktreeSegment(run.worktreePath);
 
   return (
-    <div className="bg-[#161a1f] border border-[#2a2f38] rounded-lg p-4 flex flex-col gap-2">
+    <div
+      className="bg-[#161a1f] border border-[#2a2f38] rounded-lg p-4 flex flex-col gap-2 cursor-pointer hover:border-[#f59e0b]/50 transition-colors"
+      onClick={() => setSelectedRunId(run.id)}
+    >
       <div className="flex items-center gap-2">
         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${statusLed(run.status)}`} />
         <span className="font-mono text-sm text-white">{run.beadId.slice(0, 12)}</span>
@@ -65,8 +70,8 @@ function RunCard({ run }: { run: RunSummary }) {
 
       {progress && (
         <div className="flex gap-3 text-xs text-[#6b7280]">
-          <span>turns: <span className="text-white">{progress.turns}</span></span>
-          <span>cost: <span className="text-white">${progress.costUsd.toFixed(3)}</span></span>
+          <span>turns: <span className="text-white">{progress.turns ?? 0}</span></span>
+          <span>cost: <span className="text-white">${(progress.costUsd ?? 0).toFixed(3)}</span></span>
         </div>
       )}
 
@@ -96,6 +101,7 @@ export function FloorView() {
       {active.map((run) => (
         <RunCard key={run.id} run={run} />
       ))}
+      <RunDetailPanel />
     </div>
   );
 }

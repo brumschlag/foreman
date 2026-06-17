@@ -47,6 +47,9 @@ export function useFactorySocket() {
             case "log_line":
               store.addLogLine(msg.data);
               break;
+            case "processes_snapshot":
+              store.setProcesses(msg.data);
+              break;
             case "error":
               console.error("[ws] bridge error:", msg.data.message);
               break;
