@@ -521,6 +521,9 @@ export class Refinery {
 
     if (!this.isTestRuntime()) {
       await this.vcsBackend.push(this.projectPath, branchName);
+      await gitSpecial(["fetch", "origin"], this.projectPath).catch(() => {
+        // non-fatal — best effort to refresh remote refs
+      });
     }
 
     if (opts.existingOk !== false && !this.isTestRuntime()) {
