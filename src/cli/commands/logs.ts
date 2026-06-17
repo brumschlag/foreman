@@ -9,6 +9,7 @@ import { ForemanStore, type Run, type RunProgress } from "../../lib/store.js";
 import { createTrpcClient } from "../../lib/trpc-client.js";
 import { elapsed } from "../watch-ui.js";
 import { listRegisteredProjects, resolveProjectPathFromOptions } from "./project-task-support.js";
+import { launchAgentLogs } from "./AgentLogs.js";
 
 interface LogsOpts {
   project?: string;
@@ -17,6 +18,7 @@ interface LogsOpts {
   tail?: string;
   follow?: boolean;
   raw?: boolean;
+  live?: boolean;
 }
 
 interface ResolvedRun {
@@ -312,12 +314,18 @@ export const logsCommand = new Command("logs")
   .option("--tail <lines>", "Raw log lines to show", "80")
   .option("--follow", "Follow the raw JSON log after printing the summary")
   .option("--raw", "Print only the raw JSON log tail")
+  .option("--live", "Launch interactive log viewer with run tabs and filtering")
   .action(async (id: string | undefined, opts: LogsOpts) => {
     const tailCount = parseTailCount(opts.tail);
     const resolved = await resolveRun(id, opts);
     if (!resolved) {
       console.error(chalk.red(`Error: No run found for '${opts.run ?? id ?? "(none)"}'.`));
       process.exit(1);
+    }
+
+    if (opts.live) {
+      await launchAgentLogs({ runs: [resolved.run] });
+      return;
     }
 
     const rawPath = logPath(resolved.run.id, "log");

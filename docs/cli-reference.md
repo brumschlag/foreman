@@ -170,6 +170,37 @@ foreman watch --no-events         # Hide the pipeline events panel
 | `--no-events` | — | Hide pipeline events panel |
 | `--project <id>` | — | Filter to a specific project ID |
 
+### `foreman logs`
+
+Show run logs and debugging summary. Resolves a task or run by ID prefix, displays a formatted summary with phase timeline and cost breakdown, and optionally tails the raw JSON log.
+
+```bash
+foreman logs bd-abc1              # Summary for latest run of task
+foreman logs bd-abc1 --follow     # Summary + tail -f the raw log
+foreman logs bd-abc1 --raw        # Raw JSON log tail only
+foreman logs bd-abc1 --live       # Interactive log viewer with filtering
+foreman logs --run 14dd           # Specific run ID
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--run <runId>` | — | Run ID (overrides positional ID) |
+| `--project <name>` | — | Registered project name |
+| `--project-path <path>` | — | Absolute project path |
+| `--tail <lines>` | `80` | Number of raw log lines to show |
+| `--follow` | — | Follow the raw JSON log after printing the summary |
+| `--raw` | — | Print only the raw JSON log tail |
+| `--live` | — | Launch interactive log viewer with run tabs and filtering |
+
+**Interactive viewer (`--live`):**
+
+Opens a chalk-based TUI with:
+- **Run selector tabs** — shows `beadId.slice(0,8)` + status LED per run, plus an "All" tab. Press `Tab`/`n` to cycle, `0`–`9` to select directly.
+- **Log level filter** — cycles ALL → INFO → WARN → ERROR with `f` key.
+- **Auto-scroll** — enabled by default, scrolls to bottom on new lines. Disables when you scroll up; press `a` to re-enable.
+- **Formatted lines** — `HH:MM:SS │ level badge │ message`. ERROR lines have a red left border.
+- Press `q` or `Esc` to quit.
+
 ### `foreman sentinel`
 
 Continuous QA testing agent that monitors a branch for test failures and auto-creates follow-up fix tasks.
