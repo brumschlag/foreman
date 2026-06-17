@@ -127,7 +127,8 @@ function isCodeRabbitCheck(check: GhCheck): boolean {
 export function summarizePrWaitStatus(snapshot: PrWaitSnapshot): PrWaitStatus {
   const codeRabbitReviews = snapshot.codeRabbitReviews ?? 0;
   const codeRabbitSeen = snapshot.codeRabbitComments > 0 || codeRabbitReviews > 0;
-  const codeRabbitComplete = codeRabbitReviews > 0 || snapshot.checks
+  const skipCodeRabbit = process.env["FOREMAN_SKIP_CODERABBIT_WAIT"] === "true";
+  const codeRabbitComplete = skipCodeRabbit || codeRabbitReviews > 0 || snapshot.checks
     .filter(isCodeRabbitCheck)
     .some((check) => getCheckStatus(check) === "COMPLETED");
   const pendingChecks = snapshot.checks
