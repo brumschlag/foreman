@@ -1,9 +1,4 @@
-/**
- * TranscriptReader
- *
- * Reads the JSONL log file for a run and builds a ChatTurn[] array
- * representing the full agent conversation (LLM turns, tool calls, tool results).
- */
+/** Reads agent run log files and extracts structured ChatTurn arrays. */
 
 import { createReadStream } from "node:fs";
 import { homedir } from "node:os";
@@ -30,6 +25,9 @@ export interface ChatTurn {
 
 const LOGS_DIR = join(homedir(), ".foreman", "logs");
 
+/**
+ * Reads agent run log files and extracts structured ChatTurn arrays.
+ */
 export class TranscriptReader {
   async read(runId: string): Promise<ChatTurn[]> {
     const logPath = join(LOGS_DIR, `${runId}.log`);
