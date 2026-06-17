@@ -781,7 +781,11 @@ export class Refinery {
         testFailures.push(...report.testFailures);
         unexpectedErrors.push(...report.unexpectedErrors);
       } else {
-        await gh(["pr", "merge", branchName, "--squash"], this.projectPath);
+        const originRepo = await getOriginRepo(this.projectPath);
+        await gh([
+          "pr", "merge", branchName, "--squash",
+          ...(originRepo ? ["--repo", originRepo] : []),
+        ], this.projectPath);
 
         await this.finalizeSuccessfulMerge(run, branchName, targetBranch);
 
