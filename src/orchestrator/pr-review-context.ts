@@ -128,7 +128,12 @@ export function summarizePrWaitStatus(snapshot: PrWaitSnapshot): PrWaitStatus {
   const codeRabbitReviews = snapshot.codeRabbitReviews ?? 0;
   const codeRabbitSeen = snapshot.codeRabbitComments > 0 || codeRabbitReviews > 0;
   const skipCodeRabbit = process.env["FOREMAN_SKIP_CODERABBIT_WAIT"] === "true";
-  const codeRabbitComplete = skipCodeRabbit || codeRabbitReviews > 0 || snapshot.checks
+  // Also skip if CodeRabbit hasn't been seen at all and all checks have passed —
+  // this handles forks where CodeRabbit is not installed without requiring the env var.
+  const checksAllPassed = snapshot.checks.length > 0 && snapshot.checks
+    .filter((c) => !isCodeRabbitCheck(c))
+    .every((c) => getCheckStatus(c) === "COMPLETED");
+  const codeRabbitComplete = skipCodeRabbit || codeRabbitSeen === false && checksAllPassed || codeRabbitReviews > 0 || snapshot.checks
     .filter(isCodeRabbitCheck)
     .some((check) => getCheckStatus(check) === "COMPLETED");
   const pendingChecks = snapshot.checks
