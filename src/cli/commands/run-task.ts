@@ -349,7 +349,7 @@ export async function runTaskAction(
         beadId: taskId,
         runNumber,
         branch: branchName,
-        trigger: "direct",
+        trigger: "manual",
         agentType: "developer",
         worktreePath,
         baseBranch: baseBranch ?? undefined,
