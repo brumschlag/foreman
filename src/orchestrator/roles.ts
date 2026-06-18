@@ -136,6 +136,7 @@ const VALID_MODELS: readonly ModelSelection[] = [
   "minimax/MiniMax-M2.7-highspeed",
   "openai/gpt-5.2-chat-latest",
   "openrouter/qwen/qwen3-coder-next",
+  "minimax/minimax-m3",
 ];
 
 /**
