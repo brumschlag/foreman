@@ -137,6 +137,7 @@ const VALID_MODELS: readonly ModelSelection[] = [
   "openai/gpt-5.2-chat-latest",
   "openrouter/qwen/qwen3-coder-next",
   "minimax/minimax-m3",
+  "z-ai/glm-5.2",
 ];
 
 /**
