@@ -64,10 +64,15 @@ echo "[entrypoint] PostgreSQL ready."
 # ── Export API keys ───────────────────────────────────────────────────────────
 export OPENROUTER_API_KEY
 export DATABASE_URL="postgresql://postgres:***@localhost:5432/foreman"
-# Ensure pi-sdk finds the auth.json regardless of how subprocesses resolve HOME
-export PI_CODING_AGENT_DIR="${HOME}/.pi/agent"
 # Set default model for all pipeline phases
 export FOREMAN_DEFAULT_MODEL="${MODEL:-openrouter/qwen/qwen3-coder-next}"
+# Set up pi-sdk: copy auth from read-only mount to writable location
+PI_AGENT_DIR="${HOME}/.pi-agent"
+mkdir -p "${PI_AGENT_DIR}/sessions"
+if [[ -f "${HOME}/.pi/agent/auth.json" ]]; then
+  cp "${HOME}/.pi/agent/auth.json" "${PI_AGENT_DIR}/auth.json"
+fi
+export PI_CODING_AGENT_DIR="${PI_AGENT_DIR}"
 
 # ── Install bundled workflows ─────────────────────────────────────────────────
 FOREMAN_WORKFLOWS_DIR="${HOME}/.foreman/workflows"
@@ -98,11 +103,11 @@ CMD_ARGS=(run task "${TASK_ID}" "${WORKFLOW}" --project-path /repo --no-watch --
 
 echo "[entrypoint] Spawning worker: foreman ${CMD_ARGS[*]}"
 cd /repo
-foreman "${CMD_ARGS[@]}" || {
-  echo "[entrypoint] ERROR: foreman run task exited non-zero" >&2
-  exit 1
-}
+foreman "${CMD_ARGS[@]}" &
+FOREMAN_PID=$!
 cd /
+# Give the worker time to actually spawn, then we poll independently
+sleep 5
 
 # ── Poll for completion ───────────────────────────────────────────────────────
 echo "[entrypoint] Polling for pipeline completion (max 60 min)..."
@@ -148,7 +153,7 @@ for i in $(seq 1 "${MAX_POLLS}"); do
   esac
 done
 
-if [[ "${STATUS}" != "completed" && "${STATUS}" != "merged" ]]; then
+if [[ "${STATUS}" != "completed" && "${STATUS}" != "merged" && ( -z "${PATCH_FILE}" || ! -f "${PATCH_FILE}" ) ]]; then
   echo "[entrypoint] ERROR: Pipeline timed out" >&2
   exit 1
 fi
