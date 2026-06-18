@@ -276,8 +276,9 @@ export async function runCodeRabbitCliReview(args: {
         stderr = typeof (error as { stderr?: unknown }).stderr === "string" ? (error as { stderr: string }).stderr : "";
         const text = [rawOutput, stderr, error instanceof Error ? error.message : String(error)].filter(Boolean).join("\n");
         eventError = error instanceof Error ? error.message : String(error);
-        status = isAuthenticationIssue(text) ? "skipped" : "failed";
-        if (status === "skipped" || !isRateLimitText(text) || attempt >= maxRateLimitRetries) break;
+        const rateLimited = isRateLimitText(text);
+        status = isAuthenticationIssue(text) || (rateLimited && attempt >= maxRateLimitRetries) ? "skipped" : "failed";
+        if (status === "skipped" || !rateLimited || attempt >= maxRateLimitRetries) break;
         const delayMs = rateLimitRetryDelaysMs[Math.min(attempt, rateLimitRetryDelaysMs.length - 1)] ?? 30_000;
         args.log(`[CLI-REVIEW] CodeRabbit rate limited; retrying in ${Math.round(delayMs / 1000)}s (retry ${attempt + 1}/${maxRateLimitRetries})`);
         await sleep(delayMs);
