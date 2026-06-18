@@ -138,6 +138,7 @@ const VALID_MODELS: readonly ModelSelection[] = [
   "openrouter/qwen/qwen3-coder-next",
   "minimax/minimax-m3",
   "z-ai/glm-5.2",
+  "openrouter/z-ai/glm-5.2",
 ];
 
 /**
