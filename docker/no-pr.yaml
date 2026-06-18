@@ -65,7 +65,7 @@ phases:
   - name: reviewer
     prompt: reviewer.md
     tools:
-      allowed: [Glob, Grep, Read, Write]
+      allowed: [Bash, Glob, Grep, Read, Write]
     models:
       default: openrouter/qwen/qwen3-coder-next
     maxTurns: 50
