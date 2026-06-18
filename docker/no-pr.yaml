@@ -1,0 +1,84 @@
+# no-pr workflow: Explorer → Developer ⇄ QA → Reviewer → Validate → Export-Patch
+#
+# A pipeline variant that ends with a patch export instead of a PR.
+# No GitHub CLI, no pull request, no merge — just a CHANGES.patch artifact
+# written to {task.projectReportsDir}/CHANGES.patch.
+#
+# Intended for use in the foreman-pipeline container where the goal is to
+# produce a patch file that the caller can inspect and apply manually.
+#
+# The bash phases run with cwd=worktree so plain git commands work as-is.
+#
+# Usage (container):
+#   docker run --rm \
+#     -v /path/to/repo:/repo \
+#     -v /path/to/output:/output \
+#     -e TASK_TITLE="..." \
+#     -e OPENROUTER_API_KEY="sk-..." \
+#     foreman-pipeline
+#
+name: no-pr
+onError: stop
+
+phases:
+  - name: explorer
+    prompt: explorer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: openrouter/anthropic/claude-sonnet-4-5
+    maxTurns: 30
+    artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
+    skipIfArtifact: EXPLORER_REPORT.md
+
+  - name: developer
+    prompt: developer.md
+    tools:
+      allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
+    models:
+      default: openrouter/anthropic/claude-sonnet-4-5
+    maxTurns: 80
+    artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
+    files:
+      reserve: true
+      leaseSecs: 600
+
+  - name: qa
+    prompt: qa.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
+    models:
+      default: openrouter/anthropic/claude-sonnet-4-5
+    maxTurns: 60
+    artifact: "{task.projectReportsDir}/QA_REPORT.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 2
+
+  - name: reviewer
+    prompt: reviewer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: openrouter/anthropic/claude-sonnet-4-5
+    maxTurns: 50
+    artifact: "{task.projectReportsDir}/REVIEW.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 1
+
+  - name: validate
+    bash: git diff --stat HEAD
+    artifact: "{task.projectReportsDir}/VALIDATE_REPORT.md"
+
+  - name: export-patch
+    bash: git diff HEAD > "{task.projectReportsDir}/CHANGES.patch"
+    artifact: "{task.projectReportsDir}/CHANGES.patch"
+
+onFailure:
+  name: troubleshooter
+  prompt: troubleshooter.md
+  models:
+    default: openrouter/anthropic/claude-sonnet-4-5
+  maxTurns: 20
+  artifact: "{task.projectReportsDir}/TROUBLESHOOT_REPORT.md"
