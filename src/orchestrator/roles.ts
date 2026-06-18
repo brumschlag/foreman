@@ -139,6 +139,7 @@ const VALID_MODELS: readonly ModelSelection[] = [
   "minimax/minimax-m3",
   "z-ai/glm-5.2",
   "openrouter/z-ai/glm-5.2",
+  "openrouter/minimax/minimax-m3",
 ];
 
 /**
