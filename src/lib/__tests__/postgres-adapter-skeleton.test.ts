@@ -388,6 +388,26 @@ describe("PostgresAdapter task operations", () => {
     }
   });
 
+  it("listDispatchableReadyTasks excludes milestone-typed tasks (TRD-2026-016 / TRD-001)", async () => {
+    let capturedSql = "";
+    const mockPool = makeCapturePool((text, _params) => {
+      capturedSql = text;
+      return { rows: [], rowCount: 0 };
+    });
+    await initPool({ poolOverride: mockPool as PoolLike });
+    try {
+      const adapter = new PostgresAdapter();
+      await adapter.listDispatchableReadyTasks(PROJECT_ID);
+      // The query must filter out milestone-typed tasks so they never enter
+      // standard dispatch. The check uses IS DISTINCT FROM so that NULL types
+      // are still returned.
+      expect(capturedSql).toMatch(/t\.type\s+IS\s+DISTINCT\s+FROM\s+'milestone'/i);
+      expect(capturedSql).toMatch(/t\.status\s*=\s*'ready'/);
+    } finally {
+      await destroyPool();
+    }
+  });
+
   it("listNeedsHumanTasks returns backlog/conflict/failed/stuck/blocked", async () => {
     const mockPool = makeMockPool([
       { sqlPattern: /SELECT\s+\*\s+FROM\s+tasks\s+WHERE\s+project_id\s+=\s+\$1\s+AND\s+status\s+IN/, rows: [TASK_ROW] },

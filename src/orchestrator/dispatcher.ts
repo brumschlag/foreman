@@ -623,6 +623,27 @@ export class Dispatcher {
         // (developer → qa → finalize) run as a single worktree.
       }
 
+      // ── Milestone tasks: route to milestone pipeline (TRD-2026-016 / TRD-001) ─
+      // Milestones are normally excluded upstream by
+      // listDispatchableReadyTasks, but we keep this guard as defense-in-depth
+      // so any milestone that reaches the dispatch loop (e.g. via overrides or
+      // alternative ready-task sources) is routed to spawnMilestonePipeline()
+      // rather than the standard agent dispatch.
+      if (seed.type === "milestone") {
+        log(`[dispatch] Milestone ${seed.id} — routing to milestone pipeline`);
+        try {
+          await this.spawnMilestonePipeline(seed);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          skipped.push({
+            seedId: seed.id,
+            title: seed.title,
+            reason: `Milestone pipeline routing failed: ${msg}`,
+          });
+        }
+        continue;
+      }
+
       // Skip seeds that are in cooldown state after a retryable failure.
       // Cooldown is checked BEFORE stuck backoff because a task in cooldown
       // should not be subject to stuck backoff — it has a specific wait period
@@ -1382,6 +1403,25 @@ export class Dispatcher {
       `  git push -u origin foreman/${seedId}`,
       `NOTE: Do NOT close the bead manually — it will be closed automatically after the branch merges to main.`,
     ].join("\n");
+  }
+
+  /**
+   * Route a milestone task to the milestone quality-gate pipeline.
+   *
+   * TRD-2026-016 / TRD-001: milestones are excluded from the standard
+   * dispatch path (see `listDispatchableReadyTasks`). When the dispatcher
+   * does encounter a milestone seed, it is handed off to this method instead
+   * of `spawnAgent()`.
+   *
+   * This implementation is intentionally a stub: it logs the routing event
+   * and returns without spawning a worker. The full milestone pipeline
+   * (acceptance-check → mutation-test → quality-gate-final →
+   * milestone-summary) is implemented by subsequent TRDs in this epic
+   * (notably TRD-004 — `milestone.yaml` workflow — and the milestone
+   * completion watcher in TRD-002).
+   */
+  async spawnMilestonePipeline(seed: Issue): Promise<void> {
+    log(`[dispatch] spawnMilestonePipeline: milestone ${seed.id} (${seed.title}) — pipeline not yet implemented (see TRD-2026-016)`);
   }
 
   /**

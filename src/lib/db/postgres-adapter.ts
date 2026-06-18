@@ -1022,11 +1022,15 @@ export class PostgresAdapter {
    * than raw status filtering so dependency-blocked ready tasks are not claimed.
    */
   async listDispatchableReadyTasks(projectId: string, limit = 1000): Promise<TaskRow[]> {
+    // TRD-2026-016 / TRD-001: milestone tasks are routed through the dedicated
+    // milestone pipeline (see Dispatcher.spawnMilestonePipeline) and must not
+    // appear in standard dispatch results.
     return query<TaskRow>(
       `SELECT t.*
        FROM tasks t
        WHERE t.project_id = $1
          AND t.status = 'ready'
+         AND t.type IS DISTINCT FROM 'milestone'
          AND NOT EXISTS (
            SELECT 1
            FROM task_dependencies td
