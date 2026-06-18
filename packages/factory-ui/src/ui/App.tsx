@@ -136,7 +136,7 @@ export function App() {
       {/* Footer */}
       <footer className="border-t border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2">
         <div className="flex justify-between text-[#4b5563] text-xs">
-          <span>⬡ Foreman Dark Factory</span>
+          <span>⬡ Monarch</span>
           <span>2026 — Charlie / brumschlag/foreman</span>
         </div>
       </footer>
