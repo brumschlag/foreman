@@ -19,6 +19,13 @@
 #
 name: no-pr
 onError: stop
+setup:
+  - command: npm install --prefer-offline --no-audit
+    description: Install Node.js dependencies
+    failFatal: true
+setupCache:
+  key: package-lock.json
+  path: node_modules
 
 phases:
   - name: explorer
@@ -26,7 +33,7 @@ phases:
     tools:
       allowed: [Glob, Grep, Read, Write]
     models:
-      default: openrouter/anthropic/claude-sonnet-4-5
+      default: openrouter/qwen/qwen3-coder-next
     maxTurns: 30
     artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
     skipIfArtifact: EXPLORER_REPORT.md
@@ -36,7 +43,7 @@ phases:
     tools:
       allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
     models:
-      default: openrouter/anthropic/claude-sonnet-4-5
+      default: openrouter/qwen/qwen3-coder-next
     maxTurns: 80
     artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
     files:
@@ -48,7 +55,7 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
     models:
-      default: openrouter/anthropic/claude-sonnet-4-5
+      default: openrouter/qwen/qwen3-coder-next
     maxTurns: 60
     artifact: "{task.projectReportsDir}/QA_REPORT.md"
     verdict: true
@@ -60,7 +67,7 @@ phases:
     tools:
       allowed: [Glob, Grep, Read, Write]
     models:
-      default: openrouter/anthropic/claude-sonnet-4-5
+      default: openrouter/qwen/qwen3-coder-next
     maxTurns: 50
     artifact: "{task.projectReportsDir}/REVIEW.md"
     verdict: true
@@ -79,6 +86,6 @@ onFailure:
   name: troubleshooter
   prompt: troubleshooter.md
   models:
-    default: openrouter/anthropic/claude-sonnet-4-5
+    default: openrouter/qwen/qwen3-coder-next
   maxTurns: 20
   artifact: "{task.projectReportsDir}/TROUBLESHOOT_REPORT.md"

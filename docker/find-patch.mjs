@@ -1,66 +1,55 @@
 #!/usr/bin/env node
 /**
- * find-patch.mjs — Locate the CHANGES.patch file for the most recent run
- * of a given task, using the Foreman report path conventions.
+ * find-patch.mjs — Locate CHANGES.patch for a task via PostgreSQL.
  *
  * Usage:
  *   node find-patch.mjs <project-path> <task-id>
  *
  * Stdout: absolute path to CHANGES.patch, or empty string if not found.
- * Exit 0 always.
  */
 
-import { ForemanStore } from '/app/dist/lib/store.js';
-import { getRunReportsDir } from '/app/dist/lib/report-paths.js';
-import { existsSync } from 'node:fs';
+import pg from 'pg';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 const [,, projectPath, taskId] = process.argv;
 
-if (!projectPath || !taskId) {
+if (!taskId) {
   process.stdout.write('\n');
   process.exit(0);
 }
 
+const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres@localhost:5432/foreman';
+const client = new pg.Client({ connectionString: dbUrl });
+
 try {
-  const store = ForemanStore.forProject(projectPath);
-  const project = store.getProjectByPath(projectPath);
+  await client.connect();
 
-  if (!project) {
-    process.stdout.write('\n');
-    store.close();
-    process.exit(0);
-  }
+  // Get the project ID and most recent run ID
+  const projResult = await client.query(
+    `SELECT id FROM projects WHERE path = $1 LIMIT 1`,
+    [projectPath]
+  );
+  const runResult = await client.query(
+    `SELECT id, project_id FROM runs WHERE bead_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [taskId]
+  );
 
-  const runs = store.getRunsForSeed(taskId, project.id);
-  store.close();
+  await client.end();
 
-  if (!runs || runs.length === 0) {
-    process.stdout.write('\n');
-    process.exit(0);
-  }
-
-  // Sort by start time descending — most recent run first.
-  const sorted = [...runs].sort((a, b) => {
-    const ta = new Date(a.started_at ?? a.created_at ?? 0).getTime();
-    const tb = new Date(b.started_at ?? b.created_at ?? 0).getTime();
-    return tb - ta;
-  });
-
-  for (const run of sorted) {
-    const reportsDir = getRunReportsDir(project.id, taskId, run.id);
-    const patchPath = join(reportsDir, 'CHANGES.patch');
+  if (runResult.rows.length > 0) {
+    const { id: runId, project_id: projectId } = runResult.rows[0];
+    const patchPath = join(homedir(), '.foreman', 'reports', projectId, taskId, runId, 'CHANGES.patch');
     if (existsSync(patchPath)) {
       process.stdout.write(patchPath + '\n');
       process.exit(0);
     }
   }
 
-  // Not found in any run directory
   process.stdout.write('\n');
-  process.exit(0);
 } catch (err) {
-  process.stderr.write(`[find-patch] Error: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`[find-patch] Error: ${err.message}\n`);
+  try { await client.end(); } catch {}
   process.stdout.write('\n');
-  process.exit(0);
 }

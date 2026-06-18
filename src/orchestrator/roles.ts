@@ -134,7 +134,8 @@ const VALID_MODELS: readonly ModelSelection[] = [
   "anthropic/claude-haiku-4-5",
   "minimax/MiniMax-M2.7",
   "minimax/MiniMax-M2.7-highspeed",
-  "openai/gpt-5.2-chat-latest"
+  "openai/gpt-5.2-chat-latest",
+  "openrouter/qwen/qwen3-coder-next",
 ];
 
 /**

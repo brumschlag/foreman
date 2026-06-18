@@ -14,10 +14,6 @@
 # Volume mounts (required):
 #   /repo    — The repository to work on (mounted read-write)
 #   /output  — Where CHANGES.patch will be written on success
-#
-# Exit codes:
-#   0  — Pipeline completed; CHANGES.patch written to /output
-#   1  — Pipeline failed or required variable missing
 
 set -euo pipefail
 
@@ -41,7 +37,7 @@ echo "[entrypoint]   Task:     ${TASK_TITLE}"
 echo "[entrypoint]   Workflow: ${WORKFLOW}"
 echo "[entrypoint]   Branch:   ${BASE_BRANCH}"
 
-# ── Verify /repo is a git repository ────────────────────────────────────────
+# ── Verify mounts ────────────────────────────────────────────────────────────
 if [[ ! -d /repo/.git ]]; then
   echo "[entrypoint] ERROR: /repo does not appear to be a git repository (.git missing)" >&2
   exit 1
@@ -51,106 +47,123 @@ if [[ ! -d /output ]]; then
   exit 1
 fi
 
-# ── Export API key for the model provider ───────────────────────────────────
-export OPENROUTER_API_KEY
+# ── Start PostgreSQL ─────────────────────────────────────────────────────────
+echo "[entrypoint] Starting PostgreSQL..."
+PG_BIN=$(find /usr/lib/postgresql -name "pg_ctl" 2>/dev/null | head -1)
+PG_DATA="/var/lib/postgresql/data"
 
-# ── Install bundled workflows into ~/.foreman/workflows/ ────────────────────
-# The no-pr workflow is bundled in the image at /app/docker/no-pr.yaml.
-# Copy it to the search path so `foreman run task` can resolve it by name.
+gosu postgres "$PG_BIN" start -D "$PG_DATA" -l /tmp/postgres.log -w -t 30 || {
+  echo "[entrypoint] ERROR: PostgreSQL failed to start" >&2
+  cat /tmp/postgres.log >&2
+  exit 1
+}
+
+gosu postgres createdb foreman 2>/dev/null || true
+echo "[entrypoint] PostgreSQL ready."
+
+# ── Export API keys ───────────────────────────────────────────────────────────
+export OPENROUTER_API_KEY
+export DATABASE_URL="postgresql://postgres:***@localhost:5432/foreman"
+# Ensure pi-sdk finds the auth.json regardless of how subprocesses resolve HOME
+export PI_CODING_AGENT_DIR="${HOME}/.pi/agent"
+# Set default model for all pipeline phases
+export FOREMAN_DEFAULT_MODEL="${MODEL:-openrouter/qwen/qwen3-coder-next}"
+
+# ── Install bundled workflows ─────────────────────────────────────────────────
 FOREMAN_WORKFLOWS_DIR="${HOME}/.foreman/workflows"
 mkdir -p "${FOREMAN_WORKFLOWS_DIR}"
-if [[ ! -f "${FOREMAN_WORKFLOWS_DIR}/no-pr.yaml" ]]; then
-  cp /app/docker/no-pr.yaml "${FOREMAN_WORKFLOWS_DIR}/no-pr.yaml"
-  echo "[entrypoint] Installed no-pr workflow to ${FOREMAN_WORKFLOWS_DIR}/"
-fi
-
-# Also install the bundled default workflows (explorer.md prompts etc rely on
-# these being present even if we don't run them directly).
+cp /app/docker/no-pr.yaml "${FOREMAN_WORKFLOWS_DIR}/no-pr.yaml"
 node /app/docker/install-workflows.mjs 2>&1 || true
 
-# ── Create task in local SQLite store ───────────────────────────────────────
-echo "[entrypoint] Creating task in local store..."
+# ── Run DB migrations ─────────────────────────────────────────────────────────
+echo "[entrypoint] Running database migrations..."
+cd /app
+node scripts/run-pg-migrate.mjs -m dist/lib/db/migrations/ up 2>&1 || {
+  echo "[entrypoint] ERROR: migrations failed" >&2
+  exit 1
+}
+cd /
+
+# ── Init foreman schema and project ───────────────────────────────────────────
+echo "[entrypoint] Setting up Foreman schema and project..."
 TASK_ID=$(node /app/docker/bootstrap.mjs /repo "${TASK_TITLE}" "${TASK_DESCRIPTION}")
 if [[ -z "${TASK_ID}" ]]; then
-  echo "[entrypoint] ERROR: bootstrap.mjs returned an empty task ID" >&2
+  echo "[entrypoint] ERROR: bootstrap failed to produce a task ID" >&2
   exit 1
 fi
 echo "[entrypoint] Task ID: ${TASK_ID}"
 
-# ── Build the run-task command ───────────────────────────────────────────────
-CMD_ARGS=(
-  run task
-  "${TASK_ID}"
-  "${WORKFLOW}"
-  --project-path /repo
-  --no-watch
-  --target-branch "${BASE_BRANCH}"
-)
-if [[ -n "${MODEL}" ]]; then
-  CMD_ARGS+=(--model "${MODEL}")
-fi
+# ── Run the pipeline ──────────────────────────────────────────────────────────
+CMD_ARGS=(run task "${TASK_ID}" "${WORKFLOW}" --project-path /repo --no-watch --target-branch "${BASE_BRANCH}")
 
 echo "[entrypoint] Spawning worker: foreman ${CMD_ARGS[*]}"
+cd /repo
 foreman "${CMD_ARGS[@]}" || {
-  echo "[entrypoint] ERROR: foreman run task exited with non-zero status" >&2
+  echo "[entrypoint] ERROR: foreman run task exited non-zero" >&2
   exit 1
 }
+cd /
 
-# ── Poll for pipeline completion ─────────────────────────────────────────────
-# The worker is a detached child process; foreman run task --no-watch exits
-# immediately after spawning it.  We poll the local SQLite store for the run
-# status until it reaches a terminal state.
+# ── Poll for completion ───────────────────────────────────────────────────────
 echo "[entrypoint] Polling for pipeline completion (max 60 min)..."
 POLL_INTERVAL=15
-MAX_POLLS=240  # 240 × 15s = 60 min
+MAX_POLLS=240
+STATUS="unknown"
 
 for i in $(seq 1 "${MAX_POLLS}"); do
   STATUS=$(node /app/docker/poll-run.mjs /repo "${TASK_ID}" 2>/dev/null || echo "unknown")
-  echo "[entrypoint] [${i}/${MAX_POLLS}] run status: ${STATUS}"
+
+  # Also check if CHANGES.patch exists — command phases don't update run status
+  PATCH_FILE=$(find "${HOME}/.foreman/reports" -name "CHANGES.patch" -newer /proc/1 2>/dev/null | head -1 || true)
+
+  echo "[entrypoint] [${i}/${MAX_POLLS}] status: ${STATUS}${PATCH_FILE:+ (patch found)}"
+
+  if [[ -n "${PATCH_FILE}" && -f "${PATCH_FILE}" ]]; then
+    echo "[entrypoint] Patch file found — pipeline complete."
+    break
+  fi
 
   case "${STATUS}" in
     completed|merged)
-      echo "[entrypoint] Pipeline completed successfully."
+      echo "[entrypoint] Pipeline completed."
       break
       ;;
     failed|stuck|conflict|test-failed)
+      # Check once more for patch — command phases can fail status but still produce output
+      PATCH_FILE=$(find "${HOME}/.foreman/reports" -name "CHANGES.patch" 2>/dev/null | head -1 || true)
+      if [[ -n "${PATCH_FILE}" && -f "${PATCH_FILE}" ]]; then
+        echo "[entrypoint] Patch file found despite failure status — proceeding."
+        break
+      fi
       echo "[entrypoint] ERROR: Pipeline ended with status '${STATUS}'" >&2
-      # Print the last few lines of the run log if available
-      LOG_DIR="${HOME}/.foreman/logs"
-      LAST_LOG=$(ls -t "${LOG_DIR}"/*.err 2>/dev/null | head -1 || true)
+      LAST_LOG=$(ls -t "${HOME}/.foreman/logs"/*.err 2>/dev/null | head -1 || true)
       if [[ -n "${LAST_LOG}" ]]; then
-        echo "[entrypoint] Last 30 lines of ${LAST_LOG}:" >&2
         tail -30 "${LAST_LOG}" >&2
       fi
       exit 1
       ;;
     *)
-      # Still running / pending / unknown — keep polling
       sleep "${POLL_INTERVAL}"
       ;;
   esac
 done
 
-# If we exhausted the poll loop without breaking, the run timed out.
 if [[ "${STATUS}" != "completed" && "${STATUS}" != "merged" ]]; then
-  echo "[entrypoint] ERROR: Pipeline timed out after $((MAX_POLLS * POLL_INTERVAL)) seconds" >&2
+  echo "[entrypoint] ERROR: Pipeline timed out" >&2
   exit 1
 fi
 
-# ── Locate CHANGES.patch and copy to /output ─────────────────────────────────
+# ── Copy patch to /output ─────────────────────────────────────────────────────
 echo "[entrypoint] Locating CHANGES.patch..."
-PATCH_FILE=$(node /app/docker/find-patch.mjs /repo "${TASK_ID}" 2>/dev/null || echo "")
+PATCH_FILE=$(node /app/docker/find-patch.mjs /repo "${TASK_ID}" 2>/dev/null || true)
 
 if [[ -z "${PATCH_FILE}" || ! -f "${PATCH_FILE}" ]]; then
-  # Fallback: search the reports directory tree directly
-  PATCH_FILE=$(find "${HOME}/.foreman/reports" -name "CHANGES.patch" -newer /proc/1 2>/dev/null | head -1 || true)
+  PATCH_FILE=$(find "${HOME}/.foreman/reports" -name "CHANGES.patch" 2>/dev/null | head -1 || true)
 fi
 
 if [[ -z "${PATCH_FILE}" || ! -f "${PATCH_FILE}" ]]; then
-  echo "[entrypoint] WARNING: CHANGES.patch not found — the pipeline may have produced no changes" >&2
-  # Write an empty patch so /output always has a file
+  echo "[entrypoint] WARNING: CHANGES.patch not found" >&2
   touch /output/CHANGES.patch
-  echo "[entrypoint] Wrote empty /output/CHANGES.patch"
   exit 0
 fi
 
