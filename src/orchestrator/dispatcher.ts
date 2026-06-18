@@ -623,6 +623,20 @@ export class Dispatcher {
         // (developer → qa → finalize) run as a single worktree.
       }
 
+      // ── Milestone beads: route to milestone pipeline ──────────────────────
+      // Milestone tasks are first-class task types that group epics and run
+      // acceptance + mutation + quality-gate phases. They must NOT run the
+      // standard single-agent pipeline. See TRD-2026-016 / TRD-001.
+      // The actual `milestone.yaml` workflow is delivered in TRD-004; for now
+      // `spawnMilestonePipeline()` is a routing stub.
+      if (seed.type === "milestone") {
+        log(`[dispatch] Milestone ${seed.id} — routing to milestone pipeline`);
+        // Fall through to the standard dispatch path; the agent-spawn step
+        // below branches to `spawnMilestonePipeline()` instead of `spawnAgent()`
+        // when it sees the milestone type. The `isMilestone` flag is read in
+        // the spawn branch and is the single source of truth for routing.
+      }
+
       // Skip seeds that are in cooldown state after a retryable failure.
       // Cooldown is checked BEFORE stuck backoff because a task in cooldown
       // should not be subject to stuck backoff — it has a specific wait period
@@ -1041,25 +1055,49 @@ export class Dispatcher {
           }
         }
 
-        const { sessionKey } = await this.spawnAgent(
-          model,
-          worktreePath,
-          seedInfo,
-          run.id,
-          opts?.telemetry,
-          {
-            pipeline: opts?.pipeline,
-            workflowName: resolvedWorkflow,
-          },
-          opts?.notifyUrl,
-          vcsBackend,
-          opts?.runtimeMode,
-          opts?.targetBranch,
-          epicTasksForSeed,
-          epicIdForSeed,
-          projectHooks,
-          attemptNumber,
-        );
+        // TRD-2026-016 / TRD-001: route milestone-typed seeds to the dedicated
+        // milestone pipeline stub. The standard `spawnAgent()` path is for
+        // leaf tasks; milestones drive a different workflow (acceptance-check
+        // → mutation-test → quality-gate-final → milestone-summary) that is
+        // delivered as `milestone.yaml` in TRD-004.
+        const isMilestone = seed.type === "milestone";
+        const { sessionKey } = isMilestone
+          ? await this.spawnMilestonePipeline(
+              model,
+              worktreePath,
+              seedInfo,
+              run.id,
+              opts?.telemetry,
+              {
+                pipeline: opts?.pipeline,
+                workflowName: resolvedWorkflow,
+              },
+              opts?.notifyUrl,
+              vcsBackend,
+              opts?.runtimeMode,
+              opts?.targetBranch,
+              projectHooks,
+              attemptNumber,
+            )
+          : await this.spawnAgent(
+              model,
+              worktreePath,
+              seedInfo,
+              run.id,
+              opts?.telemetry,
+              {
+                pipeline: opts?.pipeline,
+                workflowName: resolvedWorkflow,
+              },
+              opts?.notifyUrl,
+              vcsBackend,
+              opts?.runtimeMode,
+              opts?.targetBranch,
+              epicTasksForSeed,
+              epicIdForSeed,
+              projectHooks,
+              attemptNumber,
+            );
 
         // Update run with session key
         await this.updateRunRecord(run.id, {
@@ -1382,6 +1420,43 @@ export class Dispatcher {
       `  git push -u origin foreman/${seedId}`,
       `NOTE: Do NOT close the bead manually — it will be closed automatically after the branch merges to main.`,
     ].join("\n");
+  }
+
+  /**
+   * Spawn a milestone pipeline as a detached worker process.
+   *
+   * Milestone-typed tasks (TRD-2026-016 / TRD-001) are routed here instead
+   * of `spawnAgent()` so they can execute milestone-specific phases
+   * (acceptance-check → mutation-test → quality-gate-final → milestone-summary)
+   * defined by `workflows/milestone.yaml` (delivered in TRD-004).
+   *
+   * This method is intentionally a routing stub for TRD-001: it does NOT
+   * spawn a worker. It only logs and returns a synthetic session key so the
+   * dispatch loop can record the run and continue. The full milestone
+   * pipeline implementation lands in TRD-004 alongside `milestone.yaml`.
+   */
+  private async spawnMilestonePipeline(
+    _model: ModelSelection,
+    _worktreePath: string,
+    seed: SeedInfo,
+    runId: string,
+    _telemetry?: boolean,
+    _pipelineOpts?: {
+      pipeline?: boolean;
+      workflowName?: string;
+    },
+    _notifyUrl?: string,
+    _vcsBackend?: VcsBackend,
+    _runtimeMode?: RuntimeMode,
+    _targetBranch?: string,
+    _hooks?: import("../lib/project-config.js").ProjectHooksConfig,
+    _attemptNumber = 1,
+  ): Promise<{ sessionKey: string }> {
+    log(`[dispatch] spawnMilestonePipeline stub invoked for ${seed.id} (run=${runId}) — full implementation lands in TRD-004 (milestone.yaml).`);
+    // Return a synthetic session key so the dispatch loop can record the run.
+    // The shape mirrors `buildSdkSessionKey(model, runId, pid)` but with pid=0
+    // to signal that no real worker process was spawned.
+    return { sessionKey: `foreman:sdk:milestone-stub:${runId}:session-stub` };
   }
 
   /**

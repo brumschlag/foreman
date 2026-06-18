@@ -72,6 +72,11 @@ Foreman CLI / Dispatcher
 5. **Documentation** — update required operator/developer docs or explain why no docs changed → `DOCUMENTATION_REPORT.md`
 6. **Finalize** — git add/commit/push, native task merge/close update
 
+**Task-type pipelines:**
+- **`task`/`feature`/`bug`/`chore`**: Full pipeline (explorer → developer → quality-gate → qa → reviewer → finalize)
+- **`epic`**: Planning pipeline with task orchestration (TRD-2026-007)
+- **`milestone`**: Quality gates pipeline (acceptance-check → mutation-test → quality-gate-final → milestone-summary; TRD-2026-016)
+
 Dev ↔ QA retries up to 2x before proceeding to Review. Documentation runs before finalization so fixes/features do not merge without an explicit documentation decision.
 
 ## Dispatch Flow
@@ -918,7 +923,7 @@ foreman/
 │   │   ├── router.ts               # tRPC procedures (projects, tasks, runs, mail)
 │   │   └── webhook-handler.ts      # GitHub webhook receiver
 │   ├── orchestrator/               # Core orchestration engine
-│   │   ├── dispatcher.ts           # Task → agent spawning strategies
+│   │   ├── dispatcher.ts           # Task → agent spawning strategies (includes milestone detection, TRD-2026-016)
 │   │   ├── pi-rpc-spawn-strategy.ts  # Pi RPC spawn (primary)
 │   │   ├── agent-worker.ts         # Claude SDK pipeline (fallback)
 │   │   ├── refinery.ts             # Merge + test + cleanup

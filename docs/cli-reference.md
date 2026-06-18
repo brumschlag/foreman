@@ -554,7 +554,7 @@ foreman task create --from-text "..." --no-llm      # Skip AI parsing (text beco
 |--------|---------|-------------|
 | `--title <text>` | — | Task title (required unless `--from-text` is used) |
 | `--description <text>` | — | Optional task description |
-| `--type <type>` | `task` | Task type: `task`, `bug`, `feature`, `epic`, `chore`, `docs`, `question` |
+| `--type <type>` | `task` | Task type: `task`, `bug`, `feature`, `epic`, `chore`, `docs`, `question`, `milestone` (TRD-2026-016) |
 | `--priority <level>` | `medium` | Priority: `0`–`4` or `critical`/`high`/`medium`/`low`/`backlog` |
 | `--from-text <description>` | — | Create task(s) from a natural-language description (or file path) using an LLM |
 | `--parent <id>` | — | Parent task ID (only with `--from-text`) |
