@@ -16,6 +16,7 @@
 
 import { Command, Option } from "commander";
 import chalk from "chalk";
+import { randomUUID } from "node:crypto";
 
 import { resolveRepoRootProjectPath, listRegisteredProjects } from "./project-task-support.js";
 import type { RegisteredProjectSummary } from "./project-task-support.js";
@@ -333,7 +334,7 @@ export async function runTaskAction(
   }
 
   // ── Create run record ────────────────────────────────────────────────
-  let runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  let runId: string = randomUUID();
   const attemptNumber = 1;
 
   try {
