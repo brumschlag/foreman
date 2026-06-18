@@ -28,15 +28,42 @@ setupCache:
   path: node_modules
 
 phases:
+  - name: restore-explorer-cache
+    bash: >
+      CACHE_KEY=$(git -C /repo rev-parse HEAD 2>/dev/null | head -c 12) &&
+      CACHE_FILE="/repo/.foreman-pipeline-cache/${CACHE_KEY}/EXPLORER_REPORT.md" &&
+      DEST="$PWD/EXPLORER_REPORT.md" &&
+      if [ -f "$CACHE_FILE" ]; then
+        cp "$CACHE_FILE" "$DEST" &&
+        echo "Explorer cache hit ($CACHE_KEY) — skipping Explorer phase";
+      else
+        echo "Explorer cache miss ($CACHE_KEY) — will run Explorer";
+      fi
+    continueOnFail: true
+
   - name: explorer
     prompt: explorer.md
     tools:
       allowed: [Glob, Grep, Read, Write]
     models:
       default: openrouter/qwen/qwen3-coder-next
-    maxTurns: 30
+    maxTurns: 60
     artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
     skipIfArtifact: EXPLORER_REPORT.md
+
+  - name: save-explorer-cache
+    bash: >
+      CACHE_KEY=$(git -C /repo rev-parse HEAD 2>/dev/null | head -c 12) &&
+      CACHE_DIR="/repo/.foreman-pipeline-cache/${CACHE_KEY}" &&
+      SRC="$PWD/EXPLORER_REPORT.md" &&
+      if [ -f "$SRC" ]; then
+        mkdir -p "$CACHE_DIR" &&
+        cp "$SRC" "$CACHE_DIR/EXPLORER_REPORT.md" &&
+        echo "Explorer cache saved ($CACHE_KEY)";
+      else
+        echo "Explorer cache: no EXPLORER_REPORT.md found at $SRC";
+      fi
+    continueOnFail: true
 
   - name: developer
     prompt: developer.md
