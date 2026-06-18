@@ -17,6 +17,7 @@
 import { Command, Option } from "commander";
 import chalk from "chalk";
 import { randomUUID } from "node:crypto";
+import { getDefaultModel } from "../../lib/config.js";
 
 import { resolveRepoRootProjectPath, listRegisteredProjects } from "./project-task-support.js";
 import type { RegisteredProjectSummary } from "./project-task-support.js";
@@ -392,7 +393,7 @@ export async function runTaskAction(
   }
 
   // ── Spawn worker ──────────────────────────────────────────────────────
-  const selectedModel: ModelSelection = (model as ModelSelection) ?? "anthropic/claude-sonnet-4-6";
+  const selectedModel: ModelSelection = (model as ModelSelection) ?? getDefaultModel() as ModelSelection;
   const seedInfo: SeedInfo = issueToSeedInfo(task);
 
   const env = buildWorkerEnv(false, taskId, runId, selectedModel, notifyUrl, vcsBackend);
