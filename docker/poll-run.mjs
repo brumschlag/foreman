@@ -1,57 +1,41 @@
 #!/usr/bin/env node
 /**
- * poll-run.mjs — Query the local SQLite store for the most recent run status
- * for a given task.
+ * poll-run.mjs — Query PostgreSQL for the most recent run status for a task.
  *
  * Usage:
  *   node poll-run.mjs <project-path> <task-id>
  *
- * Stdout: run status string (e.g. "running", "completed", "failed")
- *         or "pending" if no run exists yet.
- * Exit 0 always (errors print "unknown" to stdout).
+ * Stdout: status string (running, completed, failed, etc.) or "unknown"
+ * Exit 0 always (caller handles the status string).
  */
 
-import { ForemanStore } from '/app/dist/lib/store.js';
+import pg from 'pg';
 
 const [,, projectPath, taskId] = process.argv;
 
-if (!projectPath || !taskId) {
+if (!taskId) {
   process.stdout.write('unknown\n');
   process.exit(0);
 }
 
+const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres@localhost:5432/foreman';
+
+const client = new pg.Client({ connectionString: dbUrl });
+
 try {
-  const store = ForemanStore.forProject(projectPath);
-
-  // Get the project record
-  const project = store.getProjectByPath(projectPath);
-  if (!project) {
-    process.stdout.write('pending\n');
-    store.close();
-    process.exit(0);
+  await client.connect();
+  const result = await client.query(
+    `SELECT status FROM runs WHERE bead_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [taskId]
+  );
+  if (result.rows.length > 0) {
+    process.stdout.write(result.rows[0].status + '\n');
+  } else {
+    process.stdout.write('unknown\n');
   }
-
-  // Get all runs for this task and find the most recent one
-  const runs = store.getRunsForSeed(taskId, project.id);
-  store.close();
-
-  if (!runs || runs.length === 0) {
-    process.stdout.write('pending\n');
-    process.exit(0);
-  }
-
-  // Sort by created_at descending to get the most recent run
-  const sorted = [...runs].sort((a, b) => {
-    const ta = new Date(a.started_at ?? a.created_at ?? 0).getTime();
-    const tb = new Date(b.started_at ?? b.created_at ?? 0).getTime();
-    return tb - ta;
-  });
-
-  const latest = sorted[0];
-  process.stdout.write((latest.status ?? 'unknown') + '\n');
-  process.exit(0);
+  await client.end();
 } catch (err) {
-  process.stderr.write(`[poll-run] Error: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`[poll-run] Error: ${err.message}\n`);
   process.stdout.write('unknown\n');
-  process.exit(0);
+  try { await client.end(); } catch {}
 }
