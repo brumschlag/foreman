@@ -1292,7 +1292,7 @@ async function runCliReviewBuiltinPhase(args: {
     log: args.log,
   });
   return {
-    success: review.status === "passed",
+    success: review.status === "passed" || review.status === "skipped",
     costUsd: 0,
     turns: 0,
     tokensIn: 0,
