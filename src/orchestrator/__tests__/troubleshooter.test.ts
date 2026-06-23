@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { ROLE_CONFIGS, buildRoleConfigs } from "../roles.js";
 import { createGetRunStatusTool, createCloseBeadTool, createSendMailTool } from "../pi-sdk-tools.js";
 import { validateWorkflowConfig, loadWorkflowConfig } from "../../lib/workflow-loader.js";
-import { getTroubleshooterBudget } from "../../lib/config.js";
+import { getTroubleshooterBudget, getDefaultModel } from "../../lib/config.js";
 import type { ForemanStore } from "../../lib/store.js";
 import type { NullAgentMailClient } from "../../lib/agent-mail-client.js";
 
@@ -82,7 +82,7 @@ describe("ROLE_CONFIGS: troubleshooter", () => {
   });
 
   it("troubleshooter uses MiniMax model by default", () => {
-    expect(ROLE_CONFIGS.troubleshooter.model).toBe("minimax/MiniMax-M2.7");
+    expect(ROLE_CONFIGS.troubleshooter.model).toBe(getDefaultModel());
   });
 
   it("troubleshooter produces TROUBLESHOOT_REPORT.md", () => {

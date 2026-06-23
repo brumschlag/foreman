@@ -196,10 +196,11 @@ const DEFAULT_MODELS: Readonly<Record<Exclude<AgentRole, "lead" | "worker" | "se
  * variable is absent or empty the hard-coded default is used.
  */
 export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" | "sentinel">, RoleConfig> {
+  const defaultModel = getDefaultModel() as ModelSelection;
   return {
     explorer: {
       role: "explorer",
-      model: resolveModel("FOREMAN_EXPLORER_MODEL", DEFAULT_MODELS.explorer),
+      model: resolveModel("FOREMAN_EXPLORER_MODEL", defaultModel),
       maxBudgetUsd: getExplorerBudget(),
       permissionMode: "acceptEdits",
       reportFile: "EXPLORER_REPORT.md",
@@ -207,7 +208,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     developer: {
       role: "developer",
-      model: resolveModel("FOREMAN_DEVELOPER_MODEL", DEFAULT_MODELS.developer),
+      model: resolveModel("FOREMAN_DEVELOPER_MODEL", defaultModel),
       maxBudgetUsd: getDeveloperBudget(),
       permissionMode: "acceptEdits",
       reportFile: "DEVELOPER_REPORT.md",
@@ -226,7 +227,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     qa: {
       role: "qa",
-      model: resolveModel("FOREMAN_QA_MODEL", DEFAULT_MODELS.qa),
+      model: resolveModel("FOREMAN_QA_MODEL", defaultModel),
       maxBudgetUsd: getQaBudget(),
       permissionMode: "acceptEdits",
       reportFile: "QA_REPORT.md",
@@ -234,7 +235,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     reviewer: {
       role: "reviewer",
-      model: resolveModel("FOREMAN_REVIEWER_MODEL", DEFAULT_MODELS.reviewer),
+      model: resolveModel("FOREMAN_REVIEWER_MODEL", defaultModel),
       maxBudgetUsd: getReviewerBudget(),
       permissionMode: "acceptEdits",
       reportFile: "REVIEW.md",
@@ -242,7 +243,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     finalize: {
       role: "finalize",
-      model: DEFAULT_MODELS.finalize,
+      model: defaultModel,
       maxBudgetUsd: 1.00,
       permissionMode: "acceptEdits",
       reportFile: "FINALIZE_REPORT.md",
@@ -250,7 +251,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     troubleshooter: {
       role: "troubleshooter",
-      model: resolveModel("FOREMAN_TROUBLESHOOTER_MODEL", DEFAULT_MODELS.troubleshooter),
+      model: resolveModel("FOREMAN_TROUBLESHOOTER_MODEL", defaultModel),
       maxBudgetUsd: getTroubleshooterBudget(),
       permissionMode: "acceptEdits",
       reportFile: "TROUBLESHOOT_REPORT.md",
@@ -258,7 +259,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     fix: {
       role: "fix",
-      model: resolveModel("FOREMAN_FIX_MODEL", DEFAULT_MODELS.fix),
+      model: resolveModel("FOREMAN_FIX_MODEL", defaultModel),
       maxBudgetUsd: getDeveloperBudget(),
       permissionMode: "acceptEdits",
       reportFile: "DEVELOPER_REPORT.md",
@@ -269,7 +270,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     test: {
       role: "test",
-      model: resolveModel("FOREMAN_TEST_MODEL", DEFAULT_MODELS.test),
+      model: resolveModel("FOREMAN_TEST_MODEL", defaultModel),
       maxBudgetUsd: getQaBudget(),
       permissionMode: "acceptEdits",
       reportFile: "TEST_RESULTS.md",
@@ -277,7 +278,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     prd: {
       role: "prd",
-      model: DEFAULT_MODELS.prd,
+      model: defaultModel,
       maxBudgetUsd: 5.00,
       permissionMode: "acceptEdits",
       reportFile: "PRD.md",
@@ -288,7 +289,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     trd: {
       role: "trd",
-      model: DEFAULT_MODELS.trd,
+      model: defaultModel,
       maxBudgetUsd: 8.00,
       permissionMode: "acceptEdits",
       reportFile: "TRD.md",
@@ -299,7 +300,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     implement: {
       role: "implement",
-      model: DEFAULT_MODELS.implement,
+      model: defaultModel,
       maxBudgetUsd: 10.00,
       permissionMode: "acceptEdits",
       reportFile: "IMPLEMENT_REPORT.md",
