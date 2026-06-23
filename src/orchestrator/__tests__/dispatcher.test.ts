@@ -19,6 +19,7 @@ vi.mock("../../lib/project-config.js", () => ({
 
 import { Dispatcher, DetachedSpawnStrategy, buildWorkerEnv, purgeOrphanedWorkerConfigs } from "../dispatcher.js";
 import { PLAN_STEP_CONFIG } from "../roles.js";
+import { getDefaultModel } from "../../lib/config.js";
 import type { SeedInfo } from "../types.js";
 import type { ITaskClient, Issue } from "../../lib/task-client.js";
 import type { BvClient, BvTriageResult } from "../../lib/bv.js";
@@ -1266,7 +1267,7 @@ describe("Dispatcher.dispatch — description fetching", () => {
     // Description is fetched via native store
     expect(store.getTaskById).toHaveBeenCalledWith("bd-001");
     // Model is now determined per-phase by workflow YAML; dispatch default is MiniMax
-    expect(result.dispatched[0].model).toBe("minimax/MiniMax-M2.7");
+    expect(result.dispatched[0].model).toBe(getDefaultModel());
   });
 
   it("calls getTaskById for each ready seed to fetch description", async () => {
@@ -1338,7 +1339,7 @@ describe("Dispatcher.dispatch — description fetching", () => {
     const result = await dispatcher.dispatch({ dryRun: true });
     expect(result.dispatched).toHaveLength(1);
     // Without description, title-only task defaults to MiniMax
-    expect(result.dispatched[0].model).toBe("minimax/MiniMax-M2.7");
+    expect(result.dispatched[0].model).toBe(getDefaultModel());
     expect(seedsClient.show).not.toHaveBeenCalled();
   });
 
@@ -1392,7 +1393,7 @@ describe("Dispatcher.dispatch — description fetching", () => {
     const dispatcher = new Dispatcher(seedsClient, store, "/tmp");
     const result = await dispatcher.dispatch({ dryRun: true });
     // null description → no description-based opus upgrade, stays MiniMax
-    expect(result.dispatched[0].model).toBe("minimax/MiniMax-M2.7");
+    expect(result.dispatched[0].model).toBe(getDefaultModel());
     expect(seedsClient.show).not.toHaveBeenCalled();
   });
 });
@@ -1847,7 +1848,7 @@ describe("Dispatcher.dispatch — concurrent dispatch race guard", () => {
 
 describe("PLAN_STEP_CONFIG", () => {
   it("has a valid model", () => {
-    expect(PLAN_STEP_CONFIG.model).toBe("minimax/MiniMax-M2.7");
+    expect(PLAN_STEP_CONFIG.model).toBe(getDefaultModel());
   });
 
   it("has a finite maxBudgetUsd within a reasonable range", () => {
