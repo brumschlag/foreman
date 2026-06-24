@@ -91,43 +91,9 @@ describe("dispatch-planning", () => {
     ];
 
     const lookup = {
-      getTaskById: vi.fn(async (id: string) => {
-        if (id === "story-1") {
-          return {
-            id: "story-1",
-            title: "Story One",
-            type: "story",
-            priority: 2,
-            status: "open",
-            run_id: null,
-            branch: null,
-            external_id: null,
-            labels: [],
-            description: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            approved_at: null,
-            closed_at: null,
-          };
-        }
-        if (id === "story-2") {
-          return {
-            id: "story-2",
-            title: "Story Two",
-            type: "story",
-            priority: 2,
-            status: "open",
-            run_id: null,
-            branch: null,
-            external_id: null,
-            labels: [],
-            description: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            approved_at: null,
-            closed_at: null,
-          };
-        }
+      getTaskById: vi.fn(async (id: string): Promise<NativeTask | null> => {
+        if (id === "story-1") return makeNativeTask("story-1", "story", "Story One");
+        if (id === "story-2") return makeNativeTask("story-2", "story", "Story Two");
         return null;
       }),
     };
@@ -222,43 +188,9 @@ describe("dispatch-planning", () => {
         if (id === "task-mid") return "story-root";
         return null;
       },
-      getTaskById: async (id) => {
-        if (id === "task-mid") {
-          return {
-            id: "task-mid",
-            title: "mid",
-            type: "task",
-            priority: 2,
-            status: "ready",
-            run_id: null,
-            branch: null,
-            external_id: null,
-            labels: [],
-            description: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            approved_at: null,
-            closed_at: null,
-          };
-        }
-        if (id === "story-root") {
-          return {
-            id: "story-root",
-            title: "root story",
-            type: "story",
-            priority: 2,
-            status: "open",
-            run_id: null,
-            branch: null,
-            external_id: null,
-            labels: [],
-            description: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            approved_at: null,
-            closed_at: null,
-          };
-        }
+      getTaskById: async (id): Promise<NativeTask | null> => {
+        if (id === "task-mid") return makeNativeTask("task-mid", "task", "mid");
+        if (id === "story-root") return makeNativeTask("story-root", "story", "root story");
         return null;
       },
     });

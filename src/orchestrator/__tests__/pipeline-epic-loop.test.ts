@@ -53,7 +53,7 @@ function makeEpicPipelineArgs(
       taskPhases: ["developer", "qa"],
       finalPhases: ["finalize"],
       onError: opts?.onError ?? "continue",
-    } as never,
+    } as Record<string, unknown>,
     store: mockStore as never,
     logFile: join(tmpDir, "epic.log"),
     notifyClient: null,
