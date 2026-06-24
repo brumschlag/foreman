@@ -58,6 +58,23 @@ Important phase reports:
 
 Bundled workflows write these reports under the runtime report directory (`~/.foreman/reports/...` via `{task.projectReportsDir}`), not into the repository worktree. See [Workflow YAML Reference](./workflow-yaml-reference.md) for configuration details.
 
+### Epic tasks (multi-task runs)
+
+An **epic** is a parent task whose **child tasks** run sequentially in one shared worktree. Foreman dispatches the epic as a single agent slot, runs `developer → QA` per child (by default), commits after each successful child, and runs finalize (and optional PR/merge phases) once at the end.
+
+Use epic mode when you have many related, dependent tasks and want one integration branch instead of a full pipeline and merge per child.
+
+```bash
+foreman task create --title "TRD-2026-042 widgets" --type epic --priority high
+foreman task dep add <epic-id> <child-id> --type parent-child
+foreman task approve <epic-id>
+foreman run --task <epic-id> --workflow epic
+```
+
+Epics with no actionable children are auto-closed at dispatch. Guardrails (`epicMaxBudgetUsd`, `maxConsecutiveEpicTaskFailures`) halt runaway spend and failure streaks. Completed children can be skipped on resume via git commit messages `Title (task-id)`.
+
+Full operator guide: [Epic Execution Mode](./guides/epic-execution-mode.md).
+
 ### Worktrees
 
 Each dispatched task runs in its own git worktree. This isolates agent edits from your main checkout and from other agents. Avoid manually editing active worktrees unless you are intentionally intervening.
@@ -285,4 +302,5 @@ If no docs need updating, `DOCUMENTATION_REPORT.md` must explain why.
 - Command syntax: [CLI Reference](./cli-reference.md)
 - Workflow config: [Workflow YAML Reference](./workflow-yaml-reference.md)
 - VCS backends: [VCS Configuration Guide](./guides/vcs-configuration.md)
+- Epic multi-task runs: [Epic Execution Mode](./guides/epic-execution-mode.md)
 - Troubleshooting: [Troubleshooting Guide](./troubleshooting.md)

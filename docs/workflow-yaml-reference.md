@@ -13,7 +13,7 @@ Foreman ships with bundled workflows for common task types:
 - **`default`** — Standard pipeline with implementation, validation, PR creation, PR wait/review, and merge gates
 - **`quick`** — Fast variant of `default` without the explorer and reviewer phases (`developer ⇄ qa → finalize → PR gates → merge`). YAML-first replacement for the retired `--skip-explore`/`--skip-review` flags
 - **`task` / `feature` / `bug`** — Type-specific workflows with post-finalize PR phases (`create-pr → pr-wait → prepare-pr-review → pr-review → merge`); PR wait requires a short stable-ready window, and merge re-waits if a late GitHub check appears
-- **`epic`** — Planning + implementation workflow (`prd → trd → implement → developer → qa → finalize`) followed by the same PR wait/review/merge gates
+- **`epic`** — When the epic has child tasks, runs `taskPhases` per child then `finalPhases` once in a shared worktree; when it has no children, runs the full planning pipeline (`prd → trd → implement → … → merge`). See [Epic Execution Mode](./guides/epic-execution-mode.md).
 - **`smoke`** — Lightweight fast-validation pipeline using cheaper models
 
 ## Workflow Selection
@@ -55,6 +55,10 @@ setup: [...]                     # Setup steps (optional)
 setupCache: { key, path }        # Dependency cache (optional)
 vcs: { backend, git, jujutsu }   # VCS backend override (optional)
 phases: [...]                    # Phase sequence (required)
+taskPhases: [...]                # Epic mode: per-child phases (optional)
+finalPhases: [...]               # Epic mode: once-after-loop phases (optional)
+epicMaxBudgetUsd: 50             # Epic mode: cumulative cost ceiling (optional)
+maxConsecutiveEpicTaskFailures: 3  # Epic mode: halt after N consecutive child failures (optional)
 ```
 
 ### `name` (required)
@@ -112,6 +116,51 @@ vcs:
 - Temporarily overriding the project default for a specific workflow (e.g. a migration workflow)
 
 See [VCS Configuration Guide](./guides/vcs-configuration.md) for full details.
+
+---
+
+## Epic mode fields
+
+When a dispatched epic has **child tasks**, the pipeline executor enters **epic mode** if `taskPhases` is set. Each child runs only those phases; `finalPhases` run once after the loop. Without children, the epic runs the full `phases` list as a single-agent pipeline (planning path).
+
+See [Epic Execution Mode](./guides/epic-execution-mode.md) for dispatch, story grouping, resume, and troubleshooting.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `taskPhases` | string[] | — | Phase names from `phases` repeated **for each child task**. When set with non-empty `epicTasks`, enables epic runner mode. |
+| `finalPhases` | string[] | — | Phase names run **once** after all children complete (e.g. `finalize`, `create-pr`, `merge`). |
+| `onError` | `stop` \| `continue` | `stop` | On child failure (after QA retries): halt epic or skip to next child. Circuit breakers can still halt the run. |
+| `epicMaxBudgetUsd` | number | `50` | Cumulative run cost ceiling (USD). Checked after each failed child; halts with `epic-budget-exceeded`. |
+| `maxConsecutiveEpicTaskFailures` | integer | `3` | Halt after this many **consecutive** child failures (`epic-consecutive-failures`). Success resets the streak. |
+| `taskTimeout` | number | workflow default | Per-child timeout in minutes. |
+
+Example (project override `.foreman/workflows/epic.yaml`):
+
+```yaml
+name: epic
+task_type: epic
+onError: continue
+epicMaxBudgetUsd: 75
+maxConsecutiveEpicTaskFailures: 5
+taskPhases:
+  - developer
+  - qa
+finalPhases:
+  - finalize
+  - create-pr
+  - pr-wait
+  - merge
+phases:
+  # ... full phase definitions (prd, trd, developer, qa, finalize, etc.)
+```
+
+Validation rules:
+
+- Every name in `taskPhases` / `finalPhases` must exist in `phases`.
+- `epicMaxBudgetUsd` must be a positive number.
+- `maxConsecutiveEpicTaskFailures` must be a positive integer.
+
+Bundled defaults: `src/defaults/workflows/epic.yaml` (`taskPhases: [developer, qa]`, `finalPhases: [finalize]`).
 
 ---
 

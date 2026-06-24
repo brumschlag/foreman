@@ -163,6 +163,50 @@ This is useful for:
 
 ---
 
+## Epic execution
+
+Epic tasks run multiple child tasks in one worktree with `taskPhases` per child and `finalPhases` once at the end. See [Epic Execution Mode](./guides/epic-execution-mode.md) for the full operator guide.
+
+### Epic auto-closed without running
+
+**Symptoms:** Dispatch log shows `Type 'epic' auto-closed — no children` or `no actionable child tasks`.
+
+**Cause:** The epic has no child tasks linked via `parent-child` dependencies, or children are only non-actionable types (e.g. story containers without task children).
+
+**Fix:**
+
+```bash
+foreman task show <epic-id>
+foreman task dep list <child-id>    # verify parent-child link to epic
+foreman task dep add <epic-id> <child-id> --type parent-child
+```
+
+Ensure child tasks are type `task`, `bug`, or `chore` and are approved to `ready`.
+
+### Epic halted: budget or consecutive failures
+
+**Symptoms:** Run stuck with reason `epic-budget-exceeded` or `epic-consecutive-failures`.
+
+**Diagnosis:**
+
+```bash
+foreman logs <run-id>
+foreman attach <epic-id> --follow
+```
+
+**Fix:**
+
+- **Budget:** Raise `epicMaxBudgetUsd` in `.foreman/workflows/epic.yaml`, or inspect per-task cost in run progress (`epicCostByTask`).
+- **Consecutive failures:** Fix the failing child task from its QA report, then `foreman retry <epic-id> --dispatch`. Resume skips children already committed as `Title (task-id)`.
+
+### Epic resume skipped or re-ran wrong tasks
+
+**Cause:** Resume uses `git log` commit messages ending in `(task-id)`. Rewritten or squashed history breaks detection.
+
+**Fix:** Preserve per-task commit format, or reset the epic worktree and child task statuses for a clean re-run.
+
+---
+
 ## Merge Issues
 
 ### Branch won't merge — "pr-created" status instead of "merged"
