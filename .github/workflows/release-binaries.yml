@@ -165,8 +165,9 @@ jobs:
       # Unix platforms: tar.gz archives; Windows: zip archive.
       - name: Package binaries
         shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           BINARIES_DIR=dist/binaries
           RELEASE_DIR=dist/release-assets
           mkdir -p "$RELEASE_DIR"
@@ -251,8 +252,9 @@ jobs:
 
       # ── Verify all expected assets are present ────────────────────────────────
       - name: Verify release assets
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           echo "Release assets collected:"
           ls -lh dist/release-assets/
 
@@ -283,8 +285,9 @@ jobs:
       # checksums.txt is used by the update-homebrew-tap workflow and by users
       # who want to verify their downloads manually.
       - name: Generate checksums.txt
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           cd dist/release-assets
           sha256sum \
             "foreman-${TAG}-darwin-arm64.tar.gz" \
@@ -356,6 +359,8 @@ jobs:
       # dry-run: list release assets but do not publish to GitHub Releases.
       - name: Dry-run summary
         if: ${{ github.event.inputs.dry_run == 'true' }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           echo "DRY RUN — binaries compiled but release not published."
           echo ""
@@ -363,7 +368,7 @@ jobs:
           ls -lh dist/release-assets/
           echo ""
           echo "Summary:"
-          echo "  Tag: ${{ steps.tag.outputs.tag }}"
+          echo "  Tag: ${TAG}"
           echo "  Assets: $(ls dist/release-assets/ | wc -l) files"
 
       # ── Trigger Homebrew tap update ───────────────────────────────────────────
