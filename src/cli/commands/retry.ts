@@ -14,6 +14,7 @@ import { ForemanStore } from "../../lib/store.js";
 import type { ITaskClient } from "../../lib/task-client.js";
 import { Dispatcher } from "../../orchestrator/dispatcher.js";
 import type { ModelSelection } from "../../orchestrator/types.js";
+import type { Run } from "../../lib/store.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -25,8 +26,8 @@ export interface RetryOpts {
 
 interface RetryStore {
   getProjectByPath(path: string): Promise<{ id: string; path: string } | null>;
-  getRunsForSeed(seedId: string, projectId: string): Promise<import("../../lib/store.js").Run[]>;
-  updateRun(runId: string, updates: Partial<Pick<import("../../lib/store.js").Run, "status" | "completed_at">>): Promise<void>;
+  getRunsForSeed(seedId: string, projectId: string): Promise<Run[]>;
+  updateRun(runId: string, updates: Partial<Pick<Run, "status" | "completed_at">>): Promise<void>;
   logEvent(projectId: string, eventType: "restart", data: Record<string, unknown>, runId?: string): Promise<void>;
 }
 

@@ -18,7 +18,13 @@ import { request as httpRequest } from "node:http";
 import { runPhaseSession } from "./phase-runner.js";
 import { createSendMailTool, createGetRunStatusTool, createCloseBeadTool } from "./pi-sdk-tools.js";
 import { executePipeline } from "./pipeline-executor.js";
-import type { EpicTask, PhaseObservabilityInput, PipelineObservabilityWriter } from "./pipeline-executor.js";
+import type {
+  EpicTask,
+  PhaseObservabilityInput,
+  PipelineObservabilityWriter,
+  PhaseResult as PipelinePhaseResult,
+} from "./pipeline-executor.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { ForemanStore } from "../lib/store.js";
 import type { RunProgress } from "../lib/store.js";
 import { PostgresStore } from "../lib/postgres-store.js";
@@ -935,7 +941,7 @@ function readReport(worktreePath: string, filename: string): string | null {
  */
 async function runTroubleshooterPhase(
   config: WorkerConfig,
-  workflowConfig: import("../lib/workflow-loader.js").WorkflowConfig,
+  workflowConfig: WorkflowConfig,
   store: ForemanStore,
   logFile: string,
   notifyClient: NotificationClient,
@@ -965,7 +971,7 @@ async function runTroubleshooterPhase(
   const roleConfig = ROLE_CONFIGS.troubleshooter;
   const resolvedModel = onFailure.models?.["default"] ?? roleConfig.model;
 
-  const customTools: import("@mariozechner/pi-coding-agent").ToolDefinition[] = [];
+  const customTools: ToolDefinition[] = [];
   if (agentMailClient) {
     customTools.push(createSendMailTool(agentMailClient, `troubleshooter-${beadId}`));
   }
@@ -1110,7 +1116,7 @@ async function runCreatePrBuiltinPhase(args: {
   workflowConfig: WorkflowConfig;
   log: (msg: string) => void;
   agentMailClient: AnyMailClient | null;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const { config, store, runtimeTaskClient, pipelineProjectPath, registeredProjectId, registeredReadStore, vcsBackend, workflowConfig, log, agentMailClient } = args;
 
   // Fallback logic mirrors runPipeline: if registeredReadStore is missing but a database
@@ -1216,7 +1222,7 @@ async function runPrWaitBuiltinPhase(args: {
   phase: WorkflowPhaseConfig;
   pipelineProjectPath: string;
   log: (msg: string) => void;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const prNumber = readPrNumberFromMetadata(args.config.worktreePath, workerReportDir(args.config));
 
   const timeoutMs = (args.phase.timeoutSecs ?? 600) * 1000;
@@ -1268,7 +1274,7 @@ async function runPreparePrReviewBuiltinPhase(args: {
   config: WorkerConfig;
   pipelineProjectPath: string;
   log: (msg: string) => void;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const prNumber = readPrNumberFromMetadata(args.config.worktreePath, workerReportDir(args.config));
   const context = await collectPrReviewContext(args.pipelineProjectPath, prNumber);
   await writePrReviewFindings(args.config.worktreePath, context, workerReportDir(args.config));
@@ -1281,7 +1287,7 @@ async function runCliReviewBuiltinPhase(args: {
   pipelineProjectPath: string;
   vcsBackend?: VcsBackend;
   log: (msg: string) => void;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const baseBranch = args.config.targetBranch
     || await args.vcsBackend?.detectDefaultBranch(args.pipelineProjectPath).catch(() => "main")
     || "main";
@@ -1382,7 +1388,7 @@ async function runMergeBuiltinPhase(args: {
   workflowConfig: WorkflowConfig;
   log: (msg: string) => void;
   agentMailClient: AnyMailClient | null;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const { config, store, pipelineProjectPath, registeredProjectId, registeredReadStore, vcsBackend, workflowConfig, log, agentMailClient } = args;
   const mergeStrategy = workflowConfig.merge ?? "auto";
   const prNumber = (() => {

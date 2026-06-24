@@ -29,6 +29,7 @@ import { basename, dirname, join, resolve as pathResolve } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import type { PostgresAdapter } from "./db/postgres-adapter.js";
+import type { ProjectRow } from "./db/postgres-adapter.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -322,7 +323,7 @@ export class ProjectRegistry {
     this.cache = null;
   }
 
-  private projectRowToRecord(row: import("./db/postgres-adapter.js").ProjectRow): ProjectRecord {
+  private projectRowToRecord(row: ProjectRow): ProjectRecord {
     return {
       id: row.id,
       name: row.name,

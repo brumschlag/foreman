@@ -468,7 +468,7 @@ export class Refinery {
   }
 
 
-  private async finalizeSuccessfulMerge(run: import("../lib/store.js").Run, branchName: string, targetBranch: string): Promise<void> {
+  private async finalizeSuccessfulMerge(run: Run, branchName: string, targetBranch: string): Promise<void> {
     if (run.worktree_path) {
       try {
         await archiveWorktreeReports(this.projectPath, run.worktree_path, run.seed_id);
@@ -698,7 +698,7 @@ export class Refinery {
     const currentHead = await this.vcsBackend
       .resolveRef(this.projectPath, branchName)
       .catch(() => null);
-    const prState: import("../lib/store.js").Run["pr_state"] = opts.draft ?? false ? "draft" : "open";
+    const prState: Run["pr_state"] = opts.draft ?? false ? "draft" : "open";
     await this.persistRunUpdate(run, {
       pr_url: prUrl,
       pr_state: prState,
@@ -902,7 +902,7 @@ export class Refinery {
 
       for (const stackedRun of stackedRuns) {
         // Only rebase active (non-terminal) runs
-        const activeStatuses: import("../lib/store.js").Run["status"][] = ["pending", "running", "completed"];
+        const activeStatuses: Run["status"][] = ["pending", "running", "completed"];
         if (!activeStatuses.includes(stackedRun.status)) continue;
 
         const stackedBranch = `foreman/${stackedRun.seed_id}`;
@@ -945,11 +945,11 @@ export class Refinery {
    * Returns the CreatedPr info, or null if PR creation fails.
    */
   private async createPrForConflict(
-    run: import("../lib/store.js").Run,
+    run: Run,
     branchName: string,
     baseBranch: string,
     conflictNote: string,
-  ): Promise<import("./types.js").CreatedPr | null> {
+  ): Promise<CreatedPr | null> {
     try {
       // Push branch to origin (force-push since rebase may have rewritten history)
       await this.vcsBackend.push(this.projectPath, branchName, { force: true });
@@ -1012,10 +1012,10 @@ export class Refinery {
    * Without a seedId filter we only return "completed" runs to avoid accidentally
    * re-attempting bulk merges of runs that failed for unrelated reasons.
    */
-  async getCompletedRuns(projectId?: string, seedId?: string): Promise<import("../lib/store.js").Run[]> {
+  async getCompletedRuns(projectId?: string, seedId?: string): Promise<Run[]> {
     if (seedId) {
       // For targeted retries, look in completed AND terminal failure states.
-      const retryStatuses: import("../lib/store.js").Run["status"][] = [
+      const retryStatuses: Run["status"][] = [
         "completed",
         "test-failed",
         "conflict",
@@ -1036,7 +1036,7 @@ export class Refinery {
    * Order runs by seed dependency graph so that dependencies merge before dependents.
    * Falls back to insertion order if dependency info is unavailable.
    */
-  async orderByDependencies(runs: import("../lib/store.js").Run[]): Promise<import("../lib/store.js").Run[]> {
+  async orderByDependencies(runs: Run[]): Promise<Run[]> {
     if (runs.length <= 1) return runs;
 
     try {
@@ -1076,7 +1076,7 @@ export class Refinery {
         if (deg === 0) queue.push(id);
       }
 
-      const sorted: import("../lib/store.js").Run[] = [];
+      const sorted: Run[] = [];
       while (queue.length > 0) {
         const id = queue.shift()!;
         const run = runMap.get(id);
@@ -1120,7 +1120,7 @@ export class Refinery {
      * instead of querying for completed runs. This eliminates the race condition
      * where finalize marks a run completed but the query hasn't yet seen the update.
      */
-    overrideRun?: import("../lib/store.js").Run;
+    overrideRun?: Run;
     /**
      * Optional run ID to fetch the run directly by ID.
      * When provided, the run is fetched using store.getRun(runId) which doesn't
@@ -1139,7 +1139,7 @@ export class Refinery {
     // 1. If runId is provided, fetch the run by ID directly (no status filter) - most reliable
     // 2. Else if overrideRun is provided, use it directly
     // 3. Else fall back to querying for completed runs
-    let rawRuns: import("../lib/store.js").Run[];
+    let rawRuns: Run[];
     if (opts?.runId) {
       // Fetch by ID directly - bypasses status check entirely.
       // This is the most reliable path for immediate autoMerge calls because
@@ -1173,7 +1173,7 @@ export class Refinery {
     // Kept separate from testFailures so auto-merge reports reason "unexpected-error"
     // rather than "test-failure" and uses the correct retry path (Fix 3).
     const unexpectedErrors: FailedRun[] = [];
-    const prsCreated: import("./types.js").CreatedPr[] = [];
+    const prsCreated: CreatedPr[] = [];
 
     try {
       for (const run of completedRuns) {

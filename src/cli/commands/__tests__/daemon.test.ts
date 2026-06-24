@@ -13,6 +13,7 @@ import {
   DaemonAlreadyRunningError,
   DaemonNotRunningError,
 } from "../../../lib/daemon-manager.js";
+import type { DaemonStatus } from "../../../lib/daemon-manager.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -136,7 +137,7 @@ describe("status sub-command", () => {
   });
 
   it("DaemonStatus interface covers all required fields (compile-time check)", () => {
-    const s: import("../../../lib/daemon-manager.js").DaemonStatus = {
+    const s: DaemonStatus = {
       running: false,
       pid: null,
       socketPath: "/tmp/socket",

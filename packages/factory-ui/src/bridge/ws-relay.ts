@@ -13,6 +13,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { FactoryWsMessage, BroadcastEvent, RunSummary, TaskRow, ProjectStats, ForemanConfig, ChatTurn } from "./types.js";
 import { TranscriptReader } from "./transcript-reader.js";
+import type { LogLine } from "./log-tailer.js";
 
 export interface WsRelayOptions {
   port: number;
@@ -90,7 +91,7 @@ export class WsRelay {
   }
 
   /** Broadcast a log line — not cached, just fan out to live clients. */
-  broadcastLogLine(line: import("./log-tailer.js").LogLine): void {
+  broadcastLogLine(line: LogLine): void {
     this.broadcast({
       kind: "log_line",
       data: { runId: line.runId, ts: line.ts, level: line.level, message: line.message },
