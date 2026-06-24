@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import chalk from "chalk";
 
-import { BvClient } from "../../lib/bv.js";
+
 import type { ITaskClient, Issue } from "../../lib/task-client.js";
 import { createTaskClient } from "../../lib/task-client-factory.js";
 import { ForemanStore } from "../../lib/store.js";

@@ -7,7 +7,7 @@
  * Target: ~50 lines of agent code achieving 90%+ success rate.
  */
 
-import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { execFile as execFileSync } from "node:child_process";
@@ -19,7 +19,7 @@ import { getForemanHomePath } from "../lib/foreman-paths.js";
 import { ForemanStore, type Run } from "../lib/store.js";
 import { runWithPiSdk, type PiRunResult } from "./pi-sdk-runner.js";
 import { createSendMailTool } from "./pi-sdk-tools.js";
-import { PostgresMailClient } from "../lib/postgres-mail-client.js";
+
 import { NullAgentMailClient, type AgentMailClient } from "../lib/agent-mail-client.js";
 import { createProjectMailClient } from "../lib/project-mail-client.js";
 import {

@@ -10,17 +10,7 @@ import type { AgentRole, ModelSelection } from "./types.js";
 
 /** Permission mode for DCG (Destructive Command Guard). */
 type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
-import {
-  getExplorerBudget,
-  getDeveloperBudget,
-  getQaBudget,
-  getReviewerBudget,
-  getPlanStepBudget,
-  getSentinelBudget,
-  getTroubleshooterBudget,
-  getDefaultModel,
-  getHighspeedModel,
-} from "../lib/config.js";
+import { getExplorerBudget, getDeveloperBudget, getQaBudget, getReviewerBudget, getPlanStepBudget, getSentinelBudget, getTroubleshooterBudget, getDefaultModel } from "../lib/config.js";
 import { loadAndInterpolate } from "./template-loader.js";
 import { loadPrompt, PromptNotFoundError, expandCommandPlaceholders } from "../lib/prompt-loader.js";
 import { PI_PHASE_CONFIGS } from "./pi-rpc-spawn-strategy.js";

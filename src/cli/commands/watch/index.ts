@@ -31,16 +31,7 @@ import chalk from "chalk";
 import { ForemanStore } from "../../../lib/store.js";
 import { loadDashboardConfig } from "../../../lib/project-config.js";
 import { resolveRepoRootProjectPath } from "../project-task-support.js";
-import {
-  type WatchState,
-  initialWatchState,
-  type WatchOptions,
-  pollWatchData,
-  pollInboxData,
-  pollPipelineEvents,
-  handleWatchKey,
-  nextPanel,
-} from "./WatchState.js";
+import { initialWatchState, type WatchOptions, pollWatchData, pollInboxData, pollPipelineEvents, handleWatchKey } from "./WatchState.js";
 import { renderWatch } from "./render.js";
 import { approveTask, retryTask } from "./actions.js";
 import { printDeprecationNotice } from "../cli-output.js";
@@ -366,7 +357,7 @@ export const watchCommand = new Command("watch")
             // Prepend new messages (they come in reverse chronological order)
             const existingMessages = state.inbox?.messages ?? [];
             // Mark all incoming as "new" if they're new since lastSeenId
-            const newEntries = inboxResult.messages.map((entry, i) => ({
+            const newEntries = inboxResult.messages.map((entry, _i) => ({
               ...entry,
               isNew: state.inboxLastSeenId !== null && entry.message.id !== state.inboxLastSeenId,
             }));

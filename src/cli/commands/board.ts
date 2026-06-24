@@ -22,7 +22,7 @@ import chalk from "chalk";
 import { Box, Spacer, Text, renderToString } from "ink";
 import { createElement } from "react";
 import { basename, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -30,12 +30,7 @@ import { join as joinPath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import * as yaml from "js-yaml";
 import { createTrpcClient } from "../../lib/trpc-client.js";
-import {
-  priorityLabel,
-  formatTaskIdDisplay,
-  parsePriority,
-  type TaskRow,
-} from "../../lib/task-store.js";
+import { priorityLabel, formatTaskIdDisplay, type TaskRow } from "../../lib/task-store.js";
 import type { TaskNoteRow } from "../../lib/db/postgres-adapter.js";
 import { listRegisteredProjects, resolveProjectPathFromOptions, requireProjectOrAllInMultiMode } from "./project-task-support.js";
 
@@ -1094,7 +1089,7 @@ export function editTaskInEditor(
 /**
  * Write a status change to the store.
  */
-export function applyStatusChange(projectPath: string, taskId: string, newStatus: string): string | null {
+export function applyStatusChange(_projectPath: string, _taskId: string, _newStatus: string): string | null {
   throw new Error("applyStatusChange is now async; use applyStatusChangeAsync().");
 }
 
@@ -1111,7 +1106,7 @@ export async function applyStatusChangeAsync(projectPath: string, taskId: string
 /**
  * Close a task (status → closed, optionally with a reason stored in closed_at).
  */
-export function closeTask(projectPath: string, taskId: string, reason?: string): string | null {
+export function closeTask(_projectPath: string, _taskId: string, _reason?: string): string | null {
   throw new Error("closeTask is now async; use closeTaskAsync().");
 }
 
@@ -1128,7 +1123,7 @@ export async function closeTaskAsync(projectPath: string, taskId: string, _reaso
 /**
  * Save an edited task back to the store (title, description, priority, status).
  */
-export function saveEditedTask(projectPath: string, originalId: string, updated: BoardTask): string | null {
+export function saveEditedTask(_projectPath: string, _originalId: string, _updated: BoardTask): string | null {
   throw new Error("saveEditedTask is now async; use saveEditedTaskAsync().");
 }
 

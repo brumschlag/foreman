@@ -9,8 +9,8 @@
  * - jira.disableWebhook: Disable webhook
  */
 
-import { z } from "zod";
-import type { Context } from "./router.js";
+
+
 
 // Jira project row type (also exported from postgres-adapter)
 export interface JiraProjectRow {

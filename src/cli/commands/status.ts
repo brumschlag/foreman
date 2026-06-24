@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import chalk from "chalk";
 import { createTrpcClient } from "../../lib/trpc-client.js";
 import { ForemanStore, type StatusReadStore } from "../../lib/store.js";
-import type { Metrics, Run, RunProgress } from "../../lib/store.js";
+import type { Metrics } from "../../lib/store.js";
 import { renderAgentCard, formatSuccessRate, elapsed } from "../watch-ui.js";
 import type { TaskBackend } from "../../lib/feature-flags.js";
 import { fetchTaskCounts } from "../../lib/task-client-factory.js";

@@ -14,12 +14,12 @@ import type { MergeReport, MergedRun, ConflictRun, FailedRun, PrReport, CreatedP
 import { PIPELINE_BUFFERS, PIPELINE_TIMEOUTS } from "../lib/config.js";
 import { ConflictResolver } from "./conflict-resolver.js";
 import { DEFAULT_MERGE_CONFIG } from "./merge-config.js";
-import { enqueueCloseSeed, enqueueResetSeedToOpen, enqueueAddNotesToBead } from "./task-backend-ops.js";
+import { enqueueCloseSeed, enqueueAddNotesToBead } from "./task-backend-ops.js";
 
 import { VcsBackendFactory } from "../lib/vcs/index.js";
 import type { VcsBackend } from "../lib/vcs/index.js";
 import { loadProjectConfig } from "../lib/project-config.js";
-import type { ProjectHooksConfig } from "../lib/project-config.js";
+
 import { runWorkspaceHook } from "../lib/setup.js";
 import { NativeTaskStore } from "../lib/task-store.js";
 import { PostgresAdapter } from "../lib/db/postgres-adapter.js";

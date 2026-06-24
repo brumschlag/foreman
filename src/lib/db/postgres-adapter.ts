@@ -13,13 +13,7 @@
  * @module postgres-adapter
  */
 
-import {
-  PoolManager,
-  query,
-  execute,
-  acquireClient,
-  releaseClient,
-} from "./pool-manager.js";
+import { query, execute, acquireClient, releaseClient } from "./pool-manager.js";
 import type { RunProgress, SentinelConfigRow, SentinelRunRow } from "../store.js";
 import { randomBytes } from "node:crypto";
 import { normalizeTaskIdPrefix } from "../task-store.js";

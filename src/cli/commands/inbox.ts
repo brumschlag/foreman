@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 import { ForemanStore } from "../../lib/store.js";
 import type { Message, Run } from "../../lib/store.js";
 import { createTrpcClient } from "../../lib/trpc-client.js";
-import { VcsBackendFactory } from "../../lib/vcs/index.js";
+
 import { listRegisteredProjects, resolveRepoRootProjectPath, requireProjectOrAllInMultiMode } from "./project-task-support.js";
 
 interface DaemonMailMessage {
@@ -871,7 +871,7 @@ function fetchEventsFromStore(store: ForemanStore, limit: number): PipelineEvent
   return allEvents.slice(0, limit);
 }
 
-function fetchEventsFromStoreForRun(store: ForemanStore, runId: string, limit: number): PipelineEvent[] {
+function fetchEventsFromStoreForRun(store: ForemanStore, runId: string, _limit: number): PipelineEvent[] {
   const rows = store.getRunEvents(runId);
   return rows.map((row) => ({
     id: row.id,

@@ -273,7 +273,7 @@ export async function getPrStatesForTasks(
 
   // Batch git rev-parse
   await Promise.all(
-    branchesToCheck.map(async ({ taskId, branchName }) => {
+    branchesToCheck.map(async ({ branchName }) => {
       const result = await git(["rev-parse", branchName], projectPath);
       gitResults.set(branchName, result.exitCode === 0 ? result.stdout : null);
     })
@@ -281,7 +281,7 @@ export async function getPrStatesForTasks(
 
   // Batch gh pr view
   await Promise.all(
-    branchesToCheck.map(async ({ taskId, branchName }) => {
+    branchesToCheck.map(async ({ branchName }) => {
       const prResult = await gh(
         ["pr", "view", branchName, "--json", "state,number,headRefOid,url", "--jq", "."],
         projectPath,

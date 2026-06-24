@@ -5,7 +5,7 @@ import { ForemanStore } from "../../lib/store.js";
 import { PostgresStore } from "../../lib/postgres-store.js";
 import type { Run } from "../../lib/store.js";
 import { VcsBackendFactory } from "../../lib/vcs/index.js";
-import type { Workspace } from "../../lib/vcs/types.js";
+
 import { archiveWorktreeReports } from "../../lib/archive-reports.js";
 import { resolveProjectContext } from "./project-context.js";
 
