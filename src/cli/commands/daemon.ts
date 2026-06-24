@@ -24,7 +24,6 @@ import {
 
 /** Column widths for status output. */
 const COL_LABEL = 20;
-const COL_VALUE = 50;
 
 function padLabel(str: string): string {
   return str.padEnd(COL_LABEL);

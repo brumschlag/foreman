@@ -317,10 +317,3 @@ export class JiraIssuesPoller {
     return this.pollProject(projectConfig);
   }
 }
-
-// ── Minimal JQL response type ──────────────────────────────────────────────────
-
-interface jiraResponse {
-  issues: JiraIssue[];
-  total: number;
-}

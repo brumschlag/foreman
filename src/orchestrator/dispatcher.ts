@@ -45,20 +45,6 @@ import { RunLifecycleService, type RunOpsOverrides, type MailSendStore } from ".
 import type { ConcurrencyConfig, ProjectHooksConfig } from "../lib/project-config.js";
 import type { WorkflowSetupStep, WorkflowSetupCache } from "../lib/workflow-loader.js";
 
-interface DispatcherDependencyRef {
-  id: string;
-}
-
-interface DispatcherDependentRef {
-  status: string;
-}
-
-interface DispatcherBeadsIssueDetail {
-  children?: string[];
-  dependents?: DispatcherDependentRef[];
-  dependencies?: Array<string | DispatcherDependencyRef>;
-}
-
 interface NativeTaskOps {
   hasNativeTasks(): Promise<boolean>;
   getReadyTasks(): Promise<NativeTask[]>;
@@ -1550,7 +1536,6 @@ export class Dispatcher {
    */
   private async getRecentStuckRuns(seedId: string, projectId: string): Promise<Run[]> {
     const cutoff = new Date(Date.now() - STUCK_RETRY_CONFIG.windowMs).toISOString();
-    const now = Date.now();
     const allRuns = await this.getRunsForSeedRecord(seedId, projectId);
     return allRuns.filter(
       (r) => {
@@ -2011,7 +1996,7 @@ export function resolveWorkerPaths(
 export class DetachedSpawnStrategy implements SpawnStrategy {
   async spawn(config: WorkerConfig): Promise<SpawnResult> {
     const homeDir = config.env.HOME ?? process.env.HOME ?? "/tmp";
-    const { tsxBin, logDir, projectRoot, runnerArgs } = resolveWorkerPaths(homeDir);
+    const { tsxBin, logDir, runnerArgs } = resolveWorkerPaths(homeDir);
 
     // Write config to temp file (worker reads + deletes it)
     const configDir = join(homeDir, ".foreman", "tmp");

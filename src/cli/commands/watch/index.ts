@@ -31,7 +31,7 @@ import chalk from "chalk";
 import { ForemanStore } from "../../../lib/store.js";
 import { loadDashboardConfig } from "../../../lib/project-config.js";
 import { resolveRepoRootProjectPath } from "../project-task-support.js";
-import { initialWatchState, type WatchOptions, pollWatchData, pollInboxData, pollPipelineEvents, handleWatchKey } from "./WatchState.js";
+import { initialWatchState, pollWatchData, pollInboxData, pollPipelineEvents, handleWatchKey } from "./WatchState.js";
 import { renderWatch } from "./render.js";
 import { approveTask, retryTask } from "./actions.js";
 import { printDeprecationNotice } from "../cli-output.js";
@@ -94,32 +94,14 @@ export const watchCommand = new Command("watch")
       ? Math.max(1, parseInt(opts["inbox-limit"], 10) || 5)
       : 5;
 
-    const inboxPollMs = opts["inbox-poll"]
-      ? Math.max(500, parseInt(opts["inbox-poll"], 10) || 2000)
-      : 2000;
-
     const eventsLimit = opts["events-limit"]
       ? Math.max(1, parseInt(opts["events-limit"], 10) || 5)
       : 5;
 
     const noWatch = opts.watch === false;
-    const noBoard = opts.board === false;
     const noInbox = opts.inbox === false;
     const noEvents = opts.events === false;
     const projectId = opts.project;
-
-    // Options object for poll functions
-    const options: WatchOptions = {
-      refreshMs,
-      inboxLimit,
-      inboxPollMs,
-      eventsLimit,
-      noWatch,
-      noBoard,
-      noInbox,
-      noEvents,
-      projectId,
-    };
 
     // Postgres-backed store is only still needed for inbox fallback.
     const store = noInbox ? null : ForemanStore.forProject(projectPath);
@@ -269,12 +251,6 @@ export const watchCommand = new Command("watch")
       }
 
       // ── Live mode ─────────────────────────────────────────────────────
-      // Determine which panels are visible
-      const visiblePanels = {
-        agents: true,
-        board: !noBoard,
-        inbox: !noInbox,
-      };
 
       // Initial poll
       {

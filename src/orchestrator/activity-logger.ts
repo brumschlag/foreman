@@ -515,7 +515,7 @@ export async function writeIncrementalPipelineReport(opts: {
   targetBranch?: string;
   vcsBranchName?: string;
 }): Promise<void> {
-  const { worktreePath, seedId, runId, completedPhases, targetBranch, vcsBranchName } = opts;
+  const { seedId, runId, completedPhases, targetBranch, vcsBranchName } = opts;
   const reportsDir = getForemanHomePath("reports", "runs", runId, seedId);
 
   await mkdir(reportsDir, { recursive: true });

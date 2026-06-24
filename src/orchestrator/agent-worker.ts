@@ -8,9 +8,6 @@
  *
  * Usage: tsx agent-worker.ts <config-file>
  */
-
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -64,7 +61,6 @@ import { runWorkspaceHook } from "../lib/setup.js";
 import { loadProjectConfig, type ProjectHooksConfig } from "../lib/project-config.js";
 import { nativeTaskStatusForPhase } from "./task-phase-status.js";
 
-const execFileAsync = promisify(execFile);
 
 // ── Notification Client ───────────────────────────────────────────────────
 
@@ -553,9 +549,6 @@ async function main(): Promise<void> {
     // Non-fatal — mail is optional infrastructure
   }
 
-  // Build clean env for SDK
-  const env: Record<string, string | undefined> = { ...process.env };
-
   // ── Pipeline mode: run each phase as a separate SDK session ─────────
   if (pipeline) {
     try {
@@ -923,12 +916,6 @@ async function runPhase(
     return { success: false, costUsd: 0, turns: 0, tokensIn: 0, tokensOut: 0, error: reason };
   }
 }
-
-function readReport(worktreePath: string, filename: string): string | null {
-  const p = join(worktreePath, filename);
-  try { return readFileSync(p, "utf-8"); } catch { return null; }
-}
-
 
 /**
  * Run the troubleshooter phase as a separate SDK session.

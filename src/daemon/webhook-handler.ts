@@ -155,10 +155,6 @@ export function createWebhookHandler(
     }
   };
 }
-
-function shouldSkipIssueImport(issue: GitHubIssueWebhookPayload["issue"]): boolean {
-  return issue.labels.some((label) => label.name === "foreman:skip");
-}
 function shouldReadyIssueImport(issue: GitHubIssueWebhookPayload["issue"], config: WebhookConfig): boolean {
   // Use foremanTag if set, otherwise foremanLabel (deprecated), otherwise default to "foreman"
   const effectiveTag = config.foremanTag || config.foremanLabel || "foreman";
@@ -243,7 +239,6 @@ async function handlePush(
 
           // TRD-063: Auto-rebase the worktree onto the updated base branch
           if (vcsBackend) {
-            let rebaseSuccess = false;
             let worktreePath: string | null = null;
             try {
               worktreePath = worktreeManager.getWorktreePath(project.id, run.bead_id);
@@ -252,7 +247,6 @@ async function handlePush(
 
               if (rebaseResult.success) {
                 rebasesSucceeded++;
-                rebaseSuccess = true;
                 request.log.info(
                   { runId: run.id, worktreePath, branch },
                   "[webhook:push] Worktree rebased successfully",

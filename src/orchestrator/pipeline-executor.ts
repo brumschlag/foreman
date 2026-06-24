@@ -276,30 +276,6 @@ function readReport(worktreePath: string, filename: string): string | null {
   try { return readFileSync(p, "utf-8"); } catch { return null; }
 }
 
-function readRelativeFile(worktreePath: string, relativePath?: string): string | null {
-  if (!relativePath) return null;
-  const path = resolveArtifactPath(worktreePath, relativePath);
-  try { return readFileSync(path, "utf-8"); } catch { return null; }
-}
-
-function sendTraceMail(
-  ctx: PipelineContext,
-  client: AnyMailClient | null,
-  phaseName: string,
-  seedId: string,
-  worktreePath: string,
-  result: PhaseResult,
-): void {
-  const traceMarkdown = readRelativeFile(worktreePath, result.traceMarkdownFile);
-  if (!traceMarkdown) return;
-  ctx.sendMailText(
-    client,
-    "foreman",
-    `${phaseName.charAt(0).toUpperCase() + phaseName.slice(1)} Trace`,
-    traceMarkdown,
-  );
-}
-
 /**
  * Detect if an error is a rate limit (429) error.
  * Returns true if the error indicates a rate limit, false otherwise.
@@ -396,21 +372,6 @@ interface PhaseSequenceResult {
   retriesExhausted?: boolean;
   /** Set when a retryable failure was handled via cooldown retry (task in cooldown state). */
   cooldownUntil?: string;
-}
-
-function isGeneratedWorkflowArtifact(filePath: string): boolean {
-  const name = basename(filePath);
-  return (
-    name.endsWith("_REPORT.md") ||
-    name.endsWith("_SESSION_SUMMARY.md") ||
-    name === "SESSION_LOG.md" ||
-    name === "RUN_LOG.md" ||
-    name === "FINALIZE_VALIDATION.md" ||
-    name === "TASK.md" ||
-    name === "AGENT.md" ||
-    name === "AGENTS.md" ||
-    name === "BLOCKED.md"
-  );
 }
 
 // ── Generic Pipeline Executor ───────────────────────────────────────────────
@@ -626,7 +587,7 @@ function execFilePromise(
  *  9. If verdict phase: parse PASS/FAIL, handle retryWith loop
  */
 export async function executePipeline(ctx: PipelineContext): Promise<void> {
-  const { config, workflowConfig } = ctx;
+  const { workflowConfig } = ctx;
   const epicTasks = ctx.epicTasks;
   applyEffectiveSandboxConfig(ctx);
   const isEpicMode = epicTasks && epicTasks.length > 0 && workflowConfig.taskPhases;

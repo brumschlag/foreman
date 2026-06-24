@@ -39,7 +39,6 @@ import type { ModelSelection } from "../../orchestrator/types.js";
 import { buildWorkerEnv, spawnWorkerProcess } from "../../orchestrator/dispatcher.js";
 import { getRunReportsDir } from "../../lib/report-paths.js";
 import { normalizeBranchLabel } from "../../lib/branch-label.js";
-import type { SeedInfo } from "../../orchestrator/types.js";
 import { autoMerge } from "../../orchestrator/auto-merge.js";
 import { watchRunsInk } from "../watch-ui.js";
 import { NotificationServer } from "../../orchestrator/notification-server.js";
@@ -82,20 +81,6 @@ export function skipFlagsDeprecationWarning(
     `${flags.join(" and ")} ${flags.length > 1 ? "are" : "is"} deprecated and ` +
     `${flags.length > 1 ? "have" : "has"} no effect on the pipeline — ${suggestion}`
   );
-}
-
-/**
- * Convert an Issue to SeedInfo format for the worker.
- */
-function issueToSeedInfo(seed: Issue): SeedInfo {
-  return {
-    id: seed.id,
-    title: seed.title,
-    description: seed.description ?? undefined,
-    priority: seed.priority,
-    type: seed.type,
-    labels: seed.labels,
-  };
 }
 
 /**
@@ -394,7 +379,6 @@ export async function runTaskAction(
 
   // ── Spawn worker ──────────────────────────────────────────────────────
   const selectedModel: ModelSelection = (model as ModelSelection) ?? getDefaultModel() as ModelSelection;
-  const seedInfo: SeedInfo = issueToSeedInfo(task);
 
   const env = buildWorkerEnv(false, taskId, runId, selectedModel, notifyUrl, vcsBackend);
 
