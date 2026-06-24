@@ -586,6 +586,9 @@ export class ForemanDaemon {
             getTaskByExternalId: async (externalId: string) => (await pg.getTaskByExternalId(project.id, externalId)) as never,
             getTaskById: async (taskId: string) => (await pg.getTask(project.id, taskId)) as never,
             claimTask: async (taskId: string, runId: string) => pg.claimTask(project.id, taskId, runId),
+            getParentTaskId: async (taskId: string) => pg.getParentTaskId(project.id, taskId),
+            getChildren: async (taskId: string) => pg.listChildTaskIds(project.id, taskId),
+            getBlockingDependencies: async (taskId: string) => pg.listBlockingDependencyIds(project.id, taskId),
           },
           runOps: {
             createRun: async ({ runId, seedId, branchName, worktreePath, baseBranch, mergeStrategy, agentType }) => {

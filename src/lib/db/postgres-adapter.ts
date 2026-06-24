@@ -1136,6 +1136,45 @@ export class PostgresAdapter {
     }
   }
 
+  /** Direct parent via parent-child edge (child.from → parent.to). */
+  async getParentTaskId(projectId: string, taskId: string): Promise<string | null> {
+    const rows = await query<{ to_task_id: string }>(
+      `SELECT td.to_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.from_task_id
+       WHERE t.project_id = $1 AND td.from_task_id = $2 AND td.type = 'parent-child'
+       LIMIT 1`,
+      [projectId, taskId],
+    );
+    return rows[0]?.to_task_id ?? null;
+  }
+
+  /** Direct children via parent-child edges (parent.to ← child.from). */
+  async listChildTaskIds(projectId: string, parentTaskId: string): Promise<string[]> {
+    const rows = await query<{ from_task_id: string }>(
+      `SELECT td.from_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.to_task_id
+       WHERE t.project_id = $1 AND td.to_task_id = $2 AND td.type = 'parent-child'
+       ORDER BY td.from_task_id ASC`,
+      [projectId, parentTaskId],
+    );
+    return rows.map((row) => row.from_task_id);
+  }
+
+  /** Blockers this task depends on (blocks edges: from → to). */
+  async listBlockingDependencyIds(projectId: string, taskId: string): Promise<string[]> {
+    const rows = await query<{ to_task_id: string }>(
+      `SELECT td.to_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.from_task_id
+       WHERE t.project_id = $1 AND td.from_task_id = $2 AND td.type = 'blocks'
+       ORDER BY td.to_task_id ASC`,
+      [projectId, taskId],
+    );
+    return rows.map((row) => row.to_task_id);
+  }
+
   async listTaskDependencies(
     projectId: string,
     taskId: string,

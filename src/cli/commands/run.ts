@@ -119,6 +119,9 @@ function createRegisteredDispatcherOverrides(projectId: string, daemonStore: Pos
       getTaskByExternalId: async (externalId: string) => await pg.getTaskByExternalId(projectId, externalId) as never,
       getTaskById: async (taskId: string) => await pg.getTask(projectId, taskId) as never,
       claimTask: async (taskId: string, runId: string) => await pg.claimTask(projectId, taskId, runId),
+      getParentTaskId: async (taskId: string) => await pg.getParentTaskId(projectId, taskId),
+      getChildren: async (taskId: string) => await pg.listChildTaskIds(projectId, taskId),
+      getBlockingDependencies: async (taskId: string) => await pg.listBlockingDependencyIds(projectId, taskId),
     },
     runOps: {
       createRun: async ({ runId, seedId, branchName, worktreePath, baseBranch, mergeStrategy, agentType }) => {
