@@ -676,10 +676,8 @@ export class ProjectRegistry {
     const records = await this.readJson();
     // Try ID first, then fall back to name (backward compat)
     let idx = records.findIndex((p) => p.id === projectIdOrName);
-    let actualId = records[idx]?.id;
     if (idx === -1) {
       idx = records.findIndex((p) => p.name === projectIdOrName);
-      actualId = records[idx]?.id;
     }
     if (idx === -1) {
       throw new ProjectNotFoundError(projectIdOrName);

@@ -240,8 +240,6 @@ const TASK_STATUS_ORDER: Record<string, number> = {
   failed: -1,
   stuck: -1,
 };
-
-const ALL_TASK_STATUSES = Object.keys(TASK_STATUS_ORDER);
 const VALID_TASK_TYPES = ["task", "bug", "feature", "epic", "chore", "docs", "question"];
 
 interface TaskProjectContext {

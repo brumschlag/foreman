@@ -76,7 +76,7 @@ function validateDatabaseUrl(databaseUrl: string): void {
   let parsed: URL;
   try {
     parsed = new URL(databaseUrl);
-  } catch (cause: unknown) {
+  } catch {
     throw new DatabaseConfigError(
       "Invalid DATABASE_URL. Expected a postgres:// or postgresql:// URL.",
       databaseUrl,

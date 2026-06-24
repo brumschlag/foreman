@@ -270,7 +270,7 @@ sentinelCommand
       const projectConfig = loadProjectConfig(projectPath);
       if (projectConfig?.issueTracker?.backend === "jira") {
         const jiraConfig = projectConfig.issueTracker.jira;
-        const { createJiraTaskClientFromConfig, JiraTaskClient } = await import("../../daemon/jira-task-client.js");
+        const { createJiraTaskClientFromConfig } = await import("../../daemon/jira-task-client.js");
         const jiraClient = await createJiraTaskClientFromConfig({
           apiUrl: jiraConfig.apiUrl,
           email: jiraConfig.email,

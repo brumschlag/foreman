@@ -61,12 +61,6 @@ export function computeParallelGroups(
     inDegree.set(i, 0);
   }
 
-  for (const [, deps] of graph) {
-    // This sprint depends on `deps` — so this sprint has incoming edges
-    // But we need forward edges: if sprint A depends on sprint B,
-    // then B → A (B must come before A)
-  }
-
   // Build forward graph: B → A means A depends on B
   const forward = new Map<number, Set<number>>();
   for (let i = 0; i < sprintCount; i++) {

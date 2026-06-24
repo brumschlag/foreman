@@ -688,14 +688,12 @@ export const runCommand = new Command("run")
       }
 
       let taskClient: ITaskClient;
-      let backendType: "native" = "native";
       if (registered) {
         ensureCliPostgresPool(projectPath);
       }
       try {
         const clients = await createTaskClients(projectPath, runtimeMode, registered?.id);
         taskClient = clients.taskClient;
-        backendType = clients.backendType;
       } catch (clientErr: unknown) {
         const message = clientErr instanceof Error ? clientErr.message : String(clientErr);
         console.error(chalk.red(`Error initialising task backend: ${message}`));
@@ -1008,9 +1006,6 @@ export const runCommand = new Command("run")
       // Dispatch loop: dispatch a batch, watch until done, then check for more work.
       // Exits when no new tasks are dispatched (all work complete or all remaining blocked).
       let iteration = 0;
-      // Track whether the user explicitly detached (Ctrl+C). When detached, agents
-      // continue running in the background so we skip the final merge drain.
-      let userDetached = false;
       // Suppress repeated "No ready beads" log messages — only print once per wait period.
       let waitingForTasksLogged = false;
       // Count consecutive poll cycles with nothing dispatched and no active agents.
@@ -1083,7 +1078,6 @@ export const runCommand = new Command("run")
             if (runIds.length > 0) {
               const { detached } = await watchRunsInk(daemonStore ?? store, runIds, { notificationBus, ...(makeAutoDispatchFn ? { autoDispatch: makeAutoDispatchFn } : {}) });
               if (detached) {
-                userDetached = true;
                 break; // User hit Ctrl+C — exit dispatch loop, agents continue in background
               }
             }
@@ -1143,7 +1137,6 @@ export const runCommand = new Command("run")
           const runIds = result.dispatched.map((t) => t.runId);
           const { detached } = await watchRunsInk(daemonStore ?? store, runIds, { notificationBus, ...(makeAutoDispatchFn ? { autoDispatch: makeAutoDispatchFn } : {}) });
           if (detached) {
-            userDetached = true;
             break; // User hit Ctrl+C — exit dispatch loop, agents continue in background
           }
           // After batch completes, loop back to dispatch the next batch

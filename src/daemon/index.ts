@@ -545,7 +545,7 @@ export class ForemanDaemon {
         warn: (message) => this.fastify.log.warn(message),
       });
       try {
-        const { taskClient, backendType } = await createTaskClient(project.path, {
+        const { taskClient } = await createTaskClient(project.path, {
           registeredProjectId: project.id,
         });
         const store = ForemanStore.forProject(project.path);

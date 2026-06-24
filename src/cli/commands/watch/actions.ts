@@ -22,7 +22,7 @@ export async function approveTask(taskId: string, projectPath: string): Promise<
   try {
     await approveDashboard(taskId, projectPath);
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -39,7 +39,7 @@ export async function retryTask(taskId: string, projectPath: string): Promise<bo
   try {
     await retryDashboard(taskId, projectPath);
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }

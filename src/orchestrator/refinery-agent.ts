@@ -22,15 +22,6 @@ import { createSendMailTool } from "./pi-sdk-tools.js";
 
 import { NullAgentMailClient, type AgentMailClient } from "../lib/agent-mail-client.js";
 import { createProjectMailClient } from "../lib/project-mail-client.js";
-import {
-  createBashTool,
-  createReadTool,
-  createEditTool,
-  createWriteTool,
-  createGrepTool,
-  createFindTool,
-  createLsTool,
-} from "@mariozechner/pi-coding-agent";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 const execFileAsync = promisify(execFileSync);
@@ -324,8 +315,6 @@ export class RefineryAgent {
     // Build the agent task prompt
     const taskPrompt = this.buildAgentTaskPrompt(entry, prState, worktreePath, targetBranch);
 
-    // Build tools
-    const tools = this.buildTools(worktreePath);
     const customTools: ToolDefinition[] = [
       createSendMailTool(this.mailClient, `refinery-${entry.seed_id}`),
     ];
@@ -363,8 +352,6 @@ export class RefineryAgent {
           };
         }
 
-        // Append feedback for next attempt
-        const feedback = `\n\n## Previous Fix Attempt ${attempt} Failed\n\nError: ${errorMsg}\n\nPlease analyze the error and try a different fix approach.\n`;
         // Update task prompt with feedback for next iteration
         continue;
       }
@@ -501,22 +488,6 @@ export class RefineryAgent {
     ].join("\n");
   }
 
-
-  /**
-   * Build the tool array for the agent session.
-   * Uses the worktree path as the agent's cwd.
-   */
-  private buildTools(cwd: string) {
-    return [
-      createReadTool(cwd),
-      createBashTool(cwd),
-      createEditTool(cwd),
-      createWriteTool(cwd),
-      createGrepTool(cwd),
-      createFindTool(cwd),
-      createLsTool(cwd),
-    ];
-  }
 
   /**
    * Check if the build passes in the worktree.

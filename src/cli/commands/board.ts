@@ -68,28 +68,6 @@ function boardStatusToStoreStatus(status: BoardStatus): string {
   return status;
 }
 
-/**
- * Convert a store status (hyphenated) to a board status (underscored).
- * Returns the board status or null if not a valid board status.
- */
-function storeStatusToBoardStatus(status: string): BoardStatus | null {
-  const normalized = status.replace(/-/g, "_");
-  return BOARD_STATUSES.includes(normalized as BoardStatus) ? normalized as BoardStatus : null;
-}
-
-/**
- * Convert a user-entered status (underscore or hyphen variants) to a store-valid status.
- * Handles in_progress → in-progress and needs_attention → blocked conversions.
- */
-function normalizeStatusForStore(status: string): string {
-  const boardStatus = storeStatusToBoardStatus(status);
-  if (boardStatus) {
-    return boardStatusToStoreStatus(boardStatus);
-  }
-  // If not a valid board status, return as-is and let the API reject it
-  return status;
-}
-
 const STATUS_LABELS: Record<BoardStatus, string> = {
   backlog: "Backlog",
   ready: "Ready",
@@ -408,7 +386,6 @@ function clamp(value: number, min: number, max: number): number {
 // ── Board renderer ────────────────────────────────────────────────────────────
 
 const MIN_COL_WIDTH = 12;
-const MAX_VISIBLE_PER_COL = 5;
 const COLUMN_GAP = 1;
 const h = createElement;
 
@@ -773,7 +750,7 @@ function renderTaskDetailView(
     } else {
       children.push(h(Text, { key: "notes-title", bold: true }, "Notes:"));
       // Show all notes with wrapping (no item limit)
-      for (const [noteIndex, note] of task.notes.entries()) {
+      for (const note of task.notes) {
         const when = new Date(note.created_at).toLocaleString();
         const phase = note.phase ? `${note.phase} ` : "";
         children.push(

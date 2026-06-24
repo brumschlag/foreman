@@ -687,21 +687,6 @@ const runsRouter = t.router({
 // GitHub router (TRD-009)
 // ---------------------------------------------------------------------------
 
-/**
- * Parse a "owner/repo" string into owner and repo.
- * Accepts "owner/repo" or "owner/repo/subpath" (extra parts discarded).
- */
-function parseRepoKey(repoKey: string): { owner: string; repo: string } {
-  const parts = repoKey.trim().split("/");
-  if (parts.length < 2) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Invalid repo key '${repoKey}'. Expected format: owner/repo`,
-    });
-  }
-  return { owner: parts[0]!, repo: parts[1]! };
-}
-
 const githubRouter = t.router({
   // --- Issue read operations ------------------------------------------------
 
@@ -1063,7 +1048,7 @@ const githubRouter = t.router({
           if (!issueNumber) continue;
 
           try {
-            const ghIssue = await ctx.gh.updateIssue(
+            await ctx.gh.updateIssue(
               input.owner,
               input.repo,
               issueNumber,
