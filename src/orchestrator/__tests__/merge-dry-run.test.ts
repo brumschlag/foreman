@@ -13,7 +13,7 @@ import { dryRunMerge, type DryRunEntry } from "../refinery.js";
 
 function mockExecFileImpl(responses: Record<string, string>) {
   (execFile as any).mockImplementation(
-    (_cmd: string, args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       const key = args.join(" ");
       for (const [pattern, stdout] of Object.entries(responses)) {
         if (key.includes(pattern)) {
@@ -30,7 +30,7 @@ function mockExecFileImpl(responses: Record<string, string>) {
 function mockExecFileSequence(results: Array<{ stdout: string; stderr?: string; error?: Error }>) {
   let callIndex = 0;
   (execFile as any).mockImplementation(
-    (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       const result = results[callIndex] ?? { stdout: "", stderr: "" };
       callIndex++;
       if (result.error) {
@@ -109,7 +109,7 @@ describe("dryRunMerge()", () => {
   it("does not modify git state", async () => {
     const calls: string[][] = [];
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         calls.push(args);
         callback(null, { stdout: "", stderr: "" });
       },
@@ -169,7 +169,7 @@ describe("dryRunMerge()", () => {
 
   it("handles merge-base failure gracefully", async () => {
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (args.includes("merge-base")) {
           const err = new Error("no common ancestor") as any;
           err.stdout = "";

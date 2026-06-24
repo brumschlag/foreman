@@ -164,7 +164,7 @@ function makeMocks(vcsOverrides: Partial<Record<keyof VcsBackend, ReturnType<typ
 
   // Set up execFile to succeed by default for helper shell calls like gh.
   (execFile as any).mockImplementation(
-    (_cmd: string, args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       if (Array.isArray(args) && args[0] === "log") {
         callback(null, { stdout: "abc1234 some commit\n", stderr: "" });
       } else {
@@ -237,7 +237,7 @@ describe("AC-T-012-1: Clean squash merge invokes git merge --squash and closes t
 
     // Squash merge fails with conflict; gh not available -> falls back to conflict tracking
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           callback(new Error("gh not available"), null);
         } else if (Array.isArray(args) && args[0] === "log") {
@@ -292,7 +292,7 @@ describe("AC-T-012-2: Conflict cascade triggered when squash merge has conflicts
 
     // gh pr create fails -> falls back to conflict tracking
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           callback(new Error("gh not available"), null);
         } else if (Array.isArray(args) && args[0] === "log") {
@@ -343,7 +343,7 @@ describe("AC-T-012-2: Conflict cascade triggered when squash merge has conflicts
 
     const prUrl = "https://github.com/org/repo/pull/42";
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh" && Array.isArray(args) && args.includes("create")) {
           callback(null, { stdout: prUrl, stderr: "" });
         } else if (Array.isArray(args) && args[0] === "log") {
@@ -388,7 +388,7 @@ describe("AC-T-012-2: Conflict cascade triggered when squash merge has conflicts
     store.getRunsByStatus.mockReturnValue([run]);
 
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           callback(new Error("gh not available"), null);
         } else if (Array.isArray(args) && args[0] === "log") {

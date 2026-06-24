@@ -155,7 +155,7 @@ function makeMockVcs(overrides: Partial<Record<keyof VcsBackend, ReturnType<type
 
 function makeMocks(vcsOverrides: Partial<Record<keyof VcsBackend, ReturnType<typeof vi.fn>>> = {}) {
   (execFile as any).mockImplementation(
-    (_cmd: string, args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       if (Array.isArray(args) && args[0] === "log") {
         callback(null, { stdout: "abc1234 some commit\n", stderr: "" });
       } else {
@@ -212,7 +212,7 @@ function makeRegisteredRefinery(
 // Helper to make execFile resolve with a stdout value
 function mockExecFileSuccess(stdout = "") {
   (execFile as any).mockImplementation(
-    (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       callback(null, { stdout, stderr: "" });
     },
   );
@@ -221,7 +221,7 @@ function mockExecFileSuccess(stdout = "") {
 // Helper to make execFile reject
 function mockExecFileFailure(message = "git error") {
   (execFile as any).mockImplementation(
-    (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       const err = new Error(message) as any;
       err.stdout = "";
       err.stderr = message;
@@ -279,7 +279,7 @@ describe("Refinery.resolveConflict()", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -366,7 +366,7 @@ describe("Refinery.resolveConflict()", () => {
 
     // git checkout + git merge succeed; npm test fails; git reset succeeds
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (_cmd === "npm" || (Array.isArray(args) && args.includes("test"))) {
           const err = new Error("Tests failed") as any;
           err.stdout = "FAIL src/foo.test.ts";
@@ -404,7 +404,7 @@ describe("Refinery.resolveConflict()", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -428,7 +428,7 @@ describe("Refinery.resolveConflict()", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -450,7 +450,7 @@ describe("Refinery.resolveConflict()", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -466,7 +466,7 @@ describe("Refinery.resolveConflict()", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -515,7 +515,7 @@ describe("Refinery.mergeCompleted()", () => {
     // - All other git/gh calls succeed with empty stdout.
     // Individual tests can override this for specific scenarios.
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "git" && Array.isArray(args) && args[0] === "log") {
           callback(null, { stdout: "abc1234 some commit\n", stderr: "" });
         } else {
@@ -761,7 +761,7 @@ describe("Refinery.mergeCompleted()", () => {
     store.getRunsByStatus.mockReturnValue([run]);
 
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           const err = new Error("gh not available") as any;
           err.stdout = "";
@@ -795,7 +795,7 @@ describe("Refinery.mergeCompleted()", () => {
     store.getRunsByStatus.mockReturnValue([run]);
 
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           const err = new Error("gh not available") as any;
           err.stdout = "";
@@ -844,7 +844,7 @@ describe("Refinery.mergeCompleted()", () => {
     //   4. gh pr create   → fails (gh not available)
     // → createPrForConflict returns null → addFailureNote must be called
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           const err = new Error("gh not available") as any;
           err.stdout = "";
@@ -875,7 +875,7 @@ describe("Refinery.mergeCompleted()", () => {
     // First call for tests (npm test), fails; second call for git reset, succeeds
     let callCount = 0;
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callCount++;
         if (args.includes("test") || cmd.includes("npm")) {
           // Test command failure
@@ -1072,7 +1072,7 @@ describe("Refinery.mergeCompleted()", () => {
     store.getRunsByStatus.mockReturnValue([run]);
     // Squash merge hits a conflict; gh not available → fallback to conflict tracking
     (execFile as any).mockImplementation(
-      (cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (cmd === "gh") {
           callback(new Error("gh not available"), { stdout: "", stderr: "" });
         } else {
@@ -1100,7 +1100,7 @@ describe("Refinery.mergeCompleted()", () => {
 
     // git rev-parse succeeds, test command fails, git reset succeeds
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (Array.isArray(args) && args.includes("test")) {
           const err = new Error("Tests failed") as any;
           err.stdout = "FAIL";
@@ -1239,7 +1239,7 @@ describe("Refinery.resolveConflict() — bead close after merge", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -1282,7 +1282,7 @@ describe("Refinery.resolveConflict() — bead close after merge", () => {
     store.getRun.mockReturnValue(run);
 
     (execFile as any).mockImplementation(
-      (cmd: string, args: string[], _opts: any, callback: Function) => {
+      (cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (Array.isArray(args) && args.includes("test")) {
           const err = new Error("Tests failed") as any;
           err.stdout = "FAIL";
@@ -1463,7 +1463,7 @@ describe("Refinery.closeNativeTaskPostMerge() (REQ-018)", () => {
       store.getRun.mockReturnValue(run);
 
       (execFile as any).mockImplementation(
-        (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
           callback(null, { stdout: "", stderr: "" });
         },
       );
@@ -1485,7 +1485,7 @@ describe("Refinery.closeNativeTaskPostMerge() (REQ-018)", () => {
       store.getRun.mockReturnValue(run);
 
       (execFile as any).mockImplementation(
-        (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
           callback(null, { stdout: "", stderr: "" });
         },
       );

@@ -168,7 +168,7 @@ describe("Refinery.rebaseStackedBranches() (via mergeCompleted)", () => {
     vi.clearAllMocks();
     mockPostgresUpdateRun.mockResolvedValue(undefined);
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (Array.isArray(args) && args[0] === "log") {
           callback(null, { stdout: "abc1234 commit\n", stderr: "" });
         } else {

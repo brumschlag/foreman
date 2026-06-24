@@ -40,7 +40,7 @@ function mockGitCommands(statusOutput: string) {
   const calls: Array<{ cmd: string; args: string[] }> = [];
 
   (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-    (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+    (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
       calls.push({ cmd: _cmd, args: _args });
 
       if (

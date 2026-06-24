@@ -29,7 +29,7 @@ function makeBackend() {
 
 function mockGitSuccess(responses: Record<string, string>) {
   (execFile as any).mockImplementation(
-    (_cmd: string, args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       const key = args.join(" ");
       for (const [pattern, stdout] of Object.entries(responses)) {
         if (key.includes(pattern)) {
@@ -45,7 +45,7 @@ function mockGitSuccess(responses: Record<string, string>) {
 function mockGitSequence(results: Array<{ stdout?: string; error?: Error }>) {
   let callIndex = 0;
   (execFile as any).mockImplementation(
-    (_cmd: string, _args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, _args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       const result = results[callIndex] ?? { stdout: "" };
       callIndex++;
       if (result.error) {
@@ -118,7 +118,7 @@ describe("preserveBeadChanges()", () => {
     };
 
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (args.includes("diff")) {
           callback(null, { stdout: patchContent, stderr: "" });
           return;
@@ -146,7 +146,7 @@ describe("preserveBeadChanges()", () => {
     };
 
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (args.includes("diff")) {
           callback(null, { stdout: patchContent, stderr: "" });
           return;
@@ -165,7 +165,7 @@ describe("preserveBeadChanges()", () => {
     // The diff command should specifically filter to .seeds/
     const calls: string[][] = [];
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         calls.push(args);
         callback(null, { stdout: "", stderr: "" });
       },

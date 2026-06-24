@@ -67,7 +67,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
   });
 
   it("returns [] when git diff produces no output (branch equals target)", async () => {
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: "", stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-neph", "main");
@@ -76,7 +76,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
 
   it("returns [] for a clean diff with no conflict markers", async () => {
     const diff = makeDiff("src/foo.ts", ["const a = 1;"]);
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: diff, stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-feature", "main");
@@ -85,7 +85,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
 
   it("returns the file path when <<<<<<< is added by the branch", async () => {
     const diff = makeDiff("src/conflict.ts", ["<<<<<<< HEAD", "const a = 1;", "=======", "const a = 2;", ">>>>>>> branch"]);
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: diff, stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-conflict", "main");
@@ -95,7 +95,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
 
   it("returns the file path when ||||||| (diff3 marker) is added by the branch", async () => {
     const diff = makeDiff("src/diff3.ts", ["const y = 0;", "||||||| base", "=======", "const y = 3;", ">>>>>>> branch"]);
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: diff, stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-diff3", "main");
@@ -106,7 +106,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
   it("does NOT flag a file if <<<<<<< appears only in context lines (not added)", async () => {
     // Context lines (unchanged) start with ' ', not '+'. The scanner only checks '+' lines.
     const diff = " <<<<<<< this is a context line, unchanged\n+const a = 1;\n";
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: `+++ b/src/ok.ts\n${diff}`, stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-ok", "main");
@@ -118,7 +118,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
       `diff --git a/alpha.ts b/alpha.ts\n--- a/alpha.ts\n+++ b/alpha.ts\n@@ -1 +1 @@\n+<<<<<<< HEAD\n+const a = 1;\n`,
       `diff --git a/beta.tsx b/beta.tsx\n--- a/beta.tsx\n+++ b/beta.tsx\n@@ -1 +1 @@\n+||||||| base\n+const b = 0;\n`,
     ].join("\n");
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: diff, stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-multi", "main");
@@ -128,7 +128,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
   });
 
   it("returns [] when git throws (e.g. branch not found) — non-blocking", async () => {
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(new Error("fatal: unknown revision or path not in the working tree"), { stdout: "", stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-missing", "main");
@@ -138,7 +138,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
   it("ignores conflict markers in REMOVED lines (lines starting with -)", async () => {
     // A line removed by the branch that had a conflict marker should not be flagged.
     const diff = `+++ b/src/removed.ts\n-<<<<<<< HEAD\n-const old = 1;\n+const new_ = 2;\n`;
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: diff, stderr: "" });
     });
     const result = await scan(refinery, "foreman/bd-removed", "main");
@@ -149,7 +149,7 @@ describe("Refinery.scanForConflictMarkers (committed diff)", () => {
     // The diff from committed content is clean — even if the worktree has markers.
     // This is the key regression test for the bd-neph bug.
     const cleanDiff = makeDiff("src/agent-worker.ts", ["const x = 1;"]);
-    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((_bin: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, { stdout: cleanDiff, stderr: "" });
     });
     // Even if the worktree has conflict markers (simulated by the test calling scan without
