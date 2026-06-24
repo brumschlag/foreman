@@ -42,15 +42,19 @@ jobs:
       # ── Determine release tag ─────────────────────────────────────────────
       - name: Determine release tag
         id: tag
+        env:
+          TAG_INPUT: ${{ github.event.inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [ -n "$TAG_INPUT" ]; then
+            TAG="$TAG_INPUT"
           else
             # Fetch the latest release tag from the GitHub API
             TAG=$(curl -fsSL \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+              "https://api.github.com/repos/$REPO/releases/latest" \
               | jq -r '.tag_name')
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -59,17 +63,19 @@ jobs:
 
       # ── Download release assets ───────────────────────────────────────────
       - name: Download release assets
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          VERSION="${{ steps.tag.outputs.version }}"
           mkdir -p assets
 
           PLATFORMS=(darwin-arm64 darwin-x64 linux-x64 linux-arm64)
           for platform in "${PLATFORMS[@]}"; do
             echo "Downloading foreman-${TAG}-${platform}.tar.gz ..."
             curl -fsSL \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/foreman-${TAG}-${platform}.tar.gz" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -L "https://github.com/$REPO/releases/download/${TAG}/foreman-${TAG}-${platform}.tar.gz" \
               -o "assets/foreman-${TAG}-${platform}.tar.gz"
           done
 
@@ -79,9 +85,9 @@ jobs:
       # ── Compute SHA256 checksums ──────────────────────────────────────────
       - name: Compute SHA256 checksums
         id: checksums
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-
           DARWIN_ARM64=$(sha256sum "assets/foreman-${TAG}-darwin-arm64.tar.gz" | awk '{print $1}')
           DARWIN_X64=$(sha256sum "assets/foreman-${TAG}-darwin-x64.tar.gz" | awk '{print $1}')
           LINUX_X64=$(sha256sum "assets/foreman-${TAG}-linux-x64.tar.gz" | awk '{print $1}')
@@ -108,14 +114,14 @@ jobs:
 
       # ── Update the formula ────────────────────────────────────────────────
       - name: Update Formula/foreman.rb
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          DARWIN_ARM64: ${{ steps.checksums.outputs.darwin_arm64 }}
+          DARWIN_X64: ${{ steps.checksums.outputs.darwin_x64 }}
+          LINUX_X64: ${{ steps.checksums.outputs.linux_x64 }}
+          LINUX_ARM64: ${{ steps.checksums.outputs.linux_arm64 }}
+          FORMULA: homebrew-tap/Formula/foreman.rb
         run: |
-          VERSION="${{ steps.tag.outputs.version }}"
-          DARWIN_ARM64="${{ steps.checksums.outputs.darwin_arm64 }}"
-          DARWIN_X64="${{ steps.checksums.outputs.darwin_x64 }}"
-          LINUX_X64="${{ steps.checksums.outputs.linux_x64 }}"
-          LINUX_ARM64="${{ steps.checksums.outputs.linux_arm64 }}"
-
-          FORMULA="homebrew-tap/Formula/foreman.rb"
 
           # Validate checksums are non-empty before proceeding
           for var in DARWIN_ARM64 DARWIN_X64 LINUX_X64 LINUX_ARM64; do
@@ -214,8 +220,9 @@ jobs:
 
       # ── Commit and push ───────────────────────────────────────────────────
       - name: Commit and push updated formula
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           cd homebrew-tap
 
           git config user.name  "github-actions[bot]"
