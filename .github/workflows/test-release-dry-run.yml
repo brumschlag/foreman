@@ -250,12 +250,14 @@ jobs:
 
     steps:
       - name: Print summary
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           echo "╔══════════════════════════════════════════════════════╗"
           echo "║          Release Dry-Run Summary                     ║"
           echo "╚══════════════════════════════════════════════════════╝"
           echo ""
-          echo "All validation checks passed on branch: ${{ github.ref_name }}"
+          echo "All validation checks passed on branch: $REF_NAME"
           echo ""
           echo "The following would be produced in a real release:"
           echo "  📦 npm package:  @oftheangels/foreman (via publish-npm.yml)"
