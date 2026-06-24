@@ -1590,10 +1590,10 @@ export class Doctor {
      * attention.
      */
     const filterAutoResolved = async (
-      runs: import("../lib/store.js").Run[],
-    ): Promise<{ unresolved: import("../lib/store.js").Run[]; autoResolvedCount: number }> => {
+      runs: Run[],
+    ): Promise<{ unresolved: Run[]; autoResolvedCount: number }> => {
       let autoResolvedCount = 0;
-      const unresolved: import("../lib/store.js").Run[] = [];
+      const unresolved: Run[] = [];
 
       for (const run of runs) {
         // If the bead/seed is already closed, the run record is stale.
@@ -1758,12 +1758,12 @@ export class Doctor {
    * and "historical" (seed has a later completed or merged run — noise from retries).
    */
   private async partitionByHistoricalRetry(
-    runs: import("../lib/store.js").Run[],
+    runs: Run[],
     runStore: RunLookupLike = this.getRunStore(),
     projectId?: string,
-  ): Promise<{ actionable: import("../lib/store.js").Run[]; historical: import("../lib/store.js").Run[] }> {
-    const actionable: import("../lib/store.js").Run[] = [];
-    const historical: import("../lib/store.js").Run[] = [];
+  ): Promise<{ actionable: Run[]; historical: Run[] }> {
+    const actionable: Run[] = [];
+    const historical: Run[] = [];
 
     for (const run of runs) {
       const allSeedRuns = await Promise.resolve(runStore.getRunsForSeed(run.seed_id, projectId));

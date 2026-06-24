@@ -9,6 +9,7 @@ import type { RegisteredProjectSummary } from "./project-task-support.js";
 import { resolveProjectContext } from "./project-context.js";
 import { closeStoreIfPossible, wrapLocalRunStore } from "./local-store-adapter.js";
 import { printDryRunNotice, printPurgeSummary } from "./cli-output.js";
+import type { Run } from "../../lib/store.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ export interface PurgeLogsResult {
 }
 
 interface PurgeStore {
-  getRun(id: string): Promise<import("../../lib/store.js").Run | null>;
+  getRun(id: string): Promise<Run | null>;
 }
 
 type RegisteredProject = RegisteredProjectSummary;

@@ -197,7 +197,7 @@ export interface PipelineContext {
   /** The runPhase function from agent-worker.ts */
   runPhase: RunPhaseFn;
   /** Execute a TypeScript builtin phase such as create-pr. */
-  runBuiltinPhase?: (phase: import("../lib/workflow-loader.js").WorkflowPhaseConfig) => Promise<PhaseResult>;
+  runBuiltinPhase?: (phase: WorkflowPhaseConfig) => Promise<PhaseResult>;
   /** Register an agent identity for mail */
   registerAgent: (client: AnyMailClient | null, roleHint: string) => Promise<void>;
   /** Send structured mail */
@@ -1007,7 +1007,7 @@ async function executeSingleTaskPipeline(ctx: PipelineContext): Promise<void> {
  */
 async function runPhaseSequence(
   ctx: PipelineContext,
-  phases: import("../lib/workflow-loader.js").WorkflowPhaseConfig[],
+  phases: WorkflowPhaseConfig[],
   initialProgress: RunProgress,
   /** When true (epic task mode), exhausted retries return failure instead of continuing. */
   failOnRetriesExhausted: boolean = false,

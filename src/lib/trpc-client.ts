@@ -15,6 +15,7 @@ import * as http from "node:http";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { appRouter } from "../daemon/router.js";
+import type { RequestOptions } from "node:http";
 
 /** AppRouter type — use `typeof appRouter` to extract. */
 export type AppRouter = typeof appRouter;
@@ -66,7 +67,7 @@ async function unixSocketFetch(
       : undefined;
 
   return new Promise<Response>((resolve, reject) => {
-    const options: import("node:http").RequestOptions = {
+    const options: RequestOptions = {
       socketPath,
       path: trpcPath,
       method,

@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, realpathSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { stat } from "node:fs/promises";
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
 //
@@ -105,7 +106,7 @@ function mockJjNotFound(): void {
  * Configure mockStat to simulate .jj/repo/store/git existing (colocated mode).
  */
 function mockColocatedMode(): void {
-  mockStat.mockResolvedValue({} as ReturnType<typeof import("node:fs/promises").stat>);
+  mockStat.mockResolvedValue({} as ReturnType<typeof stat>);
 }
 
 /**

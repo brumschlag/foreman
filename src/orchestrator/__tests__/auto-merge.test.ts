@@ -161,6 +161,7 @@ vi.mock("../task-backend-ops.js", () => ({
 }));
 
 import { autoMerge, syncBeadStatusAfterMerge, type AutoMergeOpts } from "../auto-merge.js";
+import type { Run } from "../../lib/store.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -595,7 +596,7 @@ describe("autoMerge() — merge outcomes", () => {
         progress: null,
         created_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-      } as import("../../lib/store.js").Run;
+      } as Run;
       mockMergeQueueDequeue.mockReturnValueOnce(entry).mockReturnValue(null);
       mockRefineryMergeCompleted.mockResolvedValueOnce({
         merged: [{ seedId: entry.seed_id }],
@@ -631,7 +632,7 @@ describe("autoMerge() — merge outcomes", () => {
         progress: null,
         created_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-      } as import("../../lib/store.js").Run;
+      } as Run;
       mockMergeQueueDequeue.mockReturnValueOnce(entry).mockReturnValue(null);
       mockRefineryMergeCompleted.mockResolvedValueOnce({
         merged: [{ seedId: entry.seed_id }],
@@ -667,7 +668,7 @@ describe("autoMerge() — merge outcomes", () => {
         progress: null,
         created_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-      } as import("../../lib/store.js").Run;
+      } as Run;
       mockMergeQueueDequeue.mockReturnValueOnce(entry).mockReturnValue(null);
       mockRefineryMergeCompleted.mockResolvedValueOnce({
         merged: [{ seedId: entry.seed_id }],
@@ -703,7 +704,7 @@ describe("autoMerge() — merge outcomes", () => {
         progress: null,
         created_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-      } as import("../../lib/store.js").Run;
+      } as Run;
       mockMergeQueueDequeue.mockReturnValueOnce(entry).mockReturnValue(null);
       // First call is for merge strategy check, second is the fallback
       mockGetRun.mockReturnValueOnce(matchingRun);
@@ -741,7 +742,7 @@ describe("autoMerge() — merge outcomes", () => {
         progress: null,
         created_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-      } as import("../../lib/store.js").Run;
+      } as Run;
       const secondRun = {
         id: secondEntry.run_id,
         seed_id: secondEntry.seed_id,
@@ -754,7 +755,7 @@ describe("autoMerge() — merge outcomes", () => {
         progress: null,
         created_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-      } as import("../../lib/store.js").Run;
+      } as Run;
 
       mockMergeQueueDequeue
         .mockReturnValueOnce(firstEntry)

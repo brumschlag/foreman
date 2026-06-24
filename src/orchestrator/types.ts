@@ -74,10 +74,10 @@ export interface PlanStepDispatched {
 // ── Monitor types ──────────────────────────────────────────────────────
 
 export interface MonitorReport {
-  completed: import("../lib/store.js").Run[];
-  stuck: import("../lib/store.js").Run[];
-  active: import("../lib/store.js").Run[];
-  failed: import("../lib/store.js").Run[];
+  completed: Run[];
+  stuck: Run[];
+  active: Run[];
+  failed: Run[];
 }
 
 // ── Refinery types ─────────────────────────────────────────────────────
@@ -133,6 +133,7 @@ export interface PrReport {
 
 import type { RunStatus } from "./read-models.js";
 import type { RunProgressSummary } from "./read-models.js";
+import type { Run } from "../lib/store.js";
 
 export interface WorkerStatusNotification {
   type: "status";

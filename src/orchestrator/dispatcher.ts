@@ -42,6 +42,8 @@ import type {
 } from "./types.js";
 import type { RuntimeMode } from "../cli/commands/run.js";
 import { RunLifecycleService, type RunOpsOverrides, type MailSendStore } from "./run-lifecycle-service.js";
+import type { ConcurrencyConfig, ProjectHooksConfig } from "../lib/project-config.js";
+import type { WorkflowSetupStep, WorkflowSetupCache } from "../lib/workflow-loader.js";
 
 interface DispatcherDependencyRef {
   id: string;
@@ -393,7 +395,7 @@ export class Dispatcher {
     // ── Per-state concurrency limits (Backlog-006) ─────────────────────────
     // Load concurrency config and build a map of active runs by issue state.
     // States not in byState are unlimited (only constrained by global limit).
-    let concurrencyConfig: import("../lib/project-config.js").ConcurrencyConfig | undefined;
+    let concurrencyConfig: ConcurrencyConfig | undefined;
     const activeRunsByState: Map<string, number> = new Map();
     try {
       const projectCfg = loadProjectConfig(this.projectPath);
@@ -859,13 +861,13 @@ export class Dispatcher {
           projectCfg?.taskTypeWorkflowMap,
           opts?.workflow,
         );
-        let setupSteps: import("../lib/workflow-loader.js").WorkflowSetupStep[] | undefined;
-        let setupCache: import("../lib/workflow-loader.js").WorkflowSetupCache | undefined;
+        let setupSteps: WorkflowSetupStep[] | undefined;
+        let setupCache: WorkflowSetupCache | undefined;
         let vcsBackendName: 'git' | 'jujutsu' = 'git'; // default to git
         // TRD-007: capture merge strategy from workflow config
         let workflowMerge: 'auto' | 'pr' | 'none' = 'auto';
         // projectHooks is used in afterCreate/beforeRun hooks below the try block
-        const projectHooks: import("../lib/project-config.js").ProjectHooksConfig | undefined = projectCfg?.hooks;
+        const projectHooks: ProjectHooksConfig | undefined = projectCfg?.hooks;
         try {
           const wfConfig = loadWorkflowConfig(resolvedWorkflow, this.projectPath);
           setupSteps = wfConfig.setup;
@@ -1408,7 +1410,7 @@ export class Dispatcher {
     targetBranch?: string,
     epicTasks?: EpicTask[],
     epicId?: string,
-    hooks?: import("../lib/project-config.js").ProjectHooksConfig,
+    hooks?: ProjectHooksConfig,
     attemptNumber = 1,
   ): Promise<{ sessionKey: string }> {
     const prompt = this.buildSpawnPrompt(seed.id, seed.title);
@@ -1956,7 +1958,7 @@ export interface WorkerConfig {
    * Workspace lifecycle hooks for pre/post-run customization.
    * Loaded from project config and passed to the agent worker.
    */
-  hooks?: import("../lib/project-config.js").ProjectHooksConfig;
+  hooks?: ProjectHooksConfig;
 }
 
 // ── Spawn Strategy Pattern ──────────────────────────────────────────────

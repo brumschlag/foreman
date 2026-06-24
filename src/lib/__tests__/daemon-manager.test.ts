@@ -13,6 +13,7 @@ import {
   DaemonAlreadyRunningError,
   DaemonNotRunningError,
 } from "../daemon-manager.js";
+import type { DaemonStatus } from "../daemon-manager.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -240,7 +241,7 @@ describe("DaemonManager exported symbols", () => {
 
   it("DaemonStatus interface is exported", () => {
     // This is a compile-time check — if it compiles, the export is correct.
-    const s: import("../daemon-manager.js").DaemonStatus = {
+    const s: DaemonStatus = {
       running: false,
       pid: null,
       socketPath: "/tmp/socket",
