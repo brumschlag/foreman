@@ -12,7 +12,11 @@ name: Update Homebrew Tap
 #   Set it in:  Settings → Secrets and variables → Actions → Repository secrets
 
 on:
-  # Trigger when the release-binaries workflow completes successfully
+  # Trigger when the release-binaries workflow completes successfully.
+  # zizmor: ignore[dangerous-triggers]
+  # Accepted: workflow_run is required to chain off Release Binaries. It is
+  # gated below by `github.event.workflow_run.conclusion == 'success'`, runs no
+  # untrusted PR code, and only updates the external tap via a deploy key.
   workflow_run:
     workflows: ["Release Binaries"]
     types: [completed]
@@ -106,6 +110,9 @@ jobs:
 
       # ── Checkout the homebrew-tap repo ────────────────────────────────────
       - name: Checkout oftheangels/homebrew-tap
+        # zizmor: ignore[artipacked]
+        # Accepted: credentials must persist — a later step commits and pushes
+        # the updated formula back to the tap using this checkout's deploy key.
         uses: actions/checkout@v4
         with:
           repository: oftheangels/homebrew-tap
