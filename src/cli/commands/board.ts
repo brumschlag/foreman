@@ -245,7 +245,9 @@ export async function loadBoardTasks(projectPath: string): Promise<Map<BoardStat
 
   for (const row of rows) {
     const status = boardColumnForTaskStatus(row.status);
-    map.get(status)!.push(boardTaskFromRow(row));
+    const column = map.get(status);
+    if (!column) throw new Error(`board column not initialized for status ${status}`);
+    column.push(boardTaskFromRow(row));
   }
 
   return map;
@@ -315,8 +317,10 @@ export function applyBoardTaskUpdate(
 
   if (task) {
     const status = boardColumnForTaskStatus(task.status);
-    next.get(status)!.push(task);
-    next.set(status, sortBoardTasks(next.get(status)!, sortMode));
+    const column = next.get(status);
+    if (!column) throw new Error(`board column not initialized for status ${status}`);
+    column.push(task);
+    next.set(status, sortBoardTasks(column, sortMode));
   }
 
   return next;
@@ -1658,7 +1662,7 @@ export interface BoardOptions {
 async function readLine(prompt: string): Promise<string> {
   // Temporarily disable raw mode to read input
   if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
-    process.stdin.setRawMode!(false);
+    process.stdin.setRawMode(false);
   }
 
   const rl = createInterface({
@@ -1671,7 +1675,7 @@ async function readLine(prompt: string): Promise<string> {
   } finally {
     rl.close();
     if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
-      process.stdin.setRawMode!(true);
+      process.stdin.setRawMode(true);
     }
   }
 }
@@ -1850,7 +1854,7 @@ export async function runBoard(opts: BoardOptions): Promise<void> {
   const attachRawMode = () => {
     if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
       try {
-        process.stdin.setRawMode!(true);
+        process.stdin.setRawMode(true);
         process.stdin.resume();
         process.stdin.setEncoding("utf8");
         stdinRawMode = true;
@@ -1861,9 +1865,9 @@ export async function runBoard(opts: BoardOptions): Promise<void> {
   };
 
   const detachRawMode = () => {
-    if (stdinRawMode) {
+    if (stdinRawMode && typeof process.stdin.setRawMode === "function") {
       try {
-        process.stdin.setRawMode!(false);
+        process.stdin.setRawMode(false);
       } catch {
         // ignore
       }

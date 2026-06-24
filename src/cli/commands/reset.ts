@@ -787,6 +787,10 @@ export const resetCommand = new Command("reset")
         process.exit(1);
       }
 
+      if (runtimeProjectId === undefined) {
+        throw new Error("Unable to resolve project id for reset.");
+      }
+
       const mergeQueue: ResetMergeQueue = registered
         ? new PostgresMergeQueue(registered.id)
         : wrapLocalMergeQueue(new MergeQueue(store.getDb()));
@@ -794,7 +798,7 @@ export const resetCommand = new Command("reset")
       // Optional: run stuck detection first, mark newly-stuck runs in the store
       if (detectStuck) {
         console.log(chalk.bold("Detecting stuck runs...\n"));
-        const detectionResult = await detectStuckRuns(helperStore, runtimeProjectId!, {
+        const detectionResult = await detectStuckRuns(helperStore, runtimeProjectId, {
           stuckTimeoutMinutes: timeoutMinutes,
           dryRun,
         });
@@ -827,7 +831,7 @@ export const resetCommand = new Command("reset")
 
       if (beadFilter) {
         // --seed: get ALL runs for this seed regardless of status, so stale pending/running are included
-          runs = await helperStore.getRunsForSeed(beadFilter, runtimeProjectId!);
+          runs = await helperStore.getRunsForSeed(beadFilter, runtimeProjectId);
         if (runs.length === 0) {
           console.log(chalk.yellow(`No runs found for bead ${beadFilter}.\n`));
         } else {
@@ -837,7 +841,7 @@ export const resetCommand = new Command("reset")
         const statuses = all
           ? ["pending", "running", "failed", "stuck", "conflict", "test-failed"] as const
           : ["failed", "stuck", "conflict", "test-failed"] as const;
-          runs = (await Promise.all(statuses.map((s) => helperStore.getRunsByStatus(s, runtimeProjectId!)))).flat();
+          runs = (await Promise.all(statuses.map((s) => helperStore.getRunsByStatus(s, runtimeProjectId)))).flat();
       }
 
       printDryRunNotice(dryRun);
@@ -1073,7 +1077,7 @@ export const resetCommand = new Command("reset")
             vcs,
             projectPath,
             worktreesDir,
-            runtimeProjectId!,
+            runtimeProjectId,
           );
           worktreesRemoved += sweep.worktreesRemoved;
           branchesDeleted += sweep.branchesDeleted;
@@ -1101,7 +1105,7 @@ export const resetCommand = new Command("reset")
       if (backendType !== "native") {
         // 7. Detect and fix seed/run state mismatches for terminal runs
         console.log(chalk.bold("\nChecking for bead/run state mismatches..."));
-        const detectedMismatches = await detectAndFixMismatches(helperStore, seeds, runtimeProjectId!, seedIds, { dryRun });
+        const detectedMismatches = await detectAndFixMismatches(helperStore, seeds, runtimeProjectId, seedIds, { dryRun });
         mismatchResult.mismatches = detectedMismatches.mismatches;
         mismatchResult.fixed = detectedMismatches.fixed;
         mismatchResult.errors = detectedMismatches.errors;
@@ -1128,7 +1132,7 @@ export const resetCommand = new Command("reset")
           seeds,
           mergeQueue,
           projectPath,
-          runtimeProjectId!,
+          runtimeProjectId,
           seedIds, // skip seeds already handled by the main reset loop
           { dryRun },
         );
