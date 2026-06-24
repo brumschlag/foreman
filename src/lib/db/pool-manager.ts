@@ -199,7 +199,6 @@ export function initPool(overrides?: {
       idleTimeoutMillis: idleTimeoutMs,
       connectionTimeoutMillis: connectionTimeoutMs,
     };
-    // @ts-ignore - poolOverride is PoolLike, _pool is PoolLike.
     _pool = overrides.poolOverride;
     return _pool;
   }
@@ -213,7 +212,6 @@ export function initPool(overrides?: {
   };
 
   _config = config;
-  // @ts-ignore - Pool satisfies PoolLike at runtime.
   _pool = new Pool(config);
 
   _pool.on("error", (err) => {
