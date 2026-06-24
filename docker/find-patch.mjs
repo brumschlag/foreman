@@ -50,6 +50,6 @@ try {
   process.stdout.write('\n');
 } catch (err) {
   process.stderr.write(`[find-patch] Error: ${err.message}\n`);
-  try { await client.end(); } catch {}
+  try { await client.end(); } catch { /* best-effort cleanup */ }
   process.stdout.write('\n');
 }
