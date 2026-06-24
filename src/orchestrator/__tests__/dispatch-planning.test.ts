@@ -126,6 +126,19 @@ describe("dispatch-planning", () => {
     ]);
   });
 
+  it("buildDispatchSeedPlan uses groupedTasks when provided", async () => {
+    const seed = makeIssue("story-1", "story");
+    const groupedTasks = [
+      { seedId: "task-a", seedTitle: "Task A" },
+      { seedId: "task-b", seedTitle: "Task B" },
+    ];
+
+    const plan = await buildDispatchSeedPlan(seed, { groupedTasks });
+    expect(plan.worktreeSeedId).toBe("story-1");
+    expect(plan.groupedTasks).toEqual(groupedTasks);
+    expect(plan.groupingParentId).toBe("story-1");
+  });
+
   it("resolveNativeStoryParent walks ancestors to find story container", async () => {
     const parent = await resolveNativeStoryParent("task-leaf", {
       getParentTaskId: async (id) => {
@@ -175,5 +188,13 @@ describe("dispatch-planning", () => {
     });
 
     expect(parent?.id).toBe("story-root");
+  });
+
+  it("resolveNativeStoryParent returns null when no story ancestor exists", async () => {
+    const parent = await resolveNativeStoryParent("task-leaf", {
+      getParentTaskId: async () => null,
+      getTaskById: async () => null,
+    });
+    expect(parent).toBeNull();
   });
 });

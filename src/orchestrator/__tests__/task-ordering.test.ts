@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getTaskOrder,
+  getNativeEpicTaskOrder,
   CircularDependencyError,
   type TaskOrderingIssueDetail,
 } from "../task-ordering.js";
@@ -195,5 +196,69 @@ describe("getTaskOrder", () => {
     // External dep ext-1 is ignored (not in children set), so t2 only depends on t1
     const result = await getTaskOrder("epic-1", client as never, "/tmp", false);
     expect(result.map((t) => t.seedId)).toEqual(["t1", "t2"]);
+  });
+});
+
+describe("getNativeEpicTaskOrder", () => {
+  function makeNativeOps(childIds: string[], tasks: Record<string, {
+    title: string;
+    type: string;
+    priority?: number;
+    description?: string | null;
+    blockers?: string[];
+  }>) {
+    return {
+      getChildren: vi.fn().mockResolvedValue(childIds),
+      getTask: vi.fn().mockImplementation(async (taskId: string) => {
+        const task = tasks[taskId];
+        if (!task) return null;
+        return {
+          id: taskId,
+          title: task.title,
+          type: task.type,
+          priority: task.priority ?? 2,
+          description: task.description ?? null,
+        };
+      }),
+      getBlockingDependencies: vi.fn().mockImplementation(async (taskId: string) => tasks[taskId]?.blockers ?? []),
+    };
+  }
+
+  it("returns empty array when epic has no children", async () => {
+    const ops = makeNativeOps([], {});
+    const result = await getNativeEpicTaskOrder("epic-1", ops, "/tmp", false);
+    expect(result).toEqual([]);
+    expect(ops.getChildren).toHaveBeenCalledWith("epic-1");
+  });
+
+  it("orders native child tasks by blocking dependencies", async () => {
+    const ops = makeNativeOps(["t1", "t2", "t3"], {
+      t1: { title: "Task 1", type: "task" },
+      t2: { title: "Task 2", type: "task", blockers: ["t1"] },
+      t3: { title: "Task 3", type: "task", blockers: ["t2"] },
+    });
+
+    const result = await getNativeEpicTaskOrder("epic-1", ops, "/tmp", false);
+    expect(result.map((t) => t.seedId)).toEqual(["t1", "t2", "t3"]);
+  });
+
+  it("skips non-actionable child types", async () => {
+    const ops = makeNativeOps(["t1", "story-1"], {
+      t1: { title: "Task 1", type: "task" },
+      "story-1": { title: "Story", type: "story" },
+    });
+
+    const result = await getNativeEpicTaskOrder("epic-1", ops, "/tmp", false);
+    expect(result).toHaveLength(1);
+    expect(result[0].seedId).toBe("t1");
+  });
+
+  it("throws CircularDependencyError on cyclic blockers", async () => {
+    const ops = makeNativeOps(["t1", "t2"], {
+      t1: { title: "Task 1", type: "task", blockers: ["t2"] },
+      t2: { title: "Task 2", type: "task", blockers: ["t1"] },
+    });
+
+    await expect(getNativeEpicTaskOrder("epic-1", ops, "/tmp", false)).rejects.toThrow(CircularDependencyError);
   });
 });

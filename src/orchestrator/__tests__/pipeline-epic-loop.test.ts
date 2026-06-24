@@ -332,4 +332,98 @@ describe("epic task loop (TRD-005)", () => {
     expect(callArg.progress.costUsd).toBeGreaterThan(0);
     expect(callArg.phaseRecords.length).toBe(5);
   });
+
+  it("halts epic when cumulative cost exceeds epicMaxBudgetUsd after task failure", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaFailReport("Broken."));
+      }
+      return { success: true, costUsd: 0.75, turns: 1, tokensIn: 100, tokensOut: 50 };
+    });
+
+    const epicTasks = makeEpicTasks(1);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      epicMaxBudgetUsd: 1,
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).toHaveBeenCalledOnce();
+    expect(markStuck.mock.calls[0]?.[6]).toBe("epic-budget-exceeded");
+    expect(String(markStuck.mock.calls[0]?.[7])).toContain("Epic budget exceeded");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Epic budget exceeded"));
+  });
+
+  it("halts epic after maxConsecutiveEpicTaskFailures consecutive task failures", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaFailReport("Broken."));
+      }
+      return successResult();
+    });
+
+    const epicTasks = makeEpicTasks(4);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      maxConsecutiveEpicTaskFailures: 3,
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).toHaveBeenCalledOnce();
+    expect(markStuck.mock.calls[0]?.[6]).toBe("epic-consecutive-failures");
+    expect(String(markStuck.mock.calls[0]?.[7])).toContain("3 consecutive task failures");
+    // Three failed tasks (developer/qa retries) but not a fourth task.
+    expect(runPhase.mock.calls.length).toBeLessThan(24);
+  });
+
+  it("resets consecutive failure counter after a successful task", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const passTaskIndices = new Set([1, 3]); // task-2 and task-4 pass; others fail
+    let currentTaskIndex = 0;
+    let qaAttemptsThisTask = 0;
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        qaAttemptsThisTask++;
+        const shouldPass = passTaskIndices.has(currentTaskIndex);
+        writeFileSync(
+          join(tmpDir, "QA_REPORT.md"),
+          shouldPass ? qaPassReport() : qaFailReport("Broken."),
+        );
+
+        if (shouldPass || qaAttemptsThisTask >= 3) {
+          currentTaskIndex++;
+          qaAttemptsThisTask = 0;
+        }
+      }
+      return successResult();
+    });
+
+    const epicTasks = makeEpicTasks(5);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      maxConsecutiveEpicTaskFailures: 3,
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("finalize"));
+  });
 });
