@@ -850,6 +850,23 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
       failedCount++;
       consecutiveTaskFailures++;
 
+      // TRD-010: Create bug bead on QA failure (before any early returns)
+      if (result.retriesExhausted && ctx.onTaskQaFailure && config.epicId) {
+        const activeBugBeadId = await ctx.onTaskQaFailure(task.seedId, task.seedTitle, config.epicId).catch(() => undefined);
+        if (activeBugBeadId) {
+          activeBugBeadIds.set(task.seedId, activeBugBeadId);
+          ctx.log(`[EPIC] Created bug bead ${activeBugBeadId} for QA failure on ${task.seedId}`);
+        }
+      }
+
+      // TRD-011: Mark task bead as failed (before any early returns)
+      if (ctx.onTaskStatusChange) {
+        await ctx.onTaskStatusChange(task.seedId, "failed").catch(() => {});
+      }
+
+      ctx.log(`[EPIC] Task ${task.seedId} FAILED${result.retriesExhausted ? " (retries exhausted)" : ""}`);
+      await appendFile(logFile, `\n[EPIC] Task ${task.seedId} FAILED\n`);
+
       if (totalProgress.costUsd >= epicMaxBudgetUsd) {
         const budgetMsg = `Epic budget exceeded: $${totalProgress.costUsd.toFixed(2)} >= $${epicMaxBudgetUsd.toFixed(2)}`;
         ctx.log(`[EPIC] ${budgetMsg}`);
@@ -873,23 +890,6 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
         );
         return;
       }
-
-      // TRD-010: Create bug bead on QA failure
-      if (result.retriesExhausted && ctx.onTaskQaFailure && config.epicId) {
-        const activeBugBeadId = await ctx.onTaskQaFailure(task.seedId, task.seedTitle, config.epicId).catch(() => undefined);
-        if (activeBugBeadId) {
-          activeBugBeadIds.set(task.seedId, activeBugBeadId);
-          ctx.log(`[EPIC] Created bug bead ${activeBugBeadId} for QA failure on ${task.seedId}`);
-        }
-      }
-
-      // TRD-011: Mark task bead as failed
-      if (ctx.onTaskStatusChange) {
-        await ctx.onTaskStatusChange(task.seedId, "failed").catch(() => {});
-      }
-
-      ctx.log(`[EPIC] Task ${task.seedId} FAILED${result.retriesExhausted ? " (retries exhausted)" : ""}`);
-      await appendFile(logFile, `\n[EPIC] Task ${task.seedId} FAILED\n`);
 
       // Apply onError strategy
       if (workflowConfig.onError === "stop") {

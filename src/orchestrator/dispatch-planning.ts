@@ -78,6 +78,7 @@ export async function buildDispatchSeedPlan(
         seed,
         worktreeSeedId: nativeStoryParent.id,
         groupingParentId: nativeStoryParent.id,
+        groupedTasks: opts.groupedTasks,
       };
     }
   }

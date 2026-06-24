@@ -216,7 +216,7 @@ export class Dispatcher {
     };
   }
 
-  private async prepareEpicTasks(seed: Issue): Promise<
+  private async prepareEpicTasks(seed: Issue, opts?: { dryRun?: boolean }): Promise<
     | { action: "none" }
     | { action: "skip"; reason: string }
     | { action: "dispatch"; epicTasks: EpicTask[] }
@@ -239,10 +239,12 @@ export class Dispatcher {
     }
 
     if (childCount === 0) {
-      try {
-        await this.seeds.close(seed.id, "Auto-closed: no children (empty epic)");
-      } catch {
-        // Non-fatal
+      if (!opts?.dryRun) {
+        try {
+          await this.seeds.close(seed.id, "Auto-closed: no children (empty epic)");
+        } catch {
+          // Non-fatal
+        }
       }
       return { action: "skip", reason: "Type 'epic' auto-closed — no children" };
     }
@@ -275,10 +277,12 @@ export class Dispatcher {
     }
 
     if (epicTasks.length === 0) {
-      try {
-        await this.seeds.close(seed.id, "Auto-closed: no actionable child tasks");
-      } catch {
-        // Non-fatal
+      if (!opts?.dryRun) {
+        try {
+          await this.seeds.close(seed.id, "Auto-closed: no actionable child tasks");
+        } catch {
+          // Non-fatal
+        }
       }
       return { action: "skip", reason: "Type 'epic' auto-closed — no actionable child tasks" };
     }
@@ -716,12 +720,14 @@ export class Dispatcher {
       const groupedTasks = (seed as unknown as Record<string, unknown>).__epicTasks as EpicTask[] | undefined;
       const dispatchPlan = await buildDispatchSeedPlan(seed, {
         groupedTasks,
-        resolveStoryParent: this.overrides?.nativeTaskOps?.getParentTaskId
-          ? (taskId) => resolveNativeStoryParent(taskId, {
-              getParentTaskId: (id) => this.overrides!.nativeTaskOps!.getParentTaskId!(id),
-              getTaskById: (id) => this.overrides!.nativeTaskOps!.getTaskById(id),
-            })
-          : undefined,
+        resolveStoryParent: groupedTasks
+          ? undefined
+          : this.overrides?.nativeTaskOps?.getParentTaskId
+            ? (taskId) => resolveNativeStoryParent(taskId, {
+                getParentTaskId: (id) => this.overrides!.nativeTaskOps!.getParentTaskId!(id),
+                getTaskById: (id) => this.overrides!.nativeTaskOps!.getTaskById(id),
+              })
+            : undefined,
       });
       const dispatchSeed = dispatchPlan.seed;
       const worktreeSeedId = dispatchPlan.worktreeSeedId;
@@ -767,7 +773,7 @@ export class Dispatcher {
         continue;
       }
 
-      const epicPrep = await this.prepareEpicTasks(dispatchSeed);
+      const epicPrep = await this.prepareEpicTasks(dispatchSeed, { dryRun: opts?.dryRun });
       if (epicPrep.action === "skip") {
         skipped.push({
           seedId: dispatchSeed.id,

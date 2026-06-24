@@ -701,14 +701,14 @@ export function validateWorkflowConfig(raw: unknown, workflowName: string): Work
   }
 
   if (raw["epicMaxBudgetUsd"] !== undefined) {
-    if (typeof raw["epicMaxBudgetUsd"] !== "number" || raw["epicMaxBudgetUsd"] <= 0) {
+    if (typeof raw["epicMaxBudgetUsd"] !== "number" || !Number.isFinite(raw["epicMaxBudgetUsd"]) || raw["epicMaxBudgetUsd"] <= 0) {
       throw new WorkflowConfigError(workflowName, "epicMaxBudgetUsd must be a positive number");
     }
     config.epicMaxBudgetUsd = raw["epicMaxBudgetUsd"];
   }
 
   if (raw["maxConsecutiveEpicTaskFailures"] !== undefined) {
-    if (typeof raw["maxConsecutiveEpicTaskFailures"] !== "number" || raw["maxConsecutiveEpicTaskFailures"] <= 0) {
+    if (typeof raw["maxConsecutiveEpicTaskFailures"] !== "number" || !Number.isInteger(raw["maxConsecutiveEpicTaskFailures"]) || raw["maxConsecutiveEpicTaskFailures"] <= 0) {
       throw new WorkflowConfigError(workflowName, "maxConsecutiveEpicTaskFailures must be a positive integer");
     }
     config.maxConsecutiveEpicTaskFailures = raw["maxConsecutiveEpicTaskFailures"];

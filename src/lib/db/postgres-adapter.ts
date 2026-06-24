@@ -1164,15 +1164,15 @@ export class PostgresAdapter {
 
   /** Blockers this task depends on (blocks edges: from → to). */
   async listBlockingDependencyIds(projectId: string, taskId: string): Promise<string[]> {
-    const rows = await query<{ to_task_id: string }>(
-      `SELECT td.to_task_id
+    const rows = await query<{ from_task_id: string }>(
+      `SELECT td.from_task_id
        FROM task_dependencies td
-       JOIN tasks t ON t.id = td.from_task_id
-       WHERE t.project_id = $1 AND td.from_task_id = $2 AND td.type = 'blocks'
-       ORDER BY td.to_task_id ASC`,
+       JOIN tasks t ON t.id = td.to_task_id
+       WHERE t.project_id = $1 AND td.to_task_id = $2 AND td.type = 'blocks'
+       ORDER BY td.from_task_id ASC`,
       [projectId, taskId],
     );
-    return rows.map((row) => row.to_task_id);
+    return rows.map((row) => row.from_task_id);
   }
 
   async listTaskDependencies(
