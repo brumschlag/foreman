@@ -92,7 +92,7 @@ describe('interpolateTaskPlaceholders', () => {
 
     it('mixed escaped and unescaped placeholders', () => {
       const result = interpolateTaskPlaceholders(
-        '\\{task.title\\} is \"{task.title}\"',
+        '\\{task.title\\} is "{task.title}"',
         FULL_TASK,
       );
       expect(result).toBe('{task.title} is "Fix login timeout"');
