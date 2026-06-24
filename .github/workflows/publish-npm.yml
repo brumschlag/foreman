@@ -33,6 +33,8 @@ jobs:
       # ── Checkout ─────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # ── Node.js setup with npm authentication ────────────────────────────────
       # setup-node@v4 writes an .npmrc that injects NPM_TOKEN automatically
