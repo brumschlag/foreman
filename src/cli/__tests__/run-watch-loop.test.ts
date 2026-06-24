@@ -95,7 +95,7 @@ vi.mock("../../lib/workflow-loader.js", () => ({
 // Mock access() used by legacy beads checks, but preserve other fs/promises
 // exports that ProjectRegistry now uses during native client setup.
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const actual = await importOriginal<typeof NodeFsPromises>();
   return {
     ...actual,
     access: vi.fn().mockResolvedValue(undefined),
@@ -127,7 +127,7 @@ vi.mock("../../orchestrator/pi-rpc-spawn-strategy.js", () => ({
 
 // ── Config mock — keep polling fast in tests ─────────────────────────────────
 vi.mock("../../lib/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/config.js")>();
+  const actual = await importOriginal<typeof LibConfig>();
   return {
     ...actual,
     PIPELINE_LIMITS: {
@@ -143,6 +143,8 @@ vi.mock("../../lib/config.js", async (importOriginal) => {
 
 // ── Module under test ─────────────────────────────────────────────────────────
 import { runCommand } from "../commands/run.js";
+import type * as NodeFsPromises from "node:fs/promises";
+import type * as LibConfig from "../../lib/config.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

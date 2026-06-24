@@ -21,12 +21,13 @@ const { mockExecFileSync } = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actual = await importOriginal<typeof NodeChildProcess>();
   return { ...actual, execFileSync: mockExecFileSync };
 });
 
 import { syncBeadStatusOnStartup, syncTaskStatusOnStartup } from "../task-backend-ops.js";
 import type { SyncResult } from "../task-backend-ops.js";
+import type * as NodeChildProcess from "node:child_process";
 
 // ── Test helpers ────────────────────────────────────────────────────────────
 

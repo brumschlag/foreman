@@ -12,13 +12,15 @@ import type { ITaskClient, Issue } from "../../lib/task-client.js";
 import type { ForemanStore, Run } from "../../lib/store.js";
 import type { VcsBackend } from "../../lib/vcs/index.js";
 import { VcsBackendFactory } from "../../lib/vcs/index.js";
+import type * as VcsIndex from "../../lib/vcs/index.js";
+import type * as NodeFsPromises from "node:fs/promises";
 
 // ── Module Mocks ─────────────────────────────────────────────────────────────
 
 let mockShowFn = vi.fn().mockRejectedValue(new Error("not found"));
 
 vi.mock("../../lib/vcs/index.js", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../../lib/vcs/index.js")>();
+  const original = await importOriginal<typeof VcsIndex>();
   return {
     ...original,
     VcsBackendFactory: {
@@ -82,7 +84,7 @@ vi.mock("../../lib/beads-rust.js", () => ({
 
 // Mock fs/promises to prevent actual file system writes during dispatch
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs/promises")>();
+  const original = await importOriginal<typeof NodeFsPromises>();
   return {
     ...original,
     writeFile: vi.fn().mockResolvedValue(undefined),

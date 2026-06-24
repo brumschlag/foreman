@@ -64,7 +64,7 @@ vi.mock("../pi-rpc-spawn-strategy.js", () => ({
 }));
 
 vi.mock("../dispatcher.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../dispatcher.js")>();
+  const actual = await importOriginal<typeof DispatcherMod>();
   return {
     ...actual,
     spawnWorkerProcess: vi.fn().mockResolvedValue({}),
@@ -72,6 +72,7 @@ vi.mock("../dispatcher.js", async (importOriginal) => {
 });
 
 import { Dispatcher } from "../dispatcher.js";
+import type * as DispatcherMod from "../dispatcher.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -14,6 +14,7 @@ import { Dispatcher, nativeTaskToIssue } from "../dispatcher.js";
 import type { ITaskClient, Issue } from "../../lib/task-client.js";
 import type { ForemanStore, NativeTask, Run } from "../../lib/store.js";
 import type { NativeTaskStatus } from "../types.js";
+import type * as NodeFsPromises from "node:fs/promises";
 
 // ── Module-level mock refs (hoisted so factories can reference them) ──────────────────
 
@@ -60,7 +61,7 @@ vi.mock("../../lib/setup.js", () => ({
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("node:fs/promises")>();
+  const orig = await importOriginal<typeof NodeFsPromises>();
   return { ...orig, writeFile: vi.fn().mockResolvedValue(undefined), mkdir: vi.fn().mockResolvedValue(undefined), open: vi.fn().mockResolvedValue({ fd: 3, close: vi.fn() }), readdir: vi.fn().mockResolvedValue([]), unlink: vi.fn().mockResolvedValue(undefined) };
 });
 

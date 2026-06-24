@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Dispatcher } from "../dispatcher.js";
 import type { ITaskClient, Issue } from "../../lib/task-client.js";
 import type { ForemanStore, NativeTask } from "../../lib/store.js";
+import type * as NodeFsPromises from "node:fs/promises";
 
 // ── Module mocks ─────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ vi.mock("../../lib/setup.js", () => ({
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("node:fs/promises")>();
+  const orig = await importOriginal<typeof NodeFsPromises>();
   return {
     ...orig,
     writeFile: vi.fn().mockResolvedValue(undefined),
