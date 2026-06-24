@@ -10,15 +10,18 @@ on:
     branches:
       - main
 
-# Permissions required by release-please to create PRs and push tags.
-permissions:
-  contents: write
-  pull-requests: write
+# Least-privilege default: no permissions granted unless a job opts in below.
+permissions: {}
 
 jobs:
   release-please:
     name: Create or update Release PR
     runs-on: ubuntu-latest
+
+    # Permissions required by release-please to create PRs and push tags.
+    permissions:
+      contents: write
+      pull-requests: write
 
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -27,7 +30,7 @@ jobs:
       sha: ${{ steps.release.outputs.sha }}
 
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           # Uses release-please-config.json + .release-please-manifest.json
