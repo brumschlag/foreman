@@ -49,13 +49,17 @@ jobs:
 
     steps:
       - name: Print release info
+        env:
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          SHA: ${{ needs.release-please.outputs.sha }}
         run: |
           echo "### 🎉 New release created!" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Tag | \`${{ needs.release-please.outputs.tag_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | \`${{ needs.release-please.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit | \`${{ needs.release-please.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | \`${TAG_NAME}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${SHA}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "The \`release-binaries\` workflow will now build standalone binaries for this tag." >> "$GITHUB_STEP_SUMMARY"
