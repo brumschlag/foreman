@@ -25,13 +25,15 @@ import { randomBytes } from "node:crypto";
 import type { Issue } from "./task-client.js";
 import type { NativeTaskStatus } from "../orchestrator/types.js";
 
+type RunResult = { changes: number; lastInsertRowid?: number | bigint };
+
 type Database = {
   prepare: (sql: string) => {
-    run: (...args: unknown[]) => any;
-    get: (...args: unknown[]) => any;
-    all: (...args: unknown[]) => any[];
+    run: (...args: unknown[]) => RunResult;
+    get: (...args: unknown[]) => unknown;
+    all: (...args: unknown[]) => unknown[];
   };
-  transaction: (fn: (...args: unknown[]) => unknown) => (...args: unknown[]) => any;
+  transaction: <T>(fn: (...args: unknown[]) => T) => (...args: unknown[]) => T;
 };
 
 // ── Priority helpers ─────────────────────────────────────────────────────

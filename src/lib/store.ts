@@ -8,22 +8,22 @@ type LocalStoreRunResult = { changes: number; lastInsertRowid?: number | bigint 
 
 type LocalStoreStatement = {
   run: (...args: unknown[]) => LocalStoreRunResult;
-  get: (...args: unknown[]) => any;
-  all: (...args: unknown[]) => any[];
+  get: (...args: unknown[]) => unknown;
+  all: (...args: unknown[]) => unknown[];
 };
 
 type LocalStoreDatabase = {
   prepare: (...args: unknown[]) => LocalStoreStatement;
   exec: (...args: unknown[]) => void;
   pragma: (...args: unknown[]) => unknown;
-  transaction: (fn: (...args: unknown[]) => unknown) => (...args: unknown[]) => unknown;
+  transaction: <T>(fn: (...args: unknown[]) => T) => (...args: unknown[]) => T;
   close: () => void;
 };
 
 function createDisabledLocalStoreDb(): LocalStoreDatabase {
   const noopRun = (): LocalStoreRunResult => ({ changes: 0 });
   const noopGet = (): undefined => undefined;
-  const noopAll = (): any[] => [];
+  const noopAll = (): unknown[] => [];
 
   return {
     prepare: () => ({ run: noopRun, get: noopGet, all: noopAll }),

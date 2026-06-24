@@ -45,11 +45,17 @@ export async function runTsxModule(
       },
     );
     return { stdout, stderr, exitCode: 0 };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const execErr = err as {
+      stdout?: string;
+      stderr?: string;
+      code?: number;
+      status?: number;
+    };
     return {
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
-      exitCode: err.code ?? err.status ?? 1,
+      stdout: execErr.stdout ?? "",
+      stderr: execErr.stderr ?? "",
+      exitCode: execErr.code ?? execErr.status ?? 1,
     };
   }
 }

@@ -53,17 +53,19 @@ export interface BeadGraph {
  *   - `{ success: false, error: "..." }` → throws
  *   - Everything else (primitives, bare arrays, no envelope) → pass-through
  */
-export function unwrapBdResponse(raw: any): any {
+export function unwrapBdResponse(raw: unknown): unknown {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return raw;
 
+  const envelope = raw as Record<string, unknown>;
+
   // Check for failure envelope
-  if (raw.success === false && raw.error) {
-    throw new Error(raw.error);
+  if (envelope.success === false && envelope.error) {
+    throw new Error(String(envelope.error));
   }
 
   // Unwrap known envelope keys
-  if ("issues" in raw) return raw.issues;
-  if ("issue" in raw) return raw.issue;
+  if ("issues" in envelope) return envelope.issues;
+  if ("issue" in envelope) return envelope.issue;
 
   // No known inner key — return the full envelope (e.g. create response)
   return raw;
@@ -72,7 +74,7 @@ export function unwrapBdResponse(raw: any): any {
 export async function execBd(
   args: string[],
   cwd?: string,
-): Promise<any> {
+): Promise<unknown> {
   const finalArgs = [...args, "--json"];
   try {
     const { stdout } = await execFileAsync(SD_PATH, finalArgs, {
@@ -82,11 +84,12 @@ export async function execBd(
     const trimmed = stdout.trim();
     if (!trimmed) return undefined;
     return unwrapBdResponse(JSON.parse(trimmed));
-  } catch (err: any) {
+  } catch (err: unknown) {
     // execFile rejects with code, stderr on non-zero exit
-    const stderr = err.stderr?.trim() ?? "";
-    const stdout = err.stdout?.trim() ?? "";
-    const detail = stderr || stdout || err.message;
+    const execErr = err as { stderr?: string; stdout?: string; message?: string };
+    const stderr = execErr.stderr?.trim() ?? "";
+    const stdout = execErr.stdout?.trim() ?? "";
+    const detail = stderr || stdout || execErr.message;
     throw new Error(`sd ${finalArgs.join(" ")} failed: ${detail}`);
   }
 }
@@ -150,7 +153,10 @@ export class BeadsClient implements ITaskClient {
     if (opts?.labels) args.push("--labels", opts.labels.join(","));
     const result = await execBd(args, this.projectPath);
     // sd create returns { success, command, id } — fetch full object
-    const id = result?.id ?? result;
+    const id =
+      result != null && typeof result === "object" && "id" in result
+        ? (result as { id: unknown }).id
+        : result;
     if (typeof id === "string") {
       return await this.show(id) as unknown as Bead;
     }

@@ -45,21 +45,38 @@ import { getRunReportsDir, resolveArtifactPath } from "../lib/report-paths.js";
 import { loadProjectConfig, resolveSandboxConfig as resolveProjectSandboxConfig } from "../lib/project-config.js";
 import { SandboxProviderFactory } from "../lib/sandbox-providers/index.js";
 import type { SandboxProviderConfig } from "../lib/sandbox-provider.js";
+import type { WorkerNotification } from "./types.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type AnyMailClient = AgentMailClient;
 
+/**
+ * Structural shape of the worker NotificationClient passed through to runPhase().
+ * Matches the (non-exported) NotificationClient class in agent-worker.ts.
+ */
+export interface PhaseNotificationClient {
+  send(notification: WorkerNotification): void;
+}
+
+/**
+ * Config object handed to runPhase(): the pipeline run config augmented with
+ * the per-phase model/turn/tool overrides computed by the executor.
+ */
+export type PhaseRunConfig = PipelineRunConfig & {
+  maxTurns?: number;
+  allowedTools?: string[];
+};
+
 /** Function signature matching the runPhase() in agent-worker.ts. */
- 
 export type RunPhaseFn = (
-  role: any,
+  role: string,
   prompt: string,
-  config: any,
+  config: PhaseRunConfig,
   progress: RunProgress,
   logFile: string,
   store: ForemanStore,
-  notifyClient: any,
+  notifyClient: PhaseNotificationClient | null,
   agentMailClient?: AnyMailClient | null,
   observability?: PhaseObservabilityInput,
   observabilityWriter?: PipelineObservabilityWriter,
@@ -164,8 +181,7 @@ export interface PipelineContext {
   workflowConfig: WorkflowConfig;
   store: ForemanStore;
   logFile: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  notifyClient: any;
+  notifyClient: PhaseNotificationClient | null;
   agentMailClient: AnyMailClient | null;
   /**
    * Optional task lifecycle callback for phase-level visibility.
@@ -209,8 +225,18 @@ export interface PipelineContext {
   /** Release file reservations */
   releaseFiles: (client: AnyMailClient | null, paths: string[], agentName: string) => void;
   /** Mark pipeline as stuck */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  markStuck: (...args: any[]) => Promise<void>;
+  markStuck: (
+    store: ForemanStore,
+    runId: string,
+    projectId: string,
+    seedId: string,
+    seedTitle: string,
+    progress: RunProgress,
+    phase: string,
+    reason: string,
+    projectPath: string,
+    notifyClient?: PhaseNotificationClient | null,
+  ) => Promise<void>;
   /** Log function */
   log: (msg: string) => void;
   /** Prompt loader options */
@@ -890,7 +916,7 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
           store, runId, config.projectId, seedId, config.seedTitle,
           totalProgress, "epic-task-failed",
           `Task ${task.seedId} failed — epic halted (onError=stop)`,
-          config.projectPath, ctx.notifyClient,
+          config.projectPath as string, ctx.notifyClient,
         );
         return;
       }
@@ -1293,7 +1319,7 @@ async function runPhaseSequence(
           seedId, phase: phaseName, error: errorMsg, retryable: false,
         });
         await writeTaskPhaseNote(phaseName, "failure", `${phaseName} failed: ${errorMsg}`, { retryable: false });
-        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
         return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
       }
     }
@@ -1317,7 +1343,7 @@ async function runPhaseSequence(
         const errorMsg = `Builtin phase ${phaseName} is not supported by this runner`;
         ctx.log(`[${phaseName.toUpperCase()}] FAIL — ${errorMsg}`);
         await writeTaskPhaseNote(phaseName, "failure", `${phaseName} failed: ${errorMsg}`, { retryable: false });
-        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
         return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
       }
 
@@ -1388,7 +1414,7 @@ async function runPhaseSequence(
             seedId, phase: phaseName, error: errorMsg, retryable: true,
           });
           await writeTaskPhaseNote(phaseName, "failure", `${phaseName} rate limited: ${errorMsg}`, { retryable: true });
-          await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+          await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
           return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
         }
 
@@ -1428,7 +1454,7 @@ async function runPhaseSequence(
           seedId, phase: phaseName, error: errorMsg, retryable: false,
         });
         await writeTaskPhaseNote(phaseName, "failure", `${phaseName} failed: ${errorMsg}`, { retryable: false });
-        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
         return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
       }
 
@@ -1498,7 +1524,7 @@ async function runPhaseSequence(
             seedId, phase: phaseName, error: errorMsg, retryable: true,
           });
           await writeTaskPhaseNote(phaseName, "failure", `${phaseName} rate limited: ${errorMsg}`, { retryable: true });
-          await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+          await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
           return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
         }
 
@@ -1536,7 +1562,7 @@ async function runPhaseSequence(
           seedId, phase: phaseName, error: errorMsg, retryable: false,
         });
         await writeTaskPhaseNote(phaseName, "failure", `${phaseName} failed: ${errorMsg}`, { retryable: false });
-        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+        await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
         return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
       }
       // Handle verdict if configured
@@ -1906,7 +1932,7 @@ async function runPhaseSequence(
         seedId, phase: phaseName, error: errorMsg, retryable: !isRateLimit,
       });
       await writeTaskPhaseNote(phaseName, "failure", `${phaseName} failed: ${errorMsg}`, { retryable: !isRateLimit });
-      await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath, notifyClient);
+      await ctx.markStuck(store, runId, projectId, seedId, seedTitle, progress, phaseName, errorMsg, config.projectPath as string, notifyClient);
       return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress };
     }
 
