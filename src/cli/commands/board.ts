@@ -22,7 +22,7 @@ import chalk from "chalk";
 import { Box, Spacer, Text, renderToString } from "ink";
 import { createElement } from "react";
 import { basename, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -964,7 +964,7 @@ export function resolveEditor(): string {
   // Check which editors are available on PATH
   for (const candidate of ["vim", "nvim", "nano", "vi", "emacs"]) {
     try {
-      require("node:child_process").execFileSync(candidate, ["--version"], {
+      execFileSync(candidate, ["--version"], {
         stdio: "ignore",
       });
       return candidate;
