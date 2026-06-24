@@ -3,8 +3,7 @@
  * Equivalent to what `foreman init` does, minus the br/beads init step.
  */
 import { installBundledPrompts, installBundledWorkflows } from "../../src/lib/prompt-loader.js";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 const projectDir = resolve("/home/brian/source/foreman-sample");
 

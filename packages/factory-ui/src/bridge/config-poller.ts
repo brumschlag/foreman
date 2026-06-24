@@ -100,7 +100,7 @@ export class ConfigPoller {
       };
 
       this.opts.onConfig(config);
-    } catch (err) {
+    } catch {
       // File missing or parse error → emit defaults
       if (this.lastContent !== null) {
         console.log(`[config-poller] config missing or invalid, using defaults`);

@@ -137,7 +137,7 @@ export class DaemonSseClient {
     try {
       const event = JSON.parse(data) as BroadcastEvent;
       this.opts.onEvent?.(event);
-    } catch (err) {
+    } catch {
       console.error("[sse-client] failed to parse event data:", data?.slice(0, 100));
     }
   }

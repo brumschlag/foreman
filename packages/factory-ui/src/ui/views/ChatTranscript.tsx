@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useFactoryStore } from "../store/factoryStore";
-import type { ChatTurn } from "../../bridge/types";
 import { requestTranscript } from "../hooks/useFactorySocket";
 
 function truncate(text: string, maxLen: number): string {
