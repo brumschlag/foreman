@@ -66,7 +66,9 @@ jobs:
 
       # ── Node.js setup ────────────────────────────────────────────────────────
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        # Accepted: no dependency cache is enabled here (no `cache:` input), so
+        # there is no cache for a release build to poison.
+        uses: actions/setup-node@v4 # zizmor: ignore[cache-poisoning]
         with:
           node-version: "20"
 
