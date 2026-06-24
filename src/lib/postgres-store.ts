@@ -460,7 +460,7 @@ export class PostgresStore implements IStore {
     );
   }
 
-  async getRateLimitCountsByModel(projectId: string, hoursBack = 24): Promise<Record<string, number>> {
+  async getRateLimitCountsByModel(projectId: string, _hoursBack = 24): Promise<Record<string, number>> {
     // Not implemented in PostgresAdapter yet
     return {};
   }
@@ -599,7 +599,7 @@ export class PostgresStore implements IStore {
 
   // ── Sync wrappers for backward compatibility ─────────────────────────
 
-  listTasksByStatusSync(statuses: string[], limit = 200): NativeTask[] {
+  listTasksByStatusSync(statuses: string[], _limit = 200): NativeTask[] {
     // Sync version not supported for Postgres
     throw new Error("Sync operations not supported in PostgresStore");
   }

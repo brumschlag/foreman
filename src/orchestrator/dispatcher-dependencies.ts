@@ -7,8 +7,8 @@
  * of interface-only dependencies.
  */
 
-import type { ITaskClient, Issue } from "../lib/task-client.js";
-import type { ForemanStore } from "../lib/store.js";
+import type { ITaskClient } from "../lib/task-client.js";
+
 import type { BvClient } from "../lib/bv.js";
 import type { VcsBackend } from "../lib/vcs/index.js";
 import type { NativeTask, Run, EventType } from "../lib/store.js";

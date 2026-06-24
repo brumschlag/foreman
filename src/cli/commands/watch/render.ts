@@ -9,7 +9,7 @@
 
 import chalk from "chalk";
 import { type WatchState } from "./WatchState.js";
-import { renderWatchLayout, computeLayoutSections } from "./WatchLayout.js";
+import { renderWatchLayout } from "./WatchLayout.js";
 import { renderHelpOverlay } from "./WatchState.js";
 
 // ── Terminal dimensions ───────────────────────────────────────────────────

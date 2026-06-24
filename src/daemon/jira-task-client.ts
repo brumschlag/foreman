@@ -3,12 +3,7 @@
  * Maps Foreman's generic task operations to Jira issue operations.
  */
 import type { Issue, ITaskClient, CreateOptions, UpdateOptions } from "../lib/task-client.js";
-import {
-  JiraApiClient,
-  type JiraIssue,
-  type JiraProjectStatus,
-  type JiraTransition,
-} from "./jira-api-client.js";
+import { JiraApiClient, type JiraIssue, type JiraProjectStatus } from "./jira-api-client.js";
 export interface JiraLifecycleConfig {
   /** Statuses that indicate an issue is ready to be worked on (e.g., "To Do", "Open", "Ready") */
   startStatuses?: string[];

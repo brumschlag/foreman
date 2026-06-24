@@ -25,7 +25,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, writeFile, mkdir, access, constants } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { basename, dirname, join, resolve as pathResolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import type { PostgresAdapter } from "./db/postgres-adapter.js";

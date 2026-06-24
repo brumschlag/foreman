@@ -27,7 +27,7 @@ import {
 import { ProjectRegistry } from "../lib/project-registry.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getPrState, type PrState } from "../lib/pr-state.js";
+import { getPrState } from "../lib/pr-state.js";
 import { eventBroadcaster, type EventBroadcaster } from "./event-broadcaster.js";
 // ---------------------------------------------------------------------------
 // Context

@@ -205,7 +205,7 @@ async function wireTaskDependencies(
   plan: SlingPlan,
   trdIdToTaskId: Map<string, string>,
   options: SlingOptions,
-  result: TrackerResult,
+  _result: TrackerResult,
 ): Promise<string[]> {
   const depErrors: string[] = [];
 

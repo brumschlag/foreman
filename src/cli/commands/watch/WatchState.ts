@@ -589,7 +589,7 @@ export function handleWatchKey(
 
 // ── Help overlay ──────────────────────────────────────────────────────────
 
-export function renderHelpOverlay(width: number): string {
+export function renderHelpOverlay(_width: number): string {
   const lines: string[] = [];
   lines.push(chalk.bold("\n  ── HELP ──────────────────────────────────────────────────"));
   lines.push("");

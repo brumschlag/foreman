@@ -17,7 +17,7 @@
  */
 
 import { Command } from "commander";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import chalk from "chalk";

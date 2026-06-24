@@ -27,7 +27,7 @@ import chalk from "chalk";
 import type { TaskDependencyRow as DependencyRow, TaskNoteRow, TaskRow } from "../../lib/db/postgres-adapter.js";
 import { resolveProjectPathFromOptions } from "./project-task-support.js";
 import { createTrpcClient, type TrpcClient } from "../../lib/trpc-client.js";
-import type { RegisteredProjectSummary } from "./project-task-support.js";
+
 import { findRegisteredProjectByPath } from "./project-context.js";
 import type { PrState } from "../../lib/pr-state.js";
 import { ForemanStore } from "../../lib/store.js";

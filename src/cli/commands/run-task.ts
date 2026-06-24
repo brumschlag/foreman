@@ -22,7 +22,7 @@ import { getDefaultModel } from "../../lib/config.js";
 import { resolveRepoRootProjectPath, listRegisteredProjects } from "./project-task-support.js";
 import type { RegisteredProjectSummary } from "./project-task-support.js";
 import { createTaskClient } from "../../lib/task-client-factory.js";
-import type { ITaskClient, Issue } from "../../lib/task-client.js";
+import type { Issue } from "../../lib/task-client.js";
 import { ForemanStore } from "../../lib/store.js";
 import type { Run } from "../../lib/store.js";
 import { PostgresStore } from "../../lib/postgres-store.js";

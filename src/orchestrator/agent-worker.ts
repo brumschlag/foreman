@@ -13,7 +13,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, basename } from "node:path";
+import { dirname, join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { runPhaseSession } from "./phase-runner.js";
 import { createSendMailTool, createGetRunStatusTool, createCloseBeadTool } from "./pi-sdk-tools.js";
@@ -28,10 +28,10 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { ForemanStore } from "../lib/store.js";
 import type { RunProgress } from "../lib/store.js";
 import { PostgresStore } from "../lib/postgres-store.js";
-import type { RunProgressSummary } from "./read-models.js";
+
 import { PostgresAdapter } from "../lib/db/postgres-adapter.js";
 import { initPool, isPoolInitialised } from "../lib/db/pool-manager.js";
-import { PIPELINE_BUFFERS, PIPELINE_TIMEOUTS } from "../lib/config.js";
+import { PIPELINE_TIMEOUTS } from "../lib/config.js";
 import {
   ROLE_CONFIGS,
   getDisallowedTools,

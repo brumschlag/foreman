@@ -18,7 +18,7 @@ import type { VcsBackend } from "../lib/vcs/interface.js";
 import { MergeQueue, RETRY_CONFIG } from "./merge-queue.js";
 import { PostgresMergeQueue } from "./postgres-merge-queue.js";
 import { Refinery } from "./refinery.js";
-import { mapRunStatusToSeedStatus, mapRunStatusToNativeTaskStatus } from "../lib/run-status.js";
+import { mapRunStatusToNativeTaskStatus } from "../lib/run-status.js";
 import { enqueueMarkBeadFailed, enqueueAddNotesToBead } from "./task-backend-ops.js";
 
 type Awaitable<T> = T | Promise<T>;

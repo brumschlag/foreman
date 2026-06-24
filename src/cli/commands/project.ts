@@ -11,7 +11,7 @@
  * @module src/cli/commands/project
  */
 import chalk from "chalk";
-import { resolve } from "node:path";
+
 import { Command } from "commander";
 import { createTrpcClient } from "../../lib/trpc-client.js";
 import { encrypt } from "../../lib/encryption.js";

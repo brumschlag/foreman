@@ -35,7 +35,7 @@ import type { PhaseRecord, SessionLogData } from "./session-log.js";
 import type { AgentMailClient } from "../lib/agent-mail-client.js";
 import type { ForemanStore } from "../lib/store.js";
 import type { RunProgress } from "../lib/store.js";
-import type { RunProgressSummary } from "./read-models.js";
+
 import type { VcsBackend } from "../lib/vcs/index.js";
 import { type HeartbeatManager, createHeartbeatManager, type HeartbeatConfig } from "./heartbeat-manager.js";
 import { createPhaseRecord, finalizePhaseRecord, generateActivityLog, writeIncrementalPipelineReport, type PhaseRecord as ActivityPhaseRecord } from "./activity-logger.js";

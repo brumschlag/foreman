@@ -15,7 +15,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { VcsBackend } from "../lib/vcs/index.js";
 import { getForemanHomePath } from "../lib/foreman-paths.js";
-import { inferProjectPathFromWorkspacePath } from "../lib/workspace-paths.js";
+
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
