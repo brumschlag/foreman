@@ -40,7 +40,9 @@ jobs:
       # setup-node@v4 writes an .npmrc that injects NPM_TOKEN automatically
       # when registry-url is provided.
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        # Accepted: no dependency cache is enabled here (no `cache:` input), so
+        # there is no cache for the publish job to poison.
+        uses: actions/setup-node@v4 # zizmor: ignore[cache-poisoning]
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
