@@ -14,7 +14,7 @@
  * A "log_line" WsMessage is broadcast for each new line detected.
  */
 
-import { watch, createReadStream, statSync, existsSync } from "node:fs";
+import { watch, createReadStream, statSync, existsSync, readdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -100,7 +100,6 @@ export class LogTailer {
   /** Scan for .err files already present (pre-existing runs). */
   private scanExisting(): void {
     try {
-      const { readdirSync } = require("node:fs");
       const files: string[] = readdirSync(LOGS_DIR);
       for (const f of files) {
         if (f.endsWith(".err")) {
