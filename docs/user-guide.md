@@ -41,7 +41,7 @@ foreman task list
 
 ### Workflows
 
-A workflow is a YAML phase sequence. Bundled workflows live in `src/defaults/workflows/`; installed or project-local workflows live under `.foreman/workflows/` or `~/.foreman/workflows/` depending on setup. Workflows can declare `task_type: <type>` so type-based dispatch is owned by the workflow YAML; duplicate `task_type` declarations fail doctor/startup validation.
+A workflow is a YAML phase sequence. Bundled workflows live in `src/defaults/workflows/`; installed or project-local workflows live under `.foreman/workflows/` or `~/.foreman/workflows/` depending on setup.
 
 Important phase reports:
 
@@ -57,6 +57,8 @@ Important phase reports:
 | Merge | `MERGE_REPORT.md` |
 
 Bundled workflows write these reports under the runtime report directory (`~/.foreman/reports/...` via `{task.projectReportsDir}`), not into the repository worktree. See [Workflow YAML Reference](./workflow-yaml-reference.md) for configuration details.
+
+**Test execution** follows a phase ownership model that prevents redundant runs. See [Test Execution Policy](./guides/test-execution-policy.md) for details.
 
 ### Worktrees
 
@@ -148,7 +150,6 @@ foreman status
 foreman board
 foreman watch
 foreman logs <run-id>
-foreman logs <run-id> --live      # Interactive viewer with run tabs and log filtering
 foreman attach <run-id>
 ```
 
