@@ -14,6 +14,8 @@
 config_version = "0"
 
 exclude_patterns = [
+  # Vendored copy of the external oftheangels/homebrew-tap repo — not our code.
+  "homebrew-tap/**",
   "*_min.*",
   "*-min.*",
   "*.min.*",
