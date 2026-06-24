@@ -502,4 +502,98 @@ describe("epic task loop (TRD-005)", () => {
     expect(markStuck).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(expect.stringContaining("finalize"));
   });
+
+  it("runs explorer only on the first epic task when taskPhases include explorer", async () => {
+    const { executePipeline, resolveEpicTaskPhases } = await import("../pipeline-executor.js");
+    const phaseOrder: string[] = [];
+    const log = vi.fn();
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      phaseOrder.push(phaseName);
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaPassReport("All good."));
+      }
+      return successResult();
+    });
+
+    const phases = [
+      { name: "explorer", prompt: "explorer.md", artifact: "EXPLORER_REPORT.md" },
+      { name: "developer", prompt: "developer.md", artifact: "DEVELOPER_REPORT.md" },
+      { name: "qa", prompt: "qa.md", artifact: "QA_REPORT.md", verdict: true, retryWith: "developer", retryOnFail: 2 },
+      { name: "finalize", prompt: "finalize.md", artifact: "FINALIZE_VALIDATION.md" },
+    ];
+
+    const args = {
+      ...makeEpicPipelineArgs(tmpDir, runPhase, log, makeEpicTasks(3)),
+      workflowConfig: {
+        name: "epic",
+        phases,
+        taskPhases: ["explorer", "developer", "qa"],
+        finalPhases: ["finalize"],
+        onError: "continue",
+      } as never,
+    };
+
+    await executePipeline(args as never);
+
+    expect(phaseOrder).toEqual([
+      "explorer", "developer", "qa",
+      "developer", "qa",
+      "developer", "qa",
+      "finalize",
+    ]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Skipping explorer for task 2/3"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Skipping explorer for task 3/3"));
+    expect(resolveEpicTaskPhases(phases.slice(0, 3), 0).map((p) => p.name)).toEqual(["explorer", "developer", "qa"]);
+    expect(resolveEpicTaskPhases(phases.slice(0, 3), 1).map((p) => p.name)).toEqual(["developer", "qa"]);
+  });
+
+  it("skips explorer on resumed epic tasks after prior commits", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const phaseOrder: string[] = [];
+    const log = vi.fn();
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      phaseOrder.push(phaseName);
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaPassReport("All good."));
+      }
+      return successResult();
+    });
+
+    const { execSync } = await import("node:child_process");
+    execSync("git init", { cwd: tmpDir, stdio: "ignore" });
+    execSync('git config user.email "test@example.com"', { cwd: tmpDir, stdio: "ignore" });
+    execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "ignore" });
+    writeFileSync(join(tmpDir, "README.md"), "seed");
+    execSync("git add -A", { cwd: tmpDir, stdio: "ignore" });
+    execSync('git commit -m "Task 1 (task-1)"', { cwd: tmpDir, stdio: "ignore" });
+
+    const phases = [
+      { name: "explorer", prompt: "explorer.md", artifact: "EXPLORER_REPORT.md" },
+      { name: "developer", prompt: "developer.md", artifact: "DEVELOPER_REPORT.md" },
+      { name: "qa", prompt: "qa.md", artifact: "QA_REPORT.md", verdict: true, retryWith: "developer", retryOnFail: 2 },
+      { name: "finalize", prompt: "finalize.md", artifact: "FINALIZE_VALIDATION.md" },
+    ];
+
+    const args = {
+      ...makeEpicPipelineArgs(tmpDir, runPhase, log, makeEpicTasks(3)),
+      workflowConfig: {
+        name: "epic",
+        phases,
+        taskPhases: ["explorer", "developer", "qa"],
+        finalPhases: ["finalize"],
+        onError: "continue",
+      } as never,
+    };
+
+    await executePipeline(args as never);
+
+    expect(phaseOrder).toEqual([
+      "developer", "qa",
+      "developer", "qa",
+      "finalize",
+    ]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Skipping explorer for task 2/3"));
+  });
 });

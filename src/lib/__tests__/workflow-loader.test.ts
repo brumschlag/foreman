@@ -1013,7 +1013,7 @@ describe("validateWorkflowConfig — epic mode", () => {
     delete process.env["FOREMAN_HOME"];
     rmSync(tmpDir2, { recursive: true, force: true });
     expect(config.name).toBe("epic");
-    expect(config.taskPhases).toEqual(["developer", "qa"]);
+    expect(config.taskPhases).toEqual(["explorer", "developer", "qa"]);
     expect(config.finalPhases).toEqual(["finalize"]);
     expect(config.epicMaxBudgetUsd).toBe(50);
     expect(config.maxConsecutiveEpicTaskFailures).toBe(3);

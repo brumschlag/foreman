@@ -32,8 +32,10 @@ setupCache:
   key: package-lock.json
   path: node_modules
 
-# Per-task phases: run for each child task in the epic (beads mode)
+# Per-task phases: run for each child task in the epic (beads mode).
+# Explorer runs on task 1 only; pipeline-executor skips it for task 2+ (shared worktree).
 taskPhases:
+  - explorer
   - developer
   - qa
 
@@ -95,6 +97,22 @@ phases:
     mail:
       onStart: true
       onComplete: true
+
+  # ── Phase 3b: Explorer (first epic task only) ───────────────────────────
+  - name: explorer
+    prompt: explorer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: MiniMax
+      P0: MiniMax-highspeed
+    maxTurns: 30
+    artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
+    skipIfArtifact: EXPLORER_REPORT.md
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: developer
 
   # ── Phase 4: Developer (fix issues from finalize / qa) ──────────────────
   - name: developer

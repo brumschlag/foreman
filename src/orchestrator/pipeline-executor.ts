@@ -638,6 +638,22 @@ export async function executePipeline(ctx: PipelineContext): Promise<void> {
   }
 }
 
+/** Phase omitted from epic tasks after the first (shared worktree already explored). */
+export const EPIC_SKIP_EXPLORER_AFTER_FIRST_TASK = "explorer";
+
+/**
+ * Filter per-task phases for epic mode. Explorer runs once on the first task only.
+ */
+export function resolveEpicTaskPhases<T extends { name: string }>(
+  taskPhases: readonly T[],
+  globalTaskIndex: number,
+): T[] {
+  if (globalTaskIndex <= 0) {
+    return [...taskPhases];
+  }
+  return taskPhases.filter((phase) => phase.name !== EPIC_SKIP_EXPLORER_AFTER_FIRST_TASK);
+}
+
 // ── Resume detection ────────────────────────────────────────────────────────
 
 /**
@@ -789,8 +805,16 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
         (config.seedComments ?? ""),
     };
 
+    const globalTaskIndex = totalTaskCount - epicTasks.length + taskIdx;
+    const phasesForTask = resolveEpicTaskPhases(taskPhases, globalTaskIndex);
+    if (phasesForTask.length < taskPhases.length) {
+      ctx.log(
+        `[EPIC] Skipping explorer for task ${globalTaskIndex + 1}/${totalTaskCount} (shared worktree context from prior tasks)`,
+      );
+    }
+
     // Create a task-scoped context with taskPhases only
-    const taskWorkflowConfig = { ...workflowConfig, phases: taskPhases };
+    const taskWorkflowConfig = { ...workflowConfig, phases: phasesForTask };
     const taskCtx: PipelineContext = {
       ...ctx,
       config: taskConfig,
@@ -800,7 +824,7 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
 
     // Run the task phases (developer → QA with retry).
     // failOnRetriesExhausted=true: in epic mode, exhausted retries mean the task failed.
-    const result = await runPhaseSequence(taskCtx, taskPhases, totalProgress, true, ctx.observabilityWriter);
+    const result = await runPhaseSequence(taskCtx, phasesForTask, totalProgress, true, ctx.observabilityWriter);
 
     // Accumulate progress
     totalProgress = result.progress;
