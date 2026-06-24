@@ -224,7 +224,7 @@ export const watchCommand = new Command("watch")
 
         if (!noInbox) {
           const runIds = result.agents.map(e => e.run.id);
-          const inboxResult = await pollInboxData(store!, null, inboxLimit, runIds, projectPath, projectId);
+          const inboxResult = await pollInboxData(store, null, inboxLimit, runIds, projectPath, projectId);
           state.inbox = {
             messages: inboxResult.messages,
             totalCount: inboxResult.totalCount,
@@ -236,7 +236,7 @@ export const watchCommand = new Command("watch")
         // One-shot: poll pipeline events
         if (!noEvents) {
           const runIds = result.agents.map(e => e.run.id);
-          const eventsResult = await pollPipelineEvents(store!, null, eventsLimit, runIds, projectPath, projectId);
+          const eventsResult = await pollPipelineEvents(store, null, eventsLimit, runIds, projectPath, projectId);
           state.events = {
             events: eventsResult.events,
             totalCount: eventsResult.totalCount,
@@ -266,7 +266,7 @@ export const watchCommand = new Command("watch")
       // Initial inbox poll
       if (!noInbox) {
         const runIds = state.agents.map(e => e.run.id);
-          const inboxResult = await pollInboxData(store!, null, inboxLimit, runIds, projectPath, projectId);
+          const inboxResult = await pollInboxData(store, null, inboxLimit, runIds, projectPath, projectId);
         state.inbox = {
           messages: inboxResult.messages,
           totalCount: inboxResult.totalCount,
@@ -279,7 +279,7 @@ export const watchCommand = new Command("watch")
       // Initial events poll
       if (!noEvents) {
         const runIds = state.agents.map(e => e.run.id);
-        const eventsResult = await pollPipelineEvents(store!, null, eventsLimit, runIds, projectPath, projectId);
+        const eventsResult = await pollPipelineEvents(store, null, eventsLimit, runIds, projectPath, projectId);
         state.events = {
           events: eventsResult.events,
           totalCount: eventsResult.totalCount,
@@ -327,7 +327,7 @@ export const watchCommand = new Command("watch")
         // Inbox-only fast poll
         if (!noInbox) {
           const runIds = result.agents.map(e => e.run.id);
-          const inboxResult = await pollInboxData(store!, state.inboxLastSeenId, inboxLimit, runIds, projectPath, projectId);
+          const inboxResult = await pollInboxData(store, state.inboxLastSeenId, inboxLimit, runIds, projectPath, projectId);
 
           if (inboxResult.messages.length > 0) {
             // Prepend new messages (they come in reverse chronological order)
@@ -358,7 +358,7 @@ export const watchCommand = new Command("watch")
         // Events fast poll
         if (!noEvents) {
           const runIds = result.agents.map(e => e.run.id);
-          const eventsResult = await pollPipelineEvents(store!, state.eventsLastSeenId, eventsLimit, runIds, projectPath, projectId);
+          const eventsResult = await pollPipelineEvents(store, state.eventsLastSeenId, eventsLimit, runIds, projectPath, projectId);
 
           if (eventsResult.events.length > 0) {
             // Prepend new events (they come in reverse chronological order)

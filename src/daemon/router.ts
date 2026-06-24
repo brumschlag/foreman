@@ -981,7 +981,8 @@ const githubRouter = t.router({
 
           if (existing.length > 0) {
             // Update existing task
-            const task = existing[0]!;
+            const task = existing[0];
+            if (!task) throw new Error("existing task missing despite non-empty result");
             // Check for conflict
             hasConflict =
               ghIssue.title !== task.title ||
@@ -1697,23 +1698,23 @@ function parseGitHubUrl(url: string): { owner: string; repo: string } {
   const httpsMatch = url.match(
     /^https?:\/\/github\.com\/([^/]+)\/([^/.]+)/i
   );
-  if (httpsMatch) {
+  if (httpsMatch && httpsMatch[1] !== undefined && httpsMatch[2] !== undefined) {
     return {
-      owner: httpsMatch[1]!,
-      repo: httpsMatch[2]!.replace(/\.git$/, ""),
+      owner: httpsMatch[1],
+      repo: httpsMatch[2].replace(/\.git$/, ""),
     };
   }
 
   // SSH URL: git@github.com:owner/repo.git
   const sshMatch = url.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i);
-  if (sshMatch) {
-    return { owner: sshMatch[1]!, repo: sshMatch[2]! };
+  if (sshMatch && sshMatch[1] !== undefined && sshMatch[2] !== undefined) {
+    return { owner: sshMatch[1], repo: sshMatch[2] };
   }
 
   // Shortcut: owner/repo
   const shortcutMatch = url.match(/^([^/]+)\/(.+)$/);
-  if (shortcutMatch) {
-    return { owner: shortcutMatch[1]!, repo: shortcutMatch[2]! };
+  if (shortcutMatch && shortcutMatch[1] !== undefined && shortcutMatch[2] !== undefined) {
+    return { owner: shortcutMatch[1], repo: shortcutMatch[2] };
   }
 
   throw new TrpcProjectError(

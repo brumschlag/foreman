@@ -1012,13 +1012,20 @@ export const inboxCommand = new Command("inbox")
 
     const daemon = await resolveDaemonInboxContext(projectPath, options.project);
     const store = daemon ? null : ForemanStore.forProject(projectPath);
+    // `store` is non-null exactly when `daemon` is null (local mode). Every
+    // local-mode code path below assumes the store exists; surface a clear error
+    // if that invariant is ever violated instead of a late null dereference.
+    const requireStore = (): ForemanStore => {
+      if (!store) throw new Error("Local store unavailable in daemon mode");
+      return store;
+    };
 
     try {
       // ── One-shot global mode (--all without --watch) ───────────────────────
       if (options.all && !options.watch) {
         let messages = daemon
           ? await fetchDaemonMessages(daemon.client, daemon.projectId, { all: true, agent: options.agent, unread: options.unread, limit })
-          : store!.getAllMessagesGlobal(limit);
+          : requireStore().getAllMessagesGlobal(limit);
 
         // Apply agent filter (by recipient, matching single-run behavior)
         if (!daemon && options.agent) {
@@ -1032,7 +1039,7 @@ export const inboxCommand = new Command("inbox")
 
         const summaryRuns = daemon
           ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-          : getInboxStatusRuns(store!);
+          : getInboxStatusRuns(requireStore());
         const chronologicalMessages = [...messages].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
         if (messages.length === 0) {
@@ -1061,7 +1068,7 @@ export const inboxCommand = new Command("inbox")
             }
           } else {
             for (const msg of messages) {
-              store!.markMessageRead(msg.id);
+              requireStore().markMessageRead(msg.id);
             }
           }
           console.log(`Marked ${messages.length} message(s) as read.`);
@@ -1072,7 +1079,7 @@ export const inboxCommand = new Command("inbox")
           console.log("");
           const events = daemon
             ? await fetchDaemonEvents(daemon.client, daemon.projectId, { all: true, limit: eventsLimit })
-            : fetchEventsFromStore(store!, eventsLimit);
+            : fetchEventsFromStore(requireStore(), eventsLimit);
 
           if (events.length === 0) {
             console.log("No pipeline events found.");
@@ -1096,7 +1103,7 @@ export const inboxCommand = new Command("inbox")
         const seenRunIds = new Set<string>();
         const initialGlobal = daemon
           ? await fetchDaemonMessages(daemon.client, daemon.projectId, { all: true, agent: options.agent, unread: false, limit })
-          : store!.getAllMessagesGlobal(limit);
+          : requireStore().getAllMessagesGlobal(limit);
         if (initialGlobal.length > 0) {
           console.log(`── past messages ${"─".repeat(53)}`);
           if (fullPayload) {
@@ -1111,19 +1118,19 @@ export const inboxCommand = new Command("inbox")
         }
         const initRuns = daemon
           ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-          : store!.getRunsByStatuses(["completed", "failed", "running"]);
+          : requireStore().getRunsByStatuses(["completed", "failed", "running"]);
         for (const r of initRuns) seenRunIds.add(r.id);
         const pollAll = (): void => {
           void (async () => {
             const statusRuns = daemon
               ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-              : store!.getRunsByStatuses(["completed", "failed", "running"]);
+              : requireStore().getRunsByStatuses(["completed", "failed", "running"]);
             for (const run of statusRuns) {
               if (!seenRunIds.has(run.id)) { seenRunIds.add(run.id); console.log(formatRunStatus(run)); console.log(""); }
             }
             const msgs = daemon
               ? await fetchDaemonMessages(daemon.client, daemon.projectId, { all: true, agent: options.agent, unread: false, limit })
-              : store!.getAllMessagesGlobal(limit);
+              : requireStore().getAllMessagesGlobal(limit);
             for (const msg of msgs.filter((m) => !seenIds.has(m.id))) {
               seenIds.add(msg.id);
               if (fullPayload) {
@@ -1146,8 +1153,8 @@ export const inboxCommand = new Command("inbox")
       const runId = daemon
         ? await resolveDaemonRunId(daemon.client, daemon.projectId, { run: options.run, task: options.task, bead: options.bead })
         : options.run
-          ?? (taskFilter ? resolveRunIdBySeed(store!, taskFilter) : null)
-          ?? resolveLatestRunId(store!);
+          ?? (taskFilter ? resolveRunIdBySeed(requireStore(), taskFilter) : null)
+          ?? resolveLatestRunId(requireStore());
       if (!runId) {
         console.error("No runs found. Start a pipeline first with `foreman run`.");
         process.exit(1);
@@ -1156,7 +1163,7 @@ export const inboxCommand = new Command("inbox")
       // Resolve seed ID for display (run record carries seed_id)
       const allRuns = daemon
         ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-        : store!.getRunsByStatuses(
+        : requireStore().getRunsByStatuses(
           ["pending", "running", "completed", "failed", "stuck", "merged", "conflict", "test-failed", "pr-created", "reset"],
         );
       const thisRun = allRuns.find((r) => r.id === runId);
@@ -1166,7 +1173,7 @@ export const inboxCommand = new Command("inbox")
         // One-shot: show current run lifecycle status then fetch and display messages
         const runStatusRuns = daemon
           ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-          : store!.getRunsByStatuses(["completed", "failed"]);
+          : requireStore().getRunsByStatuses(["completed", "failed"]);
         const currentRun = runStatusRuns.find((r) => r.id === runId);
         if (currentRun) {
           console.log(formatRunStatus(currentRun));
@@ -1175,7 +1182,7 @@ export const inboxCommand = new Command("inbox")
 
         const messages = daemon
           ? await fetchDaemonMessages(daemon.client, daemon.projectId, { runId, agent: options.agent, unread: options.unread, limit })
-          : fetchMessages(store!, runId, options.agent, options.unread ?? false, limit);
+          : fetchMessages(requireStore(), runId, options.agent, options.unread ?? false, limit);
         if (messages.length === 0) {
           console.log(`No ${options.unread ? "unread " : ""}messages for run ${runId}${seedLabel}${options.agent ? ` (agent: ${options.agent})` : ""}.`);
         } else {
@@ -1201,7 +1208,7 @@ export const inboxCommand = new Command("inbox")
             }
           } else {
             for (const msg of messages) {
-              store!.markMessageRead(msg.id);
+              requireStore().markMessageRead(msg.id);
             }
           }
           console.log(`Marked ${messages.length} message(s) as read.`);
@@ -1212,7 +1219,7 @@ export const inboxCommand = new Command("inbox")
           console.log("");
           const events = daemon
             ? await fetchDaemonEvents(daemon.client, daemon.projectId, { runId, limit: eventsLimit })
-            : fetchEventsFromStoreForRun(store!, runId, eventsLimit);
+            : fetchEventsFromStoreForRun(requireStore(), runId, eventsLimit);
 
           if (events.length === 0) {
             console.log("No pipeline events found.");
@@ -1237,7 +1244,7 @@ export const inboxCommand = new Command("inbox")
       // Initial fetch — print existing messages immediately, then track them as seen
       const initial = daemon
         ? await fetchDaemonMessages(daemon.client, daemon.projectId, { runId, agent: options.agent, unread: false, limit })
-        : fetchMessages(store!, runId, options.agent, false, limit);
+        : fetchMessages(requireStore(), runId, options.agent, false, limit);
       if (initial.length > 0) {
         console.log(`── past messages ${"─".repeat(53)}`);
         if (fullPayload) {
@@ -1255,14 +1262,14 @@ export const inboxCommand = new Command("inbox")
       // Seed seenRunIds with any already-completed/failed runs so we only show new transitions
       const initialRuns = daemon
         ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-        : store!.getRunsByStatuses(["completed", "failed"]);
+        : requireStore().getRunsByStatuses(["completed", "failed"]);
       for (const r of initialRuns) seenRunIds.add(r.id);
 
       const poll = (): void => {
         void (async () => {
           const statusRuns = daemon
             ? (await daemon.client.runs.list({ projectId: daemon.projectId, limit: 100 }) as DaemonRunRow[]).map(adaptDaemonRun)
-            : store!.getRunsByStatuses(["completed", "failed"]);
+            : requireStore().getRunsByStatuses(["completed", "failed"]);
           for (const run of statusRuns) {
             if (!seenRunIds.has(run.id)) {
               seenRunIds.add(run.id);
@@ -1273,7 +1280,7 @@ export const inboxCommand = new Command("inbox")
 
           const msgs = daemon
             ? await fetchDaemonMessages(daemon.client, daemon.projectId, { runId, agent: options.agent, unread: options.unread, limit })
-            : fetchMessages(store!, runId, options.agent, options.unread ?? false, limit);
+            : fetchMessages(requireStore(), runId, options.agent, options.unread ?? false, limit);
           const newMsgs = msgs.filter((m) => !seenIds.has(m.id));
           for (const msg of newMsgs) {
             seenIds.add(msg.id);
@@ -1289,7 +1296,7 @@ export const inboxCommand = new Command("inbox")
               if (daemon) {
                 await daemon.client.mail.markRead({ projectId: daemon.projectId, messageId: msg.id });
               } else {
-                store!.markMessageRead(msg.id);
+                requireStore().markMessageRead(msg.id);
               }
             }
           }

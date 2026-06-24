@@ -271,8 +271,9 @@ async function wireContainerDependencies(
 
   for (const pair of sprintDeps) {
     const [sprintId, depSprintId] = pair.split("|");
+    if (sprintId === undefined || depSprintId === undefined) continue;
     try {
-      await Promise.resolve(taskStore.addDependency(sprintId!, depSprintId!, "blocks"));
+      await Promise.resolve(taskStore.addDependency(sprintId, depSprintId, "blocks"));
     } catch (err: unknown) {
       depErrors.push(
         `SLING-007: Failed to wire sprint dep ${sprintId} -> ${depSprintId}: ${(err as Error).message}`,
@@ -282,8 +283,9 @@ async function wireContainerDependencies(
 
   for (const pair of storyDeps) {
     const [storyId, depStoryId] = pair.split("|");
+    if (storyId === undefined || depStoryId === undefined) continue;
     try {
-      await Promise.resolve(taskStore.addDependency(storyId!, depStoryId!, "blocks"));
+      await Promise.resolve(taskStore.addDependency(storyId, depStoryId, "blocks"));
     } catch (err: unknown) {
       depErrors.push(
         `SLING-007: Failed to wire story dep ${storyId} -> ${depStoryId}: ${(err as Error).message}`,
@@ -331,7 +333,8 @@ async function executeForNative(
     ctx.onProgress?.(processed, totalItems, "native");
 
     for (let sprintIndex = 0; sprintIndex < plan.sprints.length; sprintIndex++) {
-      const sprint = plan.sprints[sprintIndex]!;
+      const sprint = plan.sprints[sprintIndex];
+      if (sprint === undefined) continue;
       const sprintMetadata = ["kind:sprint", `source:${epicExternalId(plan.epic.documentId)}`];
       if (!options.noParallel) {
         for (const group of parallel.groups) {
@@ -358,7 +361,8 @@ async function executeForNative(
       await safeAddDependency(taskStore, result, sprintTask.id, epic.id, "parent-child", "parent-child");
 
       for (let storyIndex = 0; storyIndex < sprint.stories.length; storyIndex++) {
-        const story = sprint.stories[storyIndex]!;
+        const story = sprint.stories[storyIndex];
+        if (story === undefined) continue;
         const storyTask = await upsertTask(
           taskStore,
           result,
