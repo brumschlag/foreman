@@ -1,13 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useFactoryStore } from "../store/factoryStore";
 
-const LEVEL_COLOR: Record<string, string> = {
-  error: "text-[#ef4444]",
-  warn:  "text-[#f59e0b]",
-  info:  "text-[#6b7280]",
-  log:   "text-[#6b7280]",
-};
-
 function levelBadge(level: string) {
   const color =
     level === "error" ? "bg-[#ef4444]" :

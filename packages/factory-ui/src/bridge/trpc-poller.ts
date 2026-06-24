@@ -12,7 +12,6 @@
 import * as http from "node:http";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { existsSync } from "node:fs";
 import type { RunSummary, TaskRow, ProjectStats } from "./types.js";
 
 const DEFAULT_SOCKET = join(homedir(), ".foreman", "daemon.sock");

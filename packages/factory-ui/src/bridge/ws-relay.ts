@@ -11,7 +11,7 @@
  */
 
 import { WebSocketServer, WebSocket } from "ws";
-import type { FactoryWsMessage, BroadcastEvent, RunSummary, TaskRow, ProjectStats, ForemanConfig, ChatTurn } from "./types.js";
+import type { FactoryWsMessage, BroadcastEvent, RunSummary, TaskRow, ProjectStats, ForemanConfig } from "./types.js";
 import { TranscriptReader } from "./transcript-reader.js";
 import type { LogLine } from "./log-tailer.js";
 
@@ -144,7 +144,7 @@ export class WsRelay {
               console.error(`[ws-relay] error reading transcript for ${runId}:`, err);
             });
         }
-      } catch (err) {
+      } catch {
         // Ignore non-JSON messages (e.g., text from client)
       }
     });
