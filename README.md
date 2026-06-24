@@ -245,7 +245,7 @@ npm install -g @oftheangels/foreman
 ### curl (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ldangelo/foreman/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ldangelo/foreman/main/install.sh | bash
 ```
 
 ## Development with Devbox + Docker
