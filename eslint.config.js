@@ -40,8 +40,15 @@ export default tseslint.config(
     },
   },
   {
-    // Relaxed rules for scripts/ (build tooling) — they run in Node.js
-    files: ["scripts/**/*.ts", "scripts/**/*.js"],
+    // Relaxed rules for Node.js tooling scripts (scripts/ + docker/), including
+    // ESM (.mjs) entrypoints — these run in Node and use its globals.
+    files: [
+      "scripts/**/*.ts",
+      "scripts/**/*.js",
+      "scripts/**/*.mjs",
+      "docker/**/*.js",
+      "docker/**/*.mjs",
+    ],
     languageOptions: {
       globals: {
         console: "readonly",
