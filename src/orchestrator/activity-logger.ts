@@ -236,7 +236,7 @@ export function detectWarnings(phases: PhaseRecord[]): string[] {
   );
   if (longPhases.length > 0) {
     warnings.push(
-      `Long-running phases (>10min): ${longPhases.map((p) => `${p.name} (${Math.round(p.durationSeconds! / 60)}min)`).join(", ")}`,
+      `Long-running phases (>10min): ${longPhases.map((p) => `${p.name} (${Math.round((p.durationSeconds ?? 0) / 60)}min)`).join(", ")}`,
     );
   }
 

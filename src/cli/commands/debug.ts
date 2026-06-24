@@ -217,8 +217,9 @@ export const debugCommand = new Command("debug")
     }
 
     // Select the target run
-    const run = opts.run
-      ? runs.find((r) => r.id === opts.run || r.id.startsWith(opts.run!))
+    const runFilter = opts.run;
+    const run = runFilter
+      ? runs.find((r) => r.id === runFilter || r.id.startsWith(runFilter))
       : runs[0]; // latest
 
     if (!run) {

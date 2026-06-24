@@ -426,13 +426,13 @@ export class ProjectRegistry {
     const existing = this.pg
       ? await this.list()
       : await this.readJson();
-    if (existing.some((p) => p.path === path)) {
-      const dup = existing.find((p) => p.path === path)!;
-      throw new DuplicateProjectError("path", dup.path);
+    const pathDup = existing.find((p) => p.path === path);
+    if (pathDup) {
+      throw new DuplicateProjectError("path", pathDup.path);
     }
-    if (existing.some((p) => p.name === projectName)) {
-      const dup = existing.find((p) => p.name === projectName)!;
-      throw new DuplicateProjectError("name", dup.name);
+    const nameDup = existing.find((p) => p.name === projectName);
+    if (nameDup) {
+      throw new DuplicateProjectError("name", nameDup.name);
     }
     if (repoKey && existing.some((p) => p.repoKey === repoKey)) {
       throw new DuplicateProjectError("path", repoKey);

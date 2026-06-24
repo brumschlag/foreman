@@ -469,8 +469,9 @@ export const recoverCommand = new Command("recover")
     }
 
     // Select the target run
-    const run = opts.runId
-      ? runs.find((r) => r.id === opts.runId || r.id.startsWith(opts.runId!))
+    const runIdFilter = opts.runId;
+    const run = runIdFilter
+      ? runs.find((r) => r.id === runIdFilter || r.id.startsWith(runIdFilter))
       : runs[0]; // latest
 
     if (!run) {

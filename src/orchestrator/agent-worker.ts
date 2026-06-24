@@ -1525,7 +1525,8 @@ async function runPipeline(
       registeredProjectId,
     },
   );
-  const registeredObservabilityWriter: PipelineObservabilityWriter | undefined = registeredReadStore
+  const observabilityProjectId = registeredProjectId;
+  const registeredObservabilityWriter: PipelineObservabilityWriter | undefined = registeredReadStore && observabilityProjectId
     ? {
         async updateProgress(progress) {
           try {
@@ -1537,7 +1538,7 @@ async function runPipeline(
         },
         async logEvent(eventType, data) {
           try {
-            await registeredReadStore.logEvent(registeredProjectId!, eventType, data, config.runId);
+            await registeredReadStore.logEvent(observabilityProjectId, eventType, data, config.runId);
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             log(`[pipeline-observability] ${eventType} event failed (non-fatal): ${msg}`);

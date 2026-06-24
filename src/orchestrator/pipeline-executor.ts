@@ -661,8 +661,14 @@ function detectCompletedTasks(worktreePath: string): Set<string> {
 async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
   const { config, workflowConfig, store, logFile } = ctx;
   const { runId, seedId, worktreePath } = config;
-  let epicTasks = ctx.epicTasks!;
-  const taskPhaseNames = workflowConfig.taskPhases!;
+  if (!ctx.epicTasks) {
+    throw new Error("executeEpicPipeline requires ctx.epicTasks to be set");
+  }
+  if (!workflowConfig.taskPhases) {
+    throw new Error("executeEpicPipeline requires workflowConfig.taskPhases to be set");
+  }
+  let epicTasks = ctx.epicTasks;
+  const taskPhaseNames = workflowConfig.taskPhases;
   const finalPhaseNames = workflowConfig.finalPhases ?? [];
 
   // Resolve phase configs for task phases and final phases

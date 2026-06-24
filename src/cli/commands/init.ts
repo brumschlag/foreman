@@ -349,12 +349,13 @@ export const initCommand = new Command("init")
       if (!project) {
         project = await registry.add({ name: projectName, path: projectDir, status: "active" });
       }
-      store = PostgresStore.forProject(project.id);
+      const projectStore = PostgresStore.forProject(project.id);
+      store = projectStore;
       await initProjectStore(projectDir, projectName, {
         getProjectByPath: async (path: string) => (path === projectDir ? { id: project.id } : null),
         registerProject: async () => ({ id: project.id }),
-        getSentinelConfig: async (projectId: string) => store!.getSentinelConfig(projectId),
-        upsertSentinelConfig: async (projectId: string, config) => store!.upsertSentinelConfig(projectId, config),
+        getSentinelConfig: async (projectId: string) => projectStore.getSentinelConfig(projectId),
+        upsertSentinelConfig: async (projectId: string, config) => projectStore.upsertSentinelConfig(projectId, config),
       });
     } catch (err) {
       console.error(chalk.red(formatInitDatabaseError(err, projectDir)));

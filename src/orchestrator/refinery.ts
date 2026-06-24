@@ -1045,8 +1045,12 @@ export class Refinery {
       // Build a map of seed_id → set of dependency seed_ids
       const depMap = new Map<string, Set<string>>();
       for (const edge of graph.edges) {
-        if (!depMap.has(edge.from)) depMap.set(edge.from, new Set());
-        depMap.get(edge.from)!.add(edge.to);
+        let deps = depMap.get(edge.from);
+        if (!deps) {
+          deps = new Set();
+          depMap.set(edge.from, deps);
+        }
+        deps.add(edge.to);
       }
 
       // Topological sort (Kahn's algorithm)
@@ -1065,8 +1069,11 @@ export class Refinery {
         if (!deps) continue;
         for (const dep of deps) {
           if (seedIds.has(dep)) {
-            adj.get(dep)!.push(id);
-            inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+            const adjList = adj.get(dep);
+            if (adjList) {
+              adjList.push(id);
+              inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+            }
           }
         }
       }
@@ -1078,7 +1085,8 @@ export class Refinery {
 
       const sorted: Run[] = [];
       while (queue.length > 0) {
-        const id = queue.shift()!;
+        const id = queue.shift();
+        if (id === undefined) break;
         const run = runMap.get(id);
         if (run) sorted.push(run);
         for (const next of adj.get(id) ?? []) {

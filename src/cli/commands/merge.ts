@@ -148,7 +148,7 @@ export const mergeCommand = new Command("merge")
         }
 
         const runId = opts.resolve as string;
-        const run = registered ? await runLookup!.getRun(runId) : store.getRun(runId);
+        const run = runLookup ? await runLookup.getRun(runId) : store.getRun(runId);
         if (!run) {
           console.error(chalk.red(`Error: Run '${runId}' not found.`));
           store.close();

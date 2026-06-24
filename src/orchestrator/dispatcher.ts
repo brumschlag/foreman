@@ -109,7 +109,7 @@ export function nativeTaskToIssue(task: NativeTask): Issue {
   if (task.external_id?.startsWith("github:")) {
     const match = task.external_id.match(/#(\d+)$/);
     if (match) {
-      githubIssueNumber = parseInt(match[1]!, 10);
+      githubIssueNumber = parseInt(match[1], 10);
     }
   }
   return {

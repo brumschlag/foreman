@@ -279,7 +279,9 @@ export function createInitialState(): AgentLogsState {
 
 export function cycleLevelFilter(current: LevelFilter): LevelFilter {
   const idx = LEVEL_OPTIONS.indexOf(current);
-  return LEVEL_OPTIONS[(idx + 1) % LEVEL_OPTIONS.length]!;
+  const next = LEVEL_OPTIONS[(idx + 1) % LEVEL_OPTIONS.length];
+  if (!next) throw new Error("LEVEL_OPTIONS must not be empty");
+  return next;
 }
 
 export function selectRunTab(tabs: RunTab[], currentRunId: string | null): string | null {

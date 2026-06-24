@@ -143,13 +143,17 @@ export async function retryAction(
   if (!dryRun) {
     // Reset bead status to a retryable state when appropriate.
     if (beadNeedsReset) {
+      // beadNeedsReset implies beadResetTarget !== null (see definition above).
+      if (beadResetTarget === null) {
+        throw new Error("Invariant violated: beadNeedsReset is true but beadResetTarget is null");
+      }
       console.log(
         `  ${chalk.yellow("reset")} bead status: ${bead.status} → ${beadResetTarget}`,
       );
       if (beadResetTarget === "ready" && typeof beadsClient.resetToReady === "function") {
         await beadsClient.resetToReady(beadId);
       } else {
-        await beadsClient.update(beadId, { status: beadResetTarget! });
+        await beadsClient.update(beadId, { status: beadResetTarget });
       }
     } else if (beadIsAlreadyRetryable) {
       console.log(`  ${chalk.dim("ok")} bead status is already "${bead.status}"`);
