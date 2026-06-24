@@ -651,12 +651,13 @@ function handleWorktree(run: Run): Promise<number> {
     return Promise.resolve(1);
   }
 
-  console.log(`Opening shell in ${run.worktree_path}`);
+  const worktreePath = run.worktree_path;
+  console.log(`Opening shell in ${worktreePath}`);
   const shell = process.env.SHELL ?? "/bin/bash";
 
   return new Promise<number>((resolve) => {
     spawn(shell, [], {
-      cwd: run.worktree_path!,
+      cwd: worktreePath,
       stdio: "inherit",
     }).on("exit", (code) => resolve(code ?? 0));
   });

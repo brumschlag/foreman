@@ -1053,12 +1053,13 @@ const listCommand = new Command("list")
       // Fetch PR states if --show-pr is specified
       let prStates: Map<string, PrState> | undefined;
       if (opts.showPr) {
-        prStates = new Map<string, PrState>();
+        const collectedPrStates = new Map<string, PrState>();
+        prStates = collectedPrStates;
         await Promise.all(
           rows.map(async (task) => {
             try {
               const prState = await client.tasks.getPrState({ projectId, taskId: task.id }) as PrState;
-              prStates!.set(task.id, prState);
+              collectedPrStates.set(task.id, prState);
             } catch {
               // PR state fetch failed - leave as undefined
             }

@@ -30,10 +30,11 @@ export class EventBroadcaster {
       set = new Set();
       this.subs.set(projectId, set);
     }
-    set.add(handler);
+    const handlerSet = set;
+    handlerSet.add(handler);
     return () => {
-      set!.delete(handler);
-      if (set!.size === 0) this.subs.delete(projectId);
+      handlerSet.delete(handler);
+      if (handlerSet.size === 0) this.subs.delete(projectId);
     };
   }
 

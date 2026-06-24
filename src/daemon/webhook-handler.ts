@@ -517,8 +517,9 @@ async function handleIssue(
           externalId,
           limit: 1,
         });
-        if (existing.length > 0) {
-          await ctx.adapter.updateTaskGitHubFields(project.id, existing[0]!.id, {
+        const closedTask = existing[0];
+        if (closedTask) {
+          await ctx.adapter.updateTaskGitHubFields(project.id, closedTask.id, {
             state: "closed",
             lastSyncAt: new Date().toISOString(),
           });
@@ -538,8 +539,9 @@ async function handleIssue(
           externalId,
           limit: 1,
         });
-        if (existing.length > 0) {
-          await ctx.adapter.updateTaskGitHubFields(project.id, existing[0]!.id, {
+        const reopenedTask = existing[0];
+        if (reopenedTask) {
+          await ctx.adapter.updateTaskGitHubFields(project.id, reopenedTask.id, {
             state: "open",
             lastSyncAt: new Date().toISOString(),
           });
@@ -560,8 +562,8 @@ async function handleIssue(
           externalId,
           limit: 1,
         });
-        if (existing.length > 0) {
-          const task = existing[0]!;
+        const task = existing[0];
+        if (task) {
           const currentLabels = task.labels ?? [];
           const newLabel = `github:${label.name}`;
           if (!currentLabels.includes(newLabel)) {
@@ -587,8 +589,8 @@ async function handleIssue(
           externalId,
           limit: 1,
         });
-        if (existing.length > 0) {
-          const task = existing[0]!;
+        const task = existing[0];
+        if (task) {
           const currentLabels = task.labels ?? [];
           const removedLabel = `github:${label.name}`;
           await ctx.adapter.updateTaskGitHubFields(project.id, task.id, {
@@ -639,7 +641,7 @@ async function handleIssue(
 function mapPriorityLabel(labels: Array<{ name: string }>): number {
   const priorityLabel = labels.find((l) => l.name.startsWith("foreman:priority:"));
   if (priorityLabel) {
-    const priority = parseInt(priorityLabel.name.split(":")[2]!, 10);
+    const priority = parseInt(priorityLabel.name.split(":")[2] ?? "", 10);
     if (priority >= 0 && priority <= 4) return priority;
   }
   return 2;

@@ -46,7 +46,7 @@ describe("agent-worker runtime task client threading", () => {
     expect(source).toContain("await runPipeline(config, store, localStore, logFile, notifyClient, agentMailClient, registeredReadStore, registeredProjectId);");
     expect(source).toContain("const registeredObservabilityWriter: PipelineObservabilityWriter | undefined = registeredReadStore");
     expect(source).toContain("await registeredReadStore.updateRunProgress(config.runId, progress);");
-    expect(source).toContain("await registeredReadStore.logEvent(registeredProjectId!, eventType, data, config.runId);");
+    expect(source).toContain("await registeredReadStore.logEvent(observabilityProjectId, eventType, data, config.runId);");
     expect(source).toContain("observabilityWriter: registeredObservabilityWriter,");
     expect(pipelineSource).toContain('logEvent?: (eventType: "phase-start" | "complete" | "heartbeat", data: Record<string, unknown>) => Promise<void> | void;');
     expect(pipelineSource).toContain("ctx.heartbeatManager?.setSeedId(seedId);");

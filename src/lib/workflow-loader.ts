@@ -1157,8 +1157,9 @@ export function buildTaskTypeWorkflowMap(): Map<string, string> {
   const result = new Map<string, string>();
 
   for (const [taskType, workflows] of collectTaskTypeDeclarations()) {
-    if (workflows.length === 1) {
-      result.set(taskType, workflows[0]!);
+    const [onlyWorkflow] = workflows;
+    if (workflows.length === 1 && onlyWorkflow) {
+      result.set(taskType, onlyWorkflow);
     }
   }
 

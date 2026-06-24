@@ -228,7 +228,8 @@ export class NativeTaskClient implements ITaskClient {
   }
 
   async update(id: string, opts: UpdateOptions): Promise<void> {
-    if (this.registeredProjectId) {
+    const registeredProjectId = this.registeredProjectId;
+    if (registeredProjectId) {
       await this.withPostgresTask(id, async (task) => {
         const nextStatus =
           opts.claim
@@ -239,13 +240,13 @@ export class NativeTaskClient implements ITaskClient {
           this.validateStatusTransition(id, task.status, nextStatus);
         }
 
-        await this.postgres.updateTask(this.registeredProjectId!, id, {
+        await this.postgres.updateTask(registeredProjectId, id, {
           ...(opts.title !== undefined ? { title: opts.title } : {}),
           ...(opts.description !== undefined ? { description: opts.description ?? null } : {}),
           ...(nextStatus !== undefined ? { status: nextStatus } : {}),
         });
         if (typeof opts.notes === "string" && opts.notes.trim().length > 0) {
-          await this.postgres.addTaskNote(this.registeredProjectId!, id, {
+          await this.postgres.addTaskNote(registeredProjectId, id, {
             author: "foreman",
             kind: "manual",
             body: opts.notes,
@@ -283,9 +284,10 @@ export class NativeTaskClient implements ITaskClient {
   }
 
   async close(id: string, reason?: string): Promise<void> {
-    if (this.registeredProjectId) {
+    const registeredProjectId = this.registeredProjectId;
+    if (registeredProjectId) {
       await this.withPostgresTask(id, async () => {
-        await this.postgres.closeTask(this.registeredProjectId!, id);
+        await this.postgres.closeTask(registeredProjectId, id);
       });
       return;
     }
@@ -296,12 +298,13 @@ export class NativeTaskClient implements ITaskClient {
   }
 
   async resetToReady(id: string, reason?: string): Promise<void> {
-    if (this.registeredProjectId) {
+    const registeredProjectId = this.registeredProjectId;
+    if (registeredProjectId) {
       await this.withPostgresTask(id, async (task) => {
         if (task.status === "closed" || task.status === "merged") {
           throw new InvalidStatusTransitionError(id, task.status, "ready");
         }
-        await this.postgres.resetTask(this.registeredProjectId!, id);
+        await this.postgres.resetTask(registeredProjectId, id);
       });
       return;
     }

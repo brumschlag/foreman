@@ -166,10 +166,12 @@ export async function purgeLogsAction(
       nonMatchingFiles++;
       continue;
     }
-    if (!runGroups.has(runId)) {
-      runGroups.set(runId, []);
+    let group = runGroups.get(runId);
+    if (!group) {
+      group = [];
+      runGroups.set(runId, group);
     }
-    runGroups.get(runId)!.push(entry);
+    group.push(entry);
   }
 
   if (runGroups.size === 0) {

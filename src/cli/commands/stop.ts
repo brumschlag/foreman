@@ -341,7 +341,8 @@ function getDescendantProcessGroups(pid: number): number[] {
   const queue = [...(childrenByParent.get(pid) ?? [])];
   const selfGroup = table.find((entry) => entry.pid === pid)?.pgid;
   while (queue.length > 0) {
-    const entry = queue.shift()!;
+    const entry = queue.shift();
+    if (!entry) break;
     if (entry.pgid !== selfGroup && entry.pgid !== process.pid) {
       groups.add(entry.pgid);
     }

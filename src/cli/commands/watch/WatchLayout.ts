@@ -213,7 +213,7 @@ function renderBoardPanel(state: WatchState, width: number): string {
     lines.push(chalk.red("  ⚠ Needs attention:"));
     for (const task of state.board.needsAttention.slice(0, 3)) {
       const isSelected = state.selectedTaskIndex >= 0 &&
-        state.board!.needsAttention[state.selectedTaskIndex]?.id === task.id;
+        state.board.needsAttention[state.selectedTaskIndex]?.id === task.id;
       const marker = isSelected ? chalk.cyan("▶") : chalk.dim(" ");
       const title = truncate(task.title, innerWidth - 10);
       const statusTag = chalk.red(`[${task.status}]`);

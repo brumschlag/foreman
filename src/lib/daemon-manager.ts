@@ -169,7 +169,8 @@ export class DaemonManager {
    */
   start(): void {
     if (this.isRunning()) {
-      const pid = this.#readPid()!;
+      const pid = this.#readPid();
+      if (pid === null) throw new DaemonStartError(new Error("Daemon reported running but PID file is missing"));
       throw new DaemonAlreadyRunningError(pid);
     }
 
@@ -207,7 +208,8 @@ export class DaemonManager {
       this.childProcess.unref();
 
       // Write PID after spawn (child PID is set by spawn()).
-      const pid = this.childProcess.pid!;
+      const pid = this.childProcess.pid;
+      if (pid === undefined) throw new Error("Child process spawned without a PID");
       writeFileSync(this.pidPath, String(pid), "utf-8");
       chmodSync(this.pidPath, 0o600);
 
@@ -228,7 +230,8 @@ export class DaemonManager {
       throw new DaemonNotRunningError();
     }
 
-    const pid = this.#readPid()!;
+    const pid = this.#readPid();
+    if (pid === null) throw new DaemonNotRunningError();
 
     try {
       process.kill(pid, "SIGTERM");

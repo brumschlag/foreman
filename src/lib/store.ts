@@ -1832,7 +1832,9 @@ export class ForemanStore {
         }
       }
       this.db.prepare(`UPDATE sentinel_configs SET ${fields.join(", ")} WHERE project_id = @project_id`).run(values);
-      return this.getSentinelConfig(projectId)!;
+      const updated = this.getSentinelConfig(projectId);
+      if (!updated) throw new Error(`Sentinel config for project ${projectId} missing after update`);
+      return updated;
     } else {
       const row: Omit<SentinelConfigRow, "id"> = {
         project_id: projectId,
@@ -1849,7 +1851,9 @@ export class ForemanStore {
         `INSERT INTO sentinel_configs (project_id, branch, test_command, interval_minutes, failure_threshold, enabled, pid, created_at, updated_at)
          VALUES (@project_id, @branch, @test_command, @interval_minutes, @failure_threshold, @enabled, @pid, @created_at, @updated_at)`
       ).run(row);
-      return this.getSentinelConfig(projectId)!;
+      const inserted = this.getSentinelConfig(projectId);
+      if (!inserted) throw new Error(`Sentinel config for project ${projectId} missing after insert`);
+      return inserted;
     }
   }
 
@@ -1959,7 +1963,9 @@ export class ForemanStore {
         });
     }
 
-    return this.getMergeAgentConfig()!;
+    const result = this.getMergeAgentConfig();
+    if (!result) throw new Error("Merge agent config missing after upsert");
+    return result;
   }
 
   // ── Metrics ─────────────────────────────────────────────────────────

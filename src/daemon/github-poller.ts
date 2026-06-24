@@ -251,9 +251,10 @@ export class GitHubIssuesPoller {
         limit: 1,
       });
 
-      if (existing.length > 0) {
+      const existingTask = existing[0];
+      if (existingTask) {
         // Already imported — update if changed (safe re-sync)
-        const task = existing[0]!;
+        const task = existingTask;
         const labels = normalizeGithubIssueLabels(issue);
         const type = inferTaskTypeFromGitHubLabels(issue);
         const taskLabels = task.labels ?? [];

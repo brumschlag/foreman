@@ -274,10 +274,10 @@ async function renderStatus(projectPath: string): Promise<void> {
     if (activeRuns.length === 0) {
       console.log(chalk.dim("  (no agents running)"));
     } else {
-      for (let i = 0; i < activeRuns.length; i++) {
-        console.log(renderDaemonRunCard(activeRuns[i]!));
+      activeRuns.forEach((activeRun, i) => {
+        console.log(renderDaemonRunCard(activeRun));
         if (i < activeRuns.length - 1) console.log();
-      }
+      });
     }
   } else {
     const store = ForemanStore.forProject(projectPath);
