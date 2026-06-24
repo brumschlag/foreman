@@ -64,6 +64,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
       "no-undef": "off",
+      // CJS shims (e.g. import-meta-url-shim.js) legitimately use require().
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
   {
@@ -77,6 +79,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
+      // Tests use require() for dynamic module loading / mock setup.
+      "@typescript-eslint/no-require-imports": "off",
     },
   }
 );
