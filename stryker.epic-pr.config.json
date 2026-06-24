@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "testRunner": "vitest",
+  "checkers": [],
+  "vitest": {
+    "configFile": "vitest.stryker.config.ts",
+    "related": false
+  },
+  "mutate": [
+    "src/orchestrator/dispatch-planning.ts",
+    "src/orchestrator/task-ordering.ts",
+    "src/orchestrator/pipeline-executor.ts:700-953"
+  ],
+  "reporters": ["html", "clear-text", "progress"],
+  "concurrency": 4,
+  "timeoutMS": 120000,
+  "timeoutFactor": 2,
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 50
+  }
+}
