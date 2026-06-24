@@ -132,8 +132,9 @@ async function runTestCommand(command: string, cwd: string): Promise<{ ok: boole
       timeout: PIPELINE_TIMEOUTS.testExecutionMs,
     });
     return { ok: true, output: (stdout + "\n" + stderr).trim() };
-  } catch (err: any) {
-    return { ok: false, output: (err.stdout ?? "") + "\n" + (err.stderr ?? err.message) };
+  } catch (err: unknown) {
+    const execErr = err as { stdout?: string; stderr?: string; message?: string };
+    return { ok: false, output: (execErr.stdout ?? "") + "\n" + (execErr.stderr ?? execErr.message) };
   }
 }
 

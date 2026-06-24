@@ -20,6 +20,8 @@ import type {
   PhaseObservabilityInput,
   PipelineObservabilityWriter,
   PhaseResult as PipelinePhaseResult,
+  PhaseRunConfig,
+  PhaseNotificationClient,
 } from "./pipeline-executor.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { ForemanStore } from "../lib/store.js";
@@ -752,11 +754,11 @@ interface PhaseResult {
 async function runPhase(
   role: string,
   prompt: string,
-  config: WorkerConfig,
+  config: PhaseRunConfig,
   progress: RunProgress,
   logFile: string,
   store: ForemanStore,
-  notifyClient: NotificationClient,
+  notifyClient: PhaseNotificationClient | null,
   agentMailClient?: AnyMailClient | null,
   observability?: PhaseObservabilityInput,
   observabilityWriter?: PipelineObservabilityWriter,
@@ -844,7 +846,7 @@ async function runPhase(
         } else {
           void Promise.resolve(store.updateRunProgress(config.runId, progress));
         }
-        notifyClient.send({
+        notifyClient?.send({
           type: "progress",
           runId: config.runId,
           progress: { ...progress },
@@ -2245,7 +2247,7 @@ async function markStuck(
   phase: string,
   reason: string,
   projectPath: string,
-  notifyClient?: NotificationClient,
+  notifyClient?: PhaseNotificationClient | null,
   registeredReadStore?: PostgresStore,
 ): Promise<void> {
   const reasonLower = reason.toLowerCase();

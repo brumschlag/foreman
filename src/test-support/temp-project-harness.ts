@@ -9,6 +9,7 @@ import { autoMerge } from "../orchestrator/auto-merge.js";
 import { initPool, isPoolInitialised } from "../lib/db/pool-manager.js";
 import { PostgresAdapter } from "../lib/db/postgres-adapter.js";
 import { PostgresStore } from "../lib/postgres-store.js";
+import type { ForemanStore } from "../lib/store.js";
 import { startPostgresTestcontainer } from "./postgres-testcontainer.js";
 
 interface SeedTaskOptions {
@@ -245,7 +246,7 @@ export async function createTempProjectHarness(): Promise<TempProjectHarness> {
     },
     async drainMergeQueue() {
       await autoMerge({
-        store: store as any,
+        store: store as unknown as ForemanStore,
         taskClient: new NativeTaskClient(projectPath, { registeredProjectId: project.id }),
         projectPath,
         registeredProjectId: project.id,

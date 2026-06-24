@@ -49,7 +49,7 @@ describe("unwrapBdResponse", () => {
         description: "Details",
       },
     };
-    const result = unwrapBdResponse(raw);
+    const result = unwrapBdResponse(raw) as { id: string };
     expect(result).toEqual(raw.issue);
     expect(result.id).toBe("foreman-abc");
   });
