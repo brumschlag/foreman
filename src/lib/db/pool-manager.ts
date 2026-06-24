@@ -18,7 +18,7 @@
  * @module pool-manager
  */
 
-import { Pool, PoolConfig, PoolClient, QueryResultRow } from "pg";
+import { Pool, type PoolConfig, type PoolClient, type QueryResultRow } from "pg";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

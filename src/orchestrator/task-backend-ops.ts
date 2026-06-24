@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { ForemanStore } from "../lib/store.js";
+import { type ForemanStore } from "../lib/store.js";
 import { mapRunStatusToSeedStatus, mapRunStatusToNativeTaskStatus } from "../lib/run-status.js";
 import type { StateMismatch } from "../lib/run-status.js";
 import type { NativeTaskStatus } from "./types.js";

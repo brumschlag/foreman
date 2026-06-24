@@ -269,7 +269,7 @@ describe("Daemon startup without Postgres", { timeout: 30_000 }, () => {
 
     // Point to a dead Postgres port.
     const originalDbUrl = process.env.DATABASE_URL;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     process.env.DATABASE_URL = "postgresql://localhost:59999/nonexistent";
 
     const daemon = new ForemanDaemon({ httpPort: 3849 });

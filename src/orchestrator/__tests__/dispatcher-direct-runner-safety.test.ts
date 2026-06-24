@@ -17,7 +17,7 @@ import type { NativeTaskStatus } from "../types.js";
 
 // ── Module-level mock refs (hoisted so factories can reference them) ──────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const { mockLoadWorkflowConfig, mockResolveWorkflowName } = vi.hoisted(() => ({
   mockLoadWorkflowConfig: vi.fn().mockReturnValue({ setup: [], setupCache: undefined, vcs: undefined, merge: "auto" }),
   mockResolveWorkflowName: vi.fn().mockReturnValue("default"),

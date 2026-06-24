@@ -74,7 +74,7 @@ vi.mock("../../lib/worktree-manager.js", () => ({
 
 vi.mock("../../lib/beads-rust.js", () => ({
   BeadsRustClient: class {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     constructor(_path: string) {}
     show = mockShowFn;
   },

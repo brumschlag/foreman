@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { PostgresAdapter } from "../../lib/db/postgres-adapter.js";
-import { JiraConfig, type JiraProjectConfig } from "../../lib/project-config.js";
+import { type JiraConfig, type JiraProjectConfig } from "../../lib/project-config.js";
 import { JiraIssuesPoller } from "../jira-poller.js";
 import type { JiraApiClient } from "../jira-api-client.js";
 import { JiraTriggerHandler } from "../../orchestrator/jira-trigger-handler.js";

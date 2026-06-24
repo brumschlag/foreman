@@ -37,7 +37,7 @@ import type { ForemanStore } from "../lib/store.js";
 import type { RunProgress } from "../lib/store.js";
 import type { RunProgressSummary } from "./read-models.js";
 import type { VcsBackend } from "../lib/vcs/index.js";
-import { HeartbeatManager, createHeartbeatManager, type HeartbeatConfig } from "./heartbeat-manager.js";
+import { type HeartbeatManager, createHeartbeatManager, type HeartbeatConfig } from "./heartbeat-manager.js";
 import { createPhaseRecord, finalizePhaseRecord, generateActivityLog, writeIncrementalPipelineReport, type PhaseRecord as ActivityPhaseRecord } from "./activity-logger.js";
 import { RATE_LIMIT_BACKOFF_CONFIG, calculateRateLimitBackoffMs, COOLDOWN_RETRY_CONFIG } from "../lib/config.js";
 import { inferProjectPathFromWorkspacePath } from "../lib/workspace-paths.js";
@@ -51,7 +51,7 @@ import type { SandboxProviderConfig } from "../lib/sandbox-provider.js";
 type AnyMailClient = AgentMailClient;
 
 /** Function signature matching the runPhase() in agent-worker.ts. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type RunPhaseFn = (
   role: any,
   prompt: string,

@@ -96,7 +96,7 @@ describe("ConflictResolver - Cascade Orchestration (MQ-T038)", () => {
       });
 
       // Stub the git and file helpers used during cascade
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const resolverAny = resolver as any;
       resolverAny.gitTry = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
       resolverAny.git = vi.fn().mockResolvedValue("");
@@ -135,7 +135,7 @@ describe("ConflictResolver - Cascade Orchestration (MQ-T038)", () => {
         error: "Pi failed",
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const resolverAny = resolver as any;
       resolverAny.gitTry = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
       resolverAny.git = vi.fn().mockResolvedValue("");
@@ -178,7 +178,7 @@ describe("ConflictResolver - Cascade Orchestration (MQ-T038)", () => {
         error: "Cannot resolve",
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const resolverAny = resolver as any;
       resolverAny.gitTry = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
       resolverAny.git = vi.fn().mockResolvedValue("");
@@ -249,7 +249,7 @@ describe("ConflictResolver - Cascade Orchestration (MQ-T038)", () => {
         },
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const resolverAny = resolver as any;
       resolverAny.gitTry = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
       resolverAny.git = vi.fn().mockResolvedValue("");
@@ -317,7 +317,7 @@ describe("ConflictResolver - Cascade Orchestration (MQ-T038)", () => {
         cost: tier4Cost,
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const resolverAny = resolver as any;
       resolverAny.gitTry = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
       resolverAny.git = vi.fn().mockResolvedValue("");
@@ -352,7 +352,7 @@ describe("ConflictResolver - Cascade Orchestration (MQ-T038)", () => {
         reason: "Failed",
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const resolverAny = resolver as any;
       resolverAny.gitTry = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
       resolverAny.git = vi.fn().mockResolvedValue("");
@@ -378,7 +378,7 @@ describe("ConflictResolver - Fallback Handler (MQ-T039)", () => {
   });
 
   it("calls gh pr create with structured title and body", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const resolverAny = resolver as any;
 
     // Mock execFileAsync via the gh helper
@@ -404,7 +404,7 @@ describe("ConflictResolver - Fallback Handler (MQ-T039)", () => {
   });
 
   it("returns error info when gh pr create fails", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const resolverAny = resolver as any;
     resolverAny.execGh = vi.fn().mockRejectedValue(new Error("gh not installed"));
 
@@ -420,7 +420,7 @@ describe("ConflictResolver - Fallback Handler (MQ-T039)", () => {
   });
 
   it("includes per-file tier attempts in PR body", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const resolverAny = resolver as any;
     let capturedArgs: string[] = [];
     resolverAny.execGh = vi.fn().mockImplementation((args: string[]) => {

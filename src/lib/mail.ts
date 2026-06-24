@@ -12,7 +12,7 @@
  *   mail.markAllRead();                  // mark everything read after processing
  */
 
-import { ForemanStore, type Message } from "./store.js";
+import { type ForemanStore, type Message } from "./store.js";
 
 export type { Message };
 

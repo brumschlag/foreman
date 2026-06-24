@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ForemanStore } from "../../lib/store.js";
-import * as trpcClientModule from "../../lib/trpc-client.js";
+import type * as trpcClientModule from "../../lib/trpc-client.js";
 import { debugCommand } from "../commands/debug.js";
 import { recoverCommand } from "../commands/recover.js";
 

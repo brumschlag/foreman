@@ -105,12 +105,12 @@ describe('interpolateTaskPlaceholders — bash command templates', () => {
   it('warns and leaves unknown placeholders as-is', () => {
     const warns: string[] = [];
     const orig = console.warn;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (console as any).warn = (msg: string) => warns.push(msg);
     try {
       interpolateTaskPlaceholders('{task.unknown}', meta);
     } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (console as any).warn = orig;
     }
     expect(warns.some(w => w.includes('Unknown placeholder'))).toBe(true);

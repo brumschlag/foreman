@@ -17,7 +17,7 @@ function makeMocks(projectPath: string) {
     updateRun: vi.fn(),
     logEvent: vi.fn(),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const doctor = new Doctor(store as any, projectPath);
   return { store, doctor };
 }

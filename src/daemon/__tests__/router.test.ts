@@ -71,9 +71,9 @@ const mockRegistry = {
 
 
 const mockCtx: Context = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   req: {} as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   res: {} as any,
   adapter: mockAdapter as never,
   gh: mockGh as never,
@@ -142,7 +142,7 @@ describe("TrpcRouter structure", () => {
 
   it("has expected type — AppRouter defined", () => {
     // Type-level test: if this compiles, AppRouter is properly exported.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     type _AppRouter = typeof appRouter;
   });
 });
@@ -1068,7 +1068,7 @@ describe("runs.listMessages procedure", () => {
 describe("createContext", () => {
   it("createContext returns a Context object with adapter, gh, and registry", async () => {
     const { createContext } = await import("../router.js");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const ctx = await createContext({ req: {} as any, res: {} as any });
     expect(ctx).toHaveProperty("adapter");
     expect(ctx).toHaveProperty("req");

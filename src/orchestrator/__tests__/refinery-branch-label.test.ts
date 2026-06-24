@@ -58,7 +58,7 @@ function makeRun(overrides: Partial<Run> = {}): Run {
 
 /** Mock execFile: git log returns a commit (so "no commits" guard passes), all else succeeds. */
 function mockExecFileDefault() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   (execFile as any).mockImplementation(
     (cmd: string, args: string[], _opts: unknown, callback: (err: null | Error, result?: { stdout: string; stderr: string }) => void) => {
       if (cmd === "git" && Array.isArray(args) && args[0] === "log") {

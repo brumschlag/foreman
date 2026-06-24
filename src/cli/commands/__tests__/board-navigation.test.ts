@@ -285,7 +285,7 @@ describe("BoardNavigation", () => {
       expect(maxCol).toBe(4);
 
       // Test that all valid navigation stays in bounds
-      let nav: NavigationState = { colIndex: 0, rowIndex: 0 };
+      const nav: NavigationState = { colIndex: 0, rowIndex: 0 };
       for (let i = 0; i < 20; i++) {
         nav.colIndex = (nav.colIndex + 1) % BOARD_STATUSES.length;
         expect(nav.colIndex).toBeGreaterThanOrEqual(minCol);
@@ -294,7 +294,7 @@ describe("BoardNavigation", () => {
     });
 
     it("colIndex should wrap correctly", () => {
-      let nav: NavigationState = { colIndex: 4, rowIndex: 0 };
+      const nav: NavigationState = { colIndex: 4, rowIndex: 0 };
       nav.colIndex = (nav.colIndex + 1) % BOARD_STATUSES.length;
       expect(nav.colIndex).toBe(0);
 
@@ -311,7 +311,7 @@ describe("BoardNavigation", () => {
         ready: [createTask("1", "ready"), createTask("2", "ready")],
       });
 
-      let nav: NavigationState = { colIndex: 0, rowIndex: 0 };
+      const nav: NavigationState = { colIndex: 0, rowIndex: 0 };
       expect(tasks.get(BOARD_STATUSES[nav.colIndex])?.length).toBe(0);
 
       // Move to next column (ready)
@@ -330,7 +330,7 @@ describe("BoardNavigation", () => {
         in_progress: [createTask("5", "in_progress")],
       });
 
-      let nav: NavigationState = { colIndex: 0, rowIndex: 0 };
+      const nav: NavigationState = { colIndex: 0, rowIndex: 0 };
 
       // j -> row 1
       nav.rowIndex = (nav.rowIndex + 1) % 2;

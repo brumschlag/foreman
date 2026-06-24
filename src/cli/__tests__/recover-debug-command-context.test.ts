@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ForemanStore } from "../../lib/store.js";
-import * as trpcClientModule from "../../lib/trpc-client.js";
+import type * as trpcClientModule from "../../lib/trpc-client.js";
 import * as projectTaskSupport from "../commands/project-task-support.js";
 import { debugCommand } from "../commands/debug.js";
 import { applyCleanReplayChanges, parseChangedFiles, recoverCommand, validateCleanReplayWorkspace } from "../commands/recover.js";

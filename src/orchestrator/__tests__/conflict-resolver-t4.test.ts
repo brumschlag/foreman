@@ -88,7 +88,7 @@ function stubGitForTier4(
     canonicalFails = false,
   } = options;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const r = resolver as any;
   r.vcs = undefined;
 

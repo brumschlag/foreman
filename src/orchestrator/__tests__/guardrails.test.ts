@@ -14,8 +14,8 @@ import {
 describe("createDirectoryGuardrail", () => {
   // Use a simple function type for mock logging
   let mockLogEvent: (eventType: string, details: Record<string, unknown>) => void;
-  let projectId = "proj-123";
-  let runId = "run-456";
+  const projectId = "proj-123";
+  const runId = "run-456";
 
   beforeEach(() => {
     mockLogEvent = vi.fn((_eventType: string, _details: Record<string, unknown>) => {
@@ -119,7 +119,7 @@ describe("createDirectoryGuardrail", () => {
 
       expect(result.allowed).toBe(true);
       expect(result.correctedArgs).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const correctedCommand = (result.correctedArgs as any).command as string;
       expect(correctedCommand).toContain('cd "/worktrees/project/seed-abc"');
       expect(correctedCommand).toContain("npm test");
@@ -153,7 +153,7 @@ describe("createDirectoryGuardrail", () => {
 
       expect(result.allowed).toBe(true);
       expect(result.correctedArgs).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const correctedPath = (result.correctedArgs as any).path as string;
       expect(correctedPath).toContain("/worktrees/project/seed-abc/");
     });
@@ -334,7 +334,7 @@ describe("wrapToolWithGuardrail", () => {
     const getCwd = () => "/worktrees/project/seed-abc";
 
     // Create a mock tool factory
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const mockFactory: any = vi.fn((cwd: string, args: Record<string, unknown>) => {
       return { cwd, args };
     });
@@ -342,7 +342,7 @@ describe("wrapToolWithGuardrail", () => {
     const wrapped = wrapToolWithGuardrail(mockFactory, guardrail, getCwd);
 
     // Call with correct cwd — should work
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const result = wrapped("/worktrees/project/seed-abc", { file: "test.ts" } as any);
     expect(mockFactory).toHaveBeenCalled();
   });

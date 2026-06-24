@@ -324,7 +324,7 @@ export function wrapToolWithGuardrail<T extends (...args: unknown[]) => unknown>
     // We infer it from the args passed
     const toolName = extractToolName(factory);
     const currentCwd = getCwd();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const toolArgs = (restArgs[0] as Record<string, unknown>) ?? {};
 
     const result = guardrail(toolName, toolArgs, currentCwd);
