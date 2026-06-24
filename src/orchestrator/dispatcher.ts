@@ -140,6 +140,39 @@ export function nativeTaskToIssue(task: NativeTask): Issue {
   };
 }
 
+// ── Milestone utilities ─────────────────────────────────────────────────
+
+/**
+ * Detect cycles in a milestone parent-child graph.
+ *
+ * @param nodes - Array of {id, parentId} where parentId is the milestone parent
+ *                (null if the node has no milestone parent).
+ * @returns Array of node IDs that are part of a cycle. Empty if no cycles.
+ */
+export function detectMilestoneCycle(
+  nodes: { id: string; parentId: string | null }[],
+): string[] {
+  const parentOf = new Map<string, string>();
+  for (const n of nodes) {
+    if (n.parentId !== null) parentOf.set(n.id, n.parentId);
+  }
+
+  const cycleIds: string[] = [];
+  for (const start of parentOf.keys()) {
+    const visited = new Set<string>();
+    let cur: string | undefined = start;
+    while (cur !== undefined) {
+      if (visited.has(cur)) {
+        cycleIds.push(cur);
+        break;
+      }
+      visited.add(cur);
+      cur = parentOf.get(cur);
+    }
+  }
+  return [...new Set(cycleIds)];
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 export class Dispatcher {
@@ -621,6 +654,17 @@ export class Dispatcher {
         log(`[dispatch] Epic ${seed.id} — dispatching as single-agent task`);
         // Fall through to regular dispatch so the epic's phases
         // (developer → qa → finalize) run as a single worktree.
+      }
+
+      // ── Milestone tasks: dispatch as planning checkpoint ─────────────────
+      // Milestones gate their child tasks (listDispatchableReadyTasks excludes
+      // children until the milestone reaches 'ready' or 'closed' status).
+      // The milestone task itself is dispatched as a single-agent task so its
+      // workflow phases can run before any children are unblocked.
+      if (seed.type === "milestone") {
+        log(`[dispatch] Milestone ${seed.id} — dispatching as planning checkpoint`);
+        // TODO(TRD-2026-016): route to spawnMilestonePipeline() once that method
+        // is implemented. For now milestones fall through to regular dispatch.
       }
 
       // Skip seeds that are in cooldown state after a retryable failure.

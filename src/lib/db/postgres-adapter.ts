@@ -1020,6 +1020,12 @@ export class PostgresAdapter {
    * A task can remain in the native `ready` state while dependency links express
    * that another task must close first. Dispatchers must use this query rather
    * than raw status filtering so dependency-blocked ready tasks are not claimed.
+   *
+   * Milestone gate: if a task's parent is a `milestone`-type task via a
+   * `parent-child` dependency, that task is held back until the milestone
+   * reaches `ready` or `closed` status.  The first NOT EXISTS clause skips
+   * milestone parent-child links so they are not double-counted by the generic
+   * blocker check; the second NOT EXISTS clause enforces the milestone gate.
    */
   async listDispatchableReadyTasks(projectId: string, limit = 1000): Promise<TaskRow[]> {
     return query<TaskRow>(
@@ -1034,6 +1040,17 @@ export class PostgresAdapter {
            WHERE td.to_task_id = t.id
              AND blocker.project_id = $1
              AND blocker.status <> 'closed'
+             AND NOT (blocker.type = 'milestone' AND td.type = 'parent-child')
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM task_dependencies td
+           JOIN tasks milestone ON milestone.id = td.from_task_id
+           WHERE td.to_task_id = t.id
+             AND td.type = 'parent-child'
+             AND milestone.type = 'milestone'
+             AND milestone.project_id = $1
+             AND milestone.status NOT IN ('ready', 'closed')
          )
        ORDER BY t.priority ASC, t.created_at ASC
        LIMIT $2`,
