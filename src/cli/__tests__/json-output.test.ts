@@ -135,7 +135,7 @@ vi.mock("../../lib/beads-rust.js", () => ({
 }));
 
 vi.mock("../../lib/task-client-factory.js", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/task-client-factory.js")>("../../lib/task-client-factory.js");
+  const actual = await vi.importActual<typeof LibTaskClientFactory>("../../lib/task-client-factory.js");
   return {
     ...actual,
     createTaskClient: mockCreateTaskClient,
@@ -211,6 +211,7 @@ afterEach(() => {
 // ── Imports ─────────────────────────────────────────────────────────────────
 import { statusCommand } from "../commands/status.js";
 import { mergeCommand } from "../commands/merge.js";
+import type * as LibTaskClientFactory from "../../lib/task-client-factory.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

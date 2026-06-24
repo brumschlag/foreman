@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { interpolateTaskPlaceholders } from '../../lib/interpolate.js';
+import type * as NodeFs from "node:fs";
 
 const { mockCreateSandboxProvider, mockProvider } = vi.hoisted(() => {
   const mockProvider = {
@@ -33,7 +34,7 @@ vi.mock('../../lib/sandbox-providers/index.js', () => ({
 }));
 
 vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
+  const actual = await importOriginal<typeof NodeFs>();
   return {
     ...actual,
     writeFileSync: vi.fn(actual.writeFileSync),

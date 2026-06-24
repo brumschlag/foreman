@@ -7,6 +7,7 @@
  * that print a one-line notice and delegate to the same handlers.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type * as CommandsPurge from "../commands/purge.js";
 
 const { mockPurgeLogsCommandAction, mockPurgeZombieRunsCommandAction } = vi.hoisted(() => ({
   mockPurgeLogsCommandAction: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock("../commands/purge-zombie-runs.js", async (importOriginal) => ({
   purgeZombieRunsCommandAction: mockPurgeZombieRunsCommandAction,
 }));
 
-type PurgeModule = typeof import("../commands/purge.js");
+type PurgeModule = typeof CommandsPurge;
 
 async function freshPurgeModule(): Promise<PurgeModule> {
   vi.resetModules();

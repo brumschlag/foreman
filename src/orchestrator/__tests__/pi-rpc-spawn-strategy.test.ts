@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Mocks set up BEFORE importing the module under test ──────────────────
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:child_process")>();
+  const original = await importOriginal<typeof NodeChildProcess>();
   return {
     ...original,
     execFileSync: vi.fn(),
@@ -24,6 +24,7 @@ import {
   parsePiEvent,
   PI_PHASE_CONFIGS,
 } from "../pi-rpc-spawn-strategy.js";
+import type * as NodeChildProcess from "node:child_process";
 
 // ── Tests ────────────────────────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ const mockSpawn = vi.fn(() => ({
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:child_process")>();
+  const original = await importOriginal<typeof NodeChildProcess>();
   return {
     ...original,
     spawn: mockSpawn,
@@ -29,7 +29,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 const mockClose = vi.fn().mockResolvedValue(undefined);
 const mockOpen = vi.fn().mockResolvedValue({ fd: 3, close: mockClose });
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs/promises")>();
+  const original = await importOriginal<typeof NodeFsPromises>();
   return {
     ...original,
     open: (...args: unknown[]) => mockOpen(...args),
@@ -51,6 +51,8 @@ vi.mock("../pi-rpc-spawn-strategy.js", () => ({
 
 const { spawnWorkerProcess, DetachedSpawnStrategy } = await import("../dispatcher.js");
 import type { SpawnStrategy, WorkerConfig } from "../dispatcher.js";
+import type * as NodeChildProcess from "node:child_process";
+import type * as NodeFsPromises from "node:fs/promises";
 
 const baseConfig: WorkerConfig = {
   runId: "run-001",

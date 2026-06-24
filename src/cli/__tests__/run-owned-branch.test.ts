@@ -8,12 +8,13 @@ const { mockExecFileSync } = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actual = await importOriginal<typeof NodeChildProcess>();
   return { ...actual, execFileSync: mockExecFileSync };
 });
 
 import { collectRuntimeAssetIssues, isIgnorableControllerPath, resolveOwnedControllerBranch } from "../commands/run.js";
 import type { VcsBackend } from "../../lib/vcs/interface.js";
+import type * as NodeChildProcess from "node:child_process";
 
 function makeJjVcs(overrides: Partial<VcsBackend> = {}): VcsBackend {
   return {

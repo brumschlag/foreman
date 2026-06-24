@@ -8,7 +8,7 @@ const { mockExecFile } = vi.hoisted(() => ({ mockExecFile: vi.fn() }));
 
 // Mock execFile so we can control what git diff returns without running real git.
 vi.mock("node:child_process", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:child_process")>();
+  const original = await importOriginal<typeof NodeChildProcess>();
   return { ...original, execFile: mockExecFile };
 });
 
@@ -19,6 +19,7 @@ vi.mock("../task-backend-ops.js", () => ({
 }));
 
 import { Refinery } from "../refinery.js";
+import type * as NodeChildProcess from "node:child_process";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
