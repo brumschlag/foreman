@@ -151,14 +151,14 @@ describe('validateWorkflowConfig — bash/command/merge fields', () => {
 
     it('throws when merge: has an invalid value', () => {
       expect(() =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         validateWorkflowConfig({ name: 'test', phases: [{ name: 'p', prompt: 'x.md' }], merge: 'invalid' } as any, 'test'),
       ).toThrow(WorkflowConfigError);
     });
 
     it('error message for invalid merge value lists valid values', () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         validateWorkflowConfig({ name: 'test', phases: [{ name: 'p', prompt: 'x.md' }], merge: 'invalid' } as any, 'test');
         expect.fail('Should have thrown');
       } catch (e) {

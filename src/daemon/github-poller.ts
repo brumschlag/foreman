@@ -25,7 +25,7 @@
 
 import { GhCli, GhRateLimitError, type GitHubIssue } from "../lib/gh-cli.js";
 import { PostgresAdapter } from "../lib/db/postgres-adapter.js";
-import { ProjectRegistry } from "../lib/project-registry.js";
+import { type ProjectRegistry } from "../lib/project-registry.js";
 
 export interface GitHubPollerConfig {
   /** Interval between poll cycles in milliseconds. Default: 60_000 (60s). */

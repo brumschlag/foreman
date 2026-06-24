@@ -1095,8 +1095,8 @@ export const resetCommand = new Command("reset")
         }
       }
 
-      let mismatchResult: MismatchResult = { mismatches: [], fixed: 0, errors: [] };
-      let staleResult: StaleBranchDetectionOutput = { results: [], closed: 0, reset: 0, errors: [] };
+      const mismatchResult: MismatchResult = { mismatches: [], fixed: 0, errors: [] };
+      const staleResult: StaleBranchDetectionOutput = { results: [], closed: 0, reset: 0, errors: [] };
 
       if (backendType !== "native") {
         // 7. Detect and fix seed/run state mismatches for terminal runs

@@ -8,7 +8,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { basename, join, resolve } from "node:path";
 
 import { homedir } from "node:os";
-import { ForemanStore } from "../../lib/store.js";
+import { type ForemanStore } from "../../lib/store.js";
 import { PostgresStore } from "../../lib/postgres-store.js";
 import { PostgresAdapter } from "../../lib/db/postgres-adapter.js";
 import { ProjectRegistry } from "../../lib/project-registry.js";

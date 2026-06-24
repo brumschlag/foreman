@@ -454,7 +454,7 @@ describe("pollDashboard", () => {
   it("carries deduped success-rate stats through to dashboard state", () => {
     const project = makeProject();
     const store = makeMockStore({ projects: [project] });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (store.getSuccessRate as any).mockReturnValue({ rate: 2 / 3, merged: 2, failed: 1 });
 
     const state = pollDashboard(store);

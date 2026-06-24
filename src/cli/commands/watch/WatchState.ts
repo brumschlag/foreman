@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import { resolve } from "node:path";
-import { ForemanStore } from "../../../lib/store.js";
+import { type ForemanStore } from "../../../lib/store.js";
 import type { Run, RunProgress, Message, EventType } from "../../../lib/store.js";
 import type { BoardTask } from "../board.js";
 import { fetchDaemonDashboardState, type DashboardState } from "../../dashboard-state.js";

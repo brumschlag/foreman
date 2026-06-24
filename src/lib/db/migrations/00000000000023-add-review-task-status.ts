@@ -1,4 +1,4 @@
-import { MigrationBuilder } from "node-pg-migrate";
+import { type MigrationBuilder } from "node-pg-migrate";
 
 const TASK_STATUS_CHECK = `status IN (
   'backlog', 'ready', 'in-progress', 'review',

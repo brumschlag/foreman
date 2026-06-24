@@ -12,8 +12,8 @@
 
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { PostgresAdapter } from "../lib/db/postgres-adapter.js";
-import { ProjectRegistry } from "../lib/project-registry.js";
+import { type PostgresAdapter } from "../lib/db/postgres-adapter.js";
+import { type ProjectRegistry } from "../lib/project-registry.js";
 import { VcsBackendFactory } from "../lib/vcs/index.js";
 import { WorktreeManager } from "../lib/worktree-manager.js";
 

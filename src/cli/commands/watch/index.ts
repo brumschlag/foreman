@@ -161,7 +161,7 @@ export const watchCommand = new Command("watch")
     }
 
     // State
-    let state = initialWatchState();
+    const state = initialWatchState();
 
     // Keyboard handling
     let stdinRawMode = false;

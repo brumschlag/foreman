@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { MigrationBuilder, ColumnDefinition } from "node-pg-migrate";
+ 
+import { type MigrationBuilder, ColumnDefinition } from "node-pg-migrate";
 
 /**
  * Initial migration: create projects table and schema_migrations tracking table.

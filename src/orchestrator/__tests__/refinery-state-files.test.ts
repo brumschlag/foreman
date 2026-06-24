@@ -27,7 +27,7 @@ function makeMocks() {
     getGraph: vi.fn(async () => ({ edges: [] })),
     show: vi.fn(async () => null),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const refinery = new Refinery(store as any, seeds as any, "/tmp/project");
   return { store, seeds, refinery };
 }
@@ -71,7 +71,7 @@ describe("Refinery.autoCommitStateFiles()", () => {
     const calls = mockGitCommands("");
 
     // Access private method via bracket notation
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (refinery as any).autoCommitStateFiles();
 
     // Should call git status but NOT git add or git commit
@@ -92,7 +92,7 @@ describe("Refinery.autoCommitStateFiles()", () => {
     const { refinery } = makeMocks();
     const calls = mockGitCommands(" M src/index.ts\n?? README.md\n");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (refinery as any).autoCommitStateFiles();
 
     const gitArgs = calls.map((c) => c.args);
@@ -109,7 +109,7 @@ describe("Refinery.autoCommitStateFiles()", () => {
       " M .seeds/issues.jsonl\n M src/index.ts\n",
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (refinery as any).autoCommitStateFiles();
 
     const gitArgs = calls.map((c) => c.args);
@@ -130,7 +130,7 @@ describe("Refinery.autoCommitStateFiles()", () => {
       " M .foreman/reports/QA-seed-1.md\n",
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (refinery as any).autoCommitStateFiles();
 
     const gitArgs = calls.map((c) => c.args);
@@ -147,7 +147,7 @@ describe("Refinery.autoCommitStateFiles()", () => {
     const { refinery } = makeMocks();
     const calls = mockGitCommands(" M .seeds/issues.jsonl\n");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (refinery as any).autoCommitStateFiles();
 
     const gitArgs = calls.map((c) => c.args);
@@ -166,7 +166,7 @@ describe("Refinery.autoCommitStateFiles()", () => {
       " M .seeds/issues.jsonl\n?? .foreman/state.db\n M src/foo.ts\n",
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (refinery as any).autoCommitStateFiles();
 
     const gitArgs = calls.map((c) => c.args);
