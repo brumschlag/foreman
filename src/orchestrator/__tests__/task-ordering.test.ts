@@ -8,6 +8,7 @@ import {
   CircularDependencyError,
   type TaskOrderingIssueDetail,
 } from "../task-ordering.js";
+import { BvClient } from "../../lib/bv.js";
 
 // ── Mock BvClient ──────────────────────────────────────────────────────────
 
@@ -259,6 +260,44 @@ describe("getNativeEpicTaskOrder", () => {
       t2: { title: "Task 2", type: "task", blockers: ["t1"] },
     });
 
-    await expect(getNativeEpicTaskOrder("epic-1", ops, "/tmp", false)).rejects.toThrow(CircularDependencyError);
+    let caught: CircularDependencyError | undefined;
+    try {
+      await getNativeEpicTaskOrder("epic-1", ops, "/tmp", false);
+    } catch (err) {
+      caught = err as CircularDependencyError;
+    }
+
+    expect(caught).toBeInstanceOf(CircularDependencyError);
+    expect(caught!.cycle.sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("uses priority as tiebreaker when native children have no blockers", async () => {
+    const ops = makeNativeOps(["t-p2", "t-p0", "t-p1"], {
+      "t-p0": { title: "Critical", type: "task", priority: 0 },
+      "t-p1": { title: "High", type: "task", priority: 1 },
+      "t-p2": { title: "Normal", type: "task", priority: 2 },
+    });
+
+    const result = await getNativeEpicTaskOrder("epic-1", ops, "/tmp", false);
+    expect(result.map((t) => t.seedId)).toEqual(["t-p0", "t-p1", "t-p2"]);
+  });
+
+  it("uses bv triage order when useBv is true", async () => {
+    vi.mocked(BvClient).mockImplementationOnce(
+      class MockBvClient {
+        robotTriage = vi.fn().mockResolvedValue({
+          recommendations: [{ id: "t2" }, { id: "t1" }],
+        });
+        robotNext = vi.fn().mockResolvedValue(null);
+      } as unknown as typeof BvClient,
+    );
+
+    const ops = makeNativeOps(["t1", "t2"], {
+      t1: { title: "Task 1", type: "task" },
+      t2: { title: "Task 2", type: "task" },
+    });
+
+    const result = await getNativeEpicTaskOrder("epic-1", ops, "/tmp", true);
+    expect(result.map((t) => t.seedId)).toEqual(["t2", "t1"]);
   });
 });
