@@ -45,11 +45,11 @@ function setupExecFile(options: {
     (cmd: string, args?: readonly string[] | unknown, ...rest: unknown[]) => {
       const callback =
         typeof rest[rest.length - 1] === "function"
-          ? (rest[rest.length - 1] as Function)
+          ? (rest[rest.length - 1] as (...args: unknown[]) => void)
           : typeof args === "function"
-            ? (args as Function)
+            ? (args as (...args: unknown[]) => void)
             : rest.find((r) => typeof r === "function") as
-                | Function
+                | ((...args: unknown[]) => void)
                 | undefined;
 
       // Git commands always succeed

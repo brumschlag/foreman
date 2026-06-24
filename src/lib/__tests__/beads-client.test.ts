@@ -44,7 +44,7 @@ import { BeadsClient } from "../beads.js";
  * which is what promisify will forward to the caller as the resolved value.
  */
 function makeExecFileResponder(overrides: Record<string, object> = {}) {
-  return (_cmd: string, args: string[], _opts: unknown, callback: Function) => {
+  return (_cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
     // args includes the sd sub-command plus "--json" appended by execBd
     const subCmd = args[0];
 

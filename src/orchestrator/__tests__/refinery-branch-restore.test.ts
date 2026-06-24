@@ -140,7 +140,7 @@ function makeMocks(vcsOverrides: Partial<Record<keyof VcsBackend, ReturnType<typ
   const vcs = makeMockVcs(vcsOverrides);
 
   (execFile as any).mockImplementation(
-    (_cmd: string, args: string[], _opts: any, callback: Function) => {
+    (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
       if (Array.isArray(args) && args[0] === "log") {
         callback(null, { stdout: "abc1234 some commit\n", stderr: "" });
       } else {

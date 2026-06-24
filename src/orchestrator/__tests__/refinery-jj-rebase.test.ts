@@ -105,7 +105,7 @@ describe("Refinery jj rebase path", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (execFile as any).mockImplementation(
-      (_cmd: string, args: string[], _opts: any, callback: Function) => {
+      (_cmd: string, args: string[], _opts: any, callback: (...args: unknown[]) => void) => {
         if (Array.isArray(args) && args[0] === "log") {
           callback(null, { stdout: "abc123 commit\n", stderr: "" });
         } else {
