@@ -28,7 +28,7 @@ import {
 // Mock pool — injected via poolOverride to avoid pg module mocking complexity
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function createMockPool(): PoolLike {
   const query = vi.fn() as any;
   const connect = vi.fn() as any;
@@ -38,13 +38,13 @@ function createMockPool(): PoolLike {
 }
 
 // Helpers to set up mock responses without TypeScript seeing the mock methods.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const mockQuery = (pool: PoolLike, resolved: any) =>
   (pool.query as any).mockResolvedValue(resolved);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const mockQueryError = (pool: PoolLike, rejected: any) =>
   (pool.query as any).mockRejectedValue(rejected);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const mockConnect = (pool: PoolLike, resolved: any) =>
   (pool.connect as any).mockResolvedValue(resolved);
 

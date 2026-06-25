@@ -15,7 +15,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { VcsBackend } from "../lib/vcs/index.js";
 import { getForemanHomePath } from "../lib/foreman-paths.js";
-import { inferProjectPathFromWorkspacePath } from "../lib/workspace-paths.js";
+
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -236,7 +236,7 @@ export function detectWarnings(phases: PhaseRecord[]): string[] {
   );
   if (longPhases.length > 0) {
     warnings.push(
-      `Long-running phases (>10min): ${longPhases.map((p) => `${p.name} (${Math.round(p.durationSeconds! / 60)}min)`).join(", ")}`,
+      `Long-running phases (>10min): ${longPhases.map((p) => `${p.name} (${Math.round((p.durationSeconds ?? 0) / 60)}min)`).join(", ")}`,
     );
   }
 
@@ -515,7 +515,7 @@ export async function writeIncrementalPipelineReport(opts: {
   targetBranch?: string;
   vcsBranchName?: string;
 }): Promise<void> {
-  const { worktreePath, seedId, runId, completedPhases, targetBranch, vcsBranchName } = opts;
+  const { seedId, runId, completedPhases, targetBranch, vcsBranchName } = opts;
   const reportsDir = getForemanHomePath("reports", "runs", runId, seedId);
 
   await mkdir(reportsDir, { recursive: true });

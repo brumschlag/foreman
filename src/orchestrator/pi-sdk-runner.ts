@@ -44,7 +44,7 @@ import {
 } from "./pi-observability-extension.js";
 import type { PhaseTraceLiveEvent, PhaseTraceMetadata } from "./pi-observability-types.js";
 import { writePhaseTrace } from "./pi-observability-writer.js";
-import { z } from "zod";
+import { type z } from "zod";
 
 // ── Public interface (compatible with pi-runner.ts) ─────────────────────
 

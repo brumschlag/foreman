@@ -10,7 +10,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AgentMailClient } from "../lib/agent-mail-client.js";
-import type { ForemanStore, RunProgress, Run } from "../lib/store.js";
+import type { ForemanStore } from "../lib/store.js";
 
 // Narrow interface for run status queries (getRun + getRunProgress)
 export type RunStatusReader = Pick<ForemanStore, "getRun" | "getRunProgress">;

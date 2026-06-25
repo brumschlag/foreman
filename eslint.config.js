@@ -40,8 +40,15 @@ export default tseslint.config(
     },
   },
   {
-    // Relaxed rules for scripts/ (build tooling) — they run in Node.js
-    files: ["scripts/**/*.ts", "scripts/**/*.js"],
+    // Relaxed rules for Node.js tooling scripts (scripts/ + docker/), including
+    // ESM (.mjs) entrypoints — these run in Node and use its globals.
+    files: [
+      "scripts/**/*.ts",
+      "scripts/**/*.js",
+      "scripts/**/*.mjs",
+      "docker/**/*.js",
+      "docker/**/*.mjs",
+    ],
     languageOptions: {
       globals: {
         console: "readonly",
@@ -57,6 +64,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
       "no-undef": "off",
+      // CJS shims (e.g. import-meta-url-shim.js) legitimately use require().
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
   {
@@ -70,6 +79,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
+      // Tests use require() for dynamic module loading / mock setup.
+      "@typescript-eslint/no-require-imports": "off",
     },
   }
 );

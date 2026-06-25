@@ -33,7 +33,7 @@ describe("TRD-NF-003: BvClient default timeout", () => {
   it("returns null when bv times out (does not throw)", async () => {
     const timeoutError = Object.assign(new Error("Command timed out"), { killed: true });
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
         cb(timeoutError);
       },
     );
@@ -47,7 +47,7 @@ describe("TRD-NF-003: BvClient default timeout", () => {
       code: "ENOENT",
     });
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
         cb(enoent);
       },
     );
@@ -58,7 +58,7 @@ describe("TRD-NF-003: BvClient default timeout", () => {
 
   it("returns null for any bv failure, enabling priority-sort fallback", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
         cb(new Error("bv crashed with exit code 1"));
       },
     );

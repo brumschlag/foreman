@@ -27,7 +27,7 @@ import chalk from "chalk";
 import type { TaskDependencyRow as DependencyRow, TaskNoteRow, TaskRow } from "../../lib/db/postgres-adapter.js";
 import { resolveProjectPathFromOptions } from "./project-task-support.js";
 import { createTrpcClient, type TrpcClient } from "../../lib/trpc-client.js";
-import type { RegisteredProjectSummary } from "./project-task-support.js";
+
 import { findRegisteredProjectByPath } from "./project-context.js";
 import type { PrState } from "../../lib/pr-state.js";
 import { ForemanStore } from "../../lib/store.js";
@@ -240,8 +240,6 @@ const TASK_STATUS_ORDER: Record<string, number> = {
   failed: -1,
   stuck: -1,
 };
-
-const ALL_TASK_STATUSES = Object.keys(TASK_STATUS_ORDER);
 const VALID_TASK_TYPES = ["task", "bug", "feature", "epic", "chore", "docs", "question"];
 
 interface TaskProjectContext {
@@ -1055,12 +1053,13 @@ const listCommand = new Command("list")
       // Fetch PR states if --show-pr is specified
       let prStates: Map<string, PrState> | undefined;
       if (opts.showPr) {
-        prStates = new Map<string, PrState>();
+        const collectedPrStates = new Map<string, PrState>();
+        prStates = collectedPrStates;
         await Promise.all(
           rows.map(async (task) => {
             try {
               const prState = await client.tasks.getPrState({ projectId, taskId: task.id }) as PrState;
-              prStates!.set(task.id, prState);
+              collectedPrStates.set(task.id, prState);
             } catch {
               // PR state fetch failed - leave as undefined
             }

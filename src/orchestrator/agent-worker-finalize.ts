@@ -18,7 +18,7 @@ import { appendFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ForemanStore } from "../lib/store.js";
-import { PIPELINE_TIMEOUTS } from "../lib/config.js";
+
 import { enqueueToMergeQueue } from "./agent-worker-enqueue.js";
 import { enqueueSetBeadStatus } from "./task-backend-ops.js";
 import type { VcsBackend } from "../lib/vcs/index.js";

@@ -34,8 +34,14 @@ export function buildOverlapGraph(
     if (entryIds.length < 2) continue;
     for (let i = 0; i < entryIds.length; i++) {
       for (let j = i + 1; j < entryIds.length; j++) {
-        graph.get(entryIds[i])!.add(entryIds[j]);
-        graph.get(entryIds[j])!.add(entryIds[i]);
+        const idI = entryIds[i];
+        const idJ = entryIds[j];
+        if (idI === undefined || idJ === undefined) continue;
+        const setI = graph.get(idI);
+        const setJ = graph.get(idJ);
+        if (!setI || !setJ) continue;
+        setI.add(idJ);
+        setJ.add(idI);
       }
     }
   }
@@ -62,7 +68,8 @@ export function findClusters(graph: Map<number, Set<number>>): number[][] {
     visited.add(nodeId);
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (current === undefined) break;
       cluster.push(current);
 
       const neighbors = graph.get(current);
@@ -103,7 +110,11 @@ export function orderByCluster(entries: MergeQueueEntry[]): MergeQueueEntry[] {
 
   // For each cluster, resolve to entries and sort by enqueued_at (FIFO)
   const resolvedClusters: MergeQueueEntry[][] = clusterIds.map((ids) => {
-    const clusterEntries = ids.map((id) => entryById.get(id)!);
+    const clusterEntries = ids.map((id) => {
+      const entry = entryById.get(id);
+      if (!entry) throw new Error(`entry ${id} not found in cluster mapping`);
+      return entry;
+    });
     clusterEntries.sort((a, b) => a.enqueued_at.localeCompare(b.enqueued_at));
     return clusterEntries;
   });
@@ -149,8 +160,14 @@ export function reCluster(
   // Add edges between all entries that overlap with mergedFiles
   for (let i = 0; i < overlappingEntryIds.length; i++) {
     for (let j = i + 1; j < overlappingEntryIds.length; j++) {
-      graph.get(overlappingEntryIds[i])!.add(overlappingEntryIds[j]);
-      graph.get(overlappingEntryIds[j])!.add(overlappingEntryIds[i]);
+      const idI = overlappingEntryIds[i];
+      const idJ = overlappingEntryIds[j];
+      if (idI === undefined || idJ === undefined) continue;
+      const setI = graph.get(idI);
+      const setJ = graph.get(idJ);
+      if (!setI || !setJ) continue;
+      setI.add(idJ);
+      setJ.add(idI);
     }
   }
 

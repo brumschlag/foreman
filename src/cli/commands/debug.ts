@@ -10,7 +10,7 @@
  */
 
 import { Command } from "commander";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
 import { ForemanStore } from "../../lib/store.js";
@@ -217,8 +217,9 @@ export const debugCommand = new Command("debug")
     }
 
     // Select the target run
-    const run = opts.run
-      ? runs.find((r) => r.id === opts.run || r.id.startsWith(opts.run!))
+    const runFilter = opts.run;
+    const run = runFilter
+      ? runs.find((r) => r.id === runFilter || r.id.startsWith(runFilter))
       : runs[0]; // latest
 
     if (!run) {

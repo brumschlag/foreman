@@ -34,8 +34,8 @@ import type { VcsBackend } from "../../lib/vcs/index.js";
 
 describe("checkAndRebaseStaleWorktree", () => {
   let mockStoreInstance: ForemanStore;
-  let worktreePath = "/worktrees/project/seed-abc";
-  let targetBranch = "dev";
+  const worktreePath = "/worktrees/project/seed-abc";
+  const targetBranch = "dev";
 
   beforeEach(() => {
     vi.clearAllMocks();

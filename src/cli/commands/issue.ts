@@ -96,7 +96,7 @@ function parseRepoKey(repoKey: string): { owner: string; repo: string } {
       `Invalid repo key '${repoKey}'. Expected format: owner/repo (e.g. myorg/myrepo)`,
     );
   }
-  return { owner: parts[0]!, repo: parts[1]! };
+  return { owner: parts[0] ?? "", repo: parts[1] ?? "" };
 }
 
 export const REQUIRED_FOREMAN_GITHUB_LABELS: GitHubLabelDefinition[] = [
@@ -563,8 +563,9 @@ async function importIssueAsTask(
   const existingTasks = await adapter.listTasks(projectId, {
     externalId: externalId,
   });
-  if (existingTasks.length > 0) {
-    return { taskId: existingTasks[0]!.id, created: false };
+  const existing = existingTasks[0];
+  if (existing) {
+    return { taskId: existing.id, created: false };
   }
 
   if (opts.dryRun) {

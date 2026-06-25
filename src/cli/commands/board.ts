@@ -22,7 +22,7 @@ import chalk from "chalk";
 import { Box, Spacer, Text, renderToString } from "ink";
 import { createElement } from "react";
 import { basename, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -30,12 +30,7 @@ import { join as joinPath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import * as yaml from "js-yaml";
 import { createTrpcClient } from "../../lib/trpc-client.js";
-import {
-  priorityLabel,
-  formatTaskIdDisplay,
-  parsePriority,
-  type TaskRow,
-} from "../../lib/task-store.js";
+import { priorityLabel, formatTaskIdDisplay, type TaskRow } from "../../lib/task-store.js";
 import type { TaskNoteRow } from "../../lib/db/postgres-adapter.js";
 import { listRegisteredProjects, resolveProjectPathFromOptions, requireProjectOrAllInMultiMode } from "./project-task-support.js";
 
@@ -70,28 +65,6 @@ export function boardColumnForTaskStatus(status: string): BoardStatus {
 function boardStatusToStoreStatus(status: BoardStatus): string {
   if (status === "in_progress") return "in-progress";
   if (status === "needs_attention") return "blocked";
-  return status;
-}
-
-/**
- * Convert a store status (hyphenated) to a board status (underscored).
- * Returns the board status or null if not a valid board status.
- */
-function storeStatusToBoardStatus(status: string): BoardStatus | null {
-  const normalized = status.replace(/-/g, "_");
-  return BOARD_STATUSES.includes(normalized as BoardStatus) ? normalized as BoardStatus : null;
-}
-
-/**
- * Convert a user-entered status (underscore or hyphen variants) to a store-valid status.
- * Handles in_progress → in-progress and needs_attention → blocked conversions.
- */
-function normalizeStatusForStore(status: string): string {
-  const boardStatus = storeStatusToBoardStatus(status);
-  if (boardStatus) {
-    return boardStatusToStoreStatus(boardStatus);
-  }
-  // If not a valid board status, return as-is and let the API reject it
   return status;
 }
 
@@ -272,7 +245,9 @@ export async function loadBoardTasks(projectPath: string): Promise<Map<BoardStat
 
   for (const row of rows) {
     const status = boardColumnForTaskStatus(row.status);
-    map.get(status)!.push(boardTaskFromRow(row));
+    const column = map.get(status);
+    if (!column) throw new Error(`board column not initialized for status ${status}`);
+    column.push(boardTaskFromRow(row));
   }
 
   return map;
@@ -342,8 +317,10 @@ export function applyBoardTaskUpdate(
 
   if (task) {
     const status = boardColumnForTaskStatus(task.status);
-    next.get(status)!.push(task);
-    next.set(status, sortBoardTasks(next.get(status)!, sortMode));
+    const column = next.get(status);
+    if (!column) throw new Error(`board column not initialized for status ${status}`);
+    column.push(task);
+    next.set(status, sortBoardTasks(column, sortMode));
   }
 
   return next;
@@ -413,7 +390,6 @@ function clamp(value: number, min: number, max: number): number {
 // ── Board renderer ────────────────────────────────────────────────────────────
 
 const MIN_COL_WIDTH = 12;
-const MAX_VISIBLE_PER_COL = 5;
 const COLUMN_GAP = 1;
 const h = createElement;
 
@@ -778,7 +754,7 @@ function renderTaskDetailView(
     } else {
       children.push(h(Text, { key: "notes-title", bold: true }, "Notes:"));
       // Show all notes with wrapping (no item limit)
-      for (const [noteIndex, note] of task.notes.entries()) {
+      for (const note of task.notes) {
         const when = new Date(note.created_at).toLocaleString();
         const phase = note.phase ? `${note.phase} ` : "";
         children.push(
@@ -988,7 +964,7 @@ export function resolveEditor(): string {
   // Check which editors are available on PATH
   for (const candidate of ["vim", "nvim", "nano", "vi", "emacs"]) {
     try {
-      require("node:child_process").execFileSync(candidate, ["--version"], {
+      execFileSync(candidate, ["--version"], {
         stdio: "ignore",
       });
       return candidate;
@@ -1094,7 +1070,7 @@ export function editTaskInEditor(
 /**
  * Write a status change to the store.
  */
-export function applyStatusChange(projectPath: string, taskId: string, newStatus: string): string | null {
+export function applyStatusChange(_projectPath: string, _taskId: string, _newStatus: string): string | null {
   throw new Error("applyStatusChange is now async; use applyStatusChangeAsync().");
 }
 
@@ -1111,7 +1087,7 @@ export async function applyStatusChangeAsync(projectPath: string, taskId: string
 /**
  * Close a task (status → closed, optionally with a reason stored in closed_at).
  */
-export function closeTask(projectPath: string, taskId: string, reason?: string): string | null {
+export function closeTask(_projectPath: string, _taskId: string, _reason?: string): string | null {
   throw new Error("closeTask is now async; use closeTaskAsync().");
 }
 
@@ -1128,7 +1104,7 @@ export async function closeTaskAsync(projectPath: string, taskId: string, _reaso
 /**
  * Save an edited task back to the store (title, description, priority, status).
  */
-export function saveEditedTask(projectPath: string, originalId: string, updated: BoardTask): string | null {
+export function saveEditedTask(_projectPath: string, _originalId: string, _updated: BoardTask): string | null {
   throw new Error("saveEditedTask is now async; use saveEditedTaskAsync().");
 }
 
@@ -1686,7 +1662,7 @@ export interface BoardOptions {
 async function readLine(prompt: string): Promise<string> {
   // Temporarily disable raw mode to read input
   if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
-    process.stdin.setRawMode!(false);
+    process.stdin.setRawMode(false);
   }
 
   const rl = createInterface({
@@ -1699,7 +1675,7 @@ async function readLine(prompt: string): Promise<string> {
   } finally {
     rl.close();
     if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
-      process.stdin.setRawMode!(true);
+      process.stdin.setRawMode(true);
     }
   }
 }
@@ -1878,7 +1854,7 @@ export async function runBoard(opts: BoardOptions): Promise<void> {
   const attachRawMode = () => {
     if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
       try {
-        process.stdin.setRawMode!(true);
+        process.stdin.setRawMode(true);
         process.stdin.resume();
         process.stdin.setEncoding("utf8");
         stdinRawMode = true;
@@ -1889,9 +1865,9 @@ export async function runBoard(opts: BoardOptions): Promise<void> {
   };
 
   const detachRawMode = () => {
-    if (stdinRawMode) {
+    if (stdinRawMode && typeof process.stdin.setRawMode === "function") {
       try {
-        process.stdin.setRawMode!(false);
+        process.stdin.setRawMode(false);
       } catch {
         // ignore
       }

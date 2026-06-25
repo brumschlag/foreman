@@ -3,41 +3,50 @@
 
 import re
 
+# Prefix-based fence language detection for the line following a bare ```.
+# Order matters: the first matching entry wins (mirrors the original if/elif).
+_NEXT_LINE_LANG = (
+    (("src/", "1.", "4."), "```text"),
+    (("//", "interface ", "async function"), "```typescript"),
+    (("POST", "GET"), "```http"),
+    (("foreman",), "```bash"),
+    (("#",), "```bash"),
+)
+
+
+def _detect_fence_language(next_line, prev_line):
+    """Return the replacement fence for a bare ```, or None to leave it unchanged."""
+    for prefixes, fence in _NEXT_LINE_LANG:
+        if next_line.startswith(prefixes):
+            return fence
+    if prev_line.strip().endswith('Schema:'):
+        return '```typescript'
+    if prev_line.strip().endswith('Workflow:'):
+        return '```text'
+    return None
+
+
 def fix_fenced_blocks(filepath):
     with open(filepath, 'r') as f:
-        content = f.read()
+        lines = f.read().split('\n')
 
-    lines = content.split('\n')
     fixed = []
     for i, line in enumerate(lines):
+        next_line = lines[i + 1] if i + 1 < len(lines) else ''
+        prev_line = lines[i - 1] if i > 0 else ''
+
         # Fix empty code block markers with text-based content
-        if line == '```' and i > 0 and i < len(lines) - 1:
-            next_line = lines[i + 1] if i + 1 < len(lines) else ''
-            prev_line = lines[i - 1] if i > 0 else ''
-            
-            # Determine appropriate language
-            if next_line.startswith('src/') or next_line.startswith('1.') or next_line.startswith('4.'):
-                line = '```text'
-            elif next_line.startswith('//') or next_line.startswith('interface ') or next_line.startswith('async function'):
-                line = '```typescript'
-            elif next_line.startswith('POST') or next_line.startswith('GET'):
-                line = '```http'
-            elif next_line.startswith('foreman'):
-                line = '```bash'
-            elif next_line.startswith('#'):
-                line = '```bash'
-            elif prev_line.strip().endswith('Schema:'):
-                line = '```typescript'
-            elif prev_line.strip().endswith('Workflow:'):
-                line = '```text'
-        
+        if line == '```' and 0 < i < len(lines) - 1:
+            fence = _detect_fence_language(next_line, prev_line)
+            if fence:
+                line = fence
+
         # Fix yaml blocks
-        if 'apiUrl' in lines[i+1] if i+1 < len(lines) else '':
-            if line == '```':
-                line = '```yaml'
-        
+        if line == '```' and 'apiUrl' in next_line:
+            line = '```yaml'
+
         fixed.append(line)
-    
+
     return '\n'.join(fixed)
 
 # Fix PRD

@@ -260,11 +260,12 @@ export function finalizePhaseTrace(trace: PhaseTrace, options: FinalizePhaseTrac
     ? existsSync(join(trace.worktreePath, trace.expectedArtifact))
     : undefined;
 
-  const wroteExpectedArtifact = trace.expectedArtifact
+  const expectedArtifact = trace.expectedArtifact;
+  const wroteExpectedArtifact = expectedArtifact
     ? trace.toolCalls.some((tool) => {
         if (tool.toolName.toLowerCase() !== "write" && tool.toolName.toLowerCase() !== "edit") return false;
         const preview = `${tool.argsPreview ?? ""} ${tool.resultPreview ?? ""}`;
-        return preview.includes(trace.expectedArtifact!) || preview.includes(basename(trace.expectedArtifact!));
+        return preview.includes(expectedArtifact) || preview.includes(basename(expectedArtifact));
       })
     : false;
 

@@ -25,10 +25,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, writeFile, mkdir, access, constants } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { basename, dirname, join, resolve as pathResolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import type { PostgresAdapter } from "./db/postgres-adapter.js";
+import type { ProjectRow } from "./db/postgres-adapter.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -322,7 +323,7 @@ export class ProjectRegistry {
     this.cache = null;
   }
 
-  private projectRowToRecord(row: import("./db/postgres-adapter.js").ProjectRow): ProjectRecord {
+  private projectRowToRecord(row: ProjectRow): ProjectRecord {
     return {
       id: row.id,
       name: row.name,
@@ -425,13 +426,13 @@ export class ProjectRegistry {
     const existing = this.pg
       ? await this.list()
       : await this.readJson();
-    if (existing.some((p) => p.path === path)) {
-      const dup = existing.find((p) => p.path === path)!;
-      throw new DuplicateProjectError("path", dup.path);
+    const pathDup = existing.find((p) => p.path === path);
+    if (pathDup) {
+      throw new DuplicateProjectError("path", pathDup.path);
     }
-    if (existing.some((p) => p.name === projectName)) {
-      const dup = existing.find((p) => p.name === projectName)!;
-      throw new DuplicateProjectError("name", dup.name);
+    const nameDup = existing.find((p) => p.name === projectName);
+    if (nameDup) {
+      throw new DuplicateProjectError("name", nameDup.name);
     }
     if (repoKey && existing.some((p) => p.repoKey === repoKey)) {
       throw new DuplicateProjectError("path", repoKey);
@@ -675,10 +676,8 @@ export class ProjectRegistry {
     const records = await this.readJson();
     // Try ID first, then fall back to name (backward compat)
     let idx = records.findIndex((p) => p.id === projectIdOrName);
-    let actualId = records[idx]?.id;
     if (idx === -1) {
       idx = records.findIndex((p) => p.name === projectIdOrName);
-      actualId = records[idx]?.id;
     }
     if (idx === -1) {
       throw new ProjectNotFoundError(projectIdOrName);

@@ -84,7 +84,7 @@ const {
     this.getRunsByStatuses = vi.fn();
     this.getRunsByBaseBranch = vi.fn();
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   (MockForemanStore as any).forProject = vi.fn((...args: unknown[]) => new (MockForemanStore as any)(...args));
 
   // MergeQueue mocks
@@ -135,7 +135,7 @@ vi.mock("../../lib/beads-rust.js", () => ({
 }));
 
 vi.mock("../../lib/task-client-factory.js", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/task-client-factory.js")>("../../lib/task-client-factory.js");
+  const actual = await vi.importActual<typeof LibTaskClientFactory>("../../lib/task-client-factory.js");
   return {
     ...actual,
     createTaskClient: mockCreateTaskClient,
@@ -211,6 +211,7 @@ afterEach(() => {
 // ── Imports ─────────────────────────────────────────────────────────────────
 import { statusCommand } from "../commands/status.js";
 import { mergeCommand } from "../commands/merge.js";
+import type * as LibTaskClientFactory from "../../lib/task-client-factory.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ import { mergeCommand } from "../commands/merge.js";
  * Run a Commander command with given args, capturing stdout/stderr output.
  * Returns the captured output as strings.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 async function runCommand(cmd: any, args: string[]): Promise<{ stdout: string; stderr: string }> {
   const stdoutLines: string[] = [];
   const stderrLines: string[] = [];
@@ -276,7 +277,7 @@ describe("foreman status --json", () => {
     mockGetActiveRuns.mockReturnValue([]);
     mockGetMetrics.mockReturnValue({ totalCost: 0, totalTokens: 0, tasksByStatus: {}, costByRuntime: [] });
     mockGetRunsByStatusSince.mockReturnValue([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (MockForemanStore as any).forProject = vi.fn((...args: unknown[]) => new (MockForemanStore as any)(...args));
   });
 
@@ -426,7 +427,7 @@ describe("foreman merge --list --json", () => {
     mockList.mockReturnValue([]);
     mockGetProjectByPath.mockReturnValue(MOCK_PROJECT);
     mockGetDb.mockReturnValue({});
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (MockForemanStore as any).forProject = vi.fn((...args: unknown[]) => new (MockForemanStore as any)(...args));
   });
 

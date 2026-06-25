@@ -165,7 +165,7 @@ describe("BoardPerformance", () => {
       const start = performance.now();
 
       // Simulate j key press (move down)
-      let nav = { colIndex: 0, rowIndex: 0 };
+      const nav = { colIndex: 0, rowIndex: 0 };
       const currentTasks = tasks.get(BOARD_STATUSES[nav.colIndex]) ?? [];
       if (currentTasks.length > 0) {
         nav.rowIndex = (nav.rowIndex + 1) % currentTasks.length;
@@ -184,7 +184,7 @@ describe("BoardPerformance", () => {
       const start = performance.now();
 
       // Simulate l key press (move right)
-      let nav = { colIndex: 2, rowIndex: 0 };
+      const nav = { colIndex: 2, rowIndex: 0 };
       nav.colIndex = (nav.colIndex + 1) % BOARD_STATUSES.length;
       nav.rowIndex = 0;
 

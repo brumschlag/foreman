@@ -35,8 +35,9 @@ export function buildSprintDepGraph(
       for (const task of story.tasks) {
         for (const depId of task.dependencies) {
           const depSprint = taskToSprint.get(depId);
-          if (depSprint != null && depSprint !== si) {
-            graph.get(si)!.add(depSprint);
+          const edges = graph.get(si);
+          if (depSprint != null && depSprint !== si && edges) {
+            edges.add(depSprint);
           }
         }
       }
@@ -61,12 +62,6 @@ export function computeParallelGroups(
     inDegree.set(i, 0);
   }
 
-  for (const [, deps] of graph) {
-    // This sprint depends on `deps` — so this sprint has incoming edges
-    // But we need forward edges: if sprint A depends on sprint B,
-    // then B → A (B must come before A)
-  }
-
   // Build forward graph: B → A means A depends on B
   const forward = new Map<number, Set<number>>();
   for (let i = 0; i < sprintCount; i++) {
@@ -74,8 +69,11 @@ export function computeParallelGroups(
   }
   for (const [sprint, deps] of graph) {
     for (const dep of deps) {
-      forward.get(dep)!.add(sprint);
-      inDegree.set(sprint, (inDegree.get(sprint) ?? 0) + 1);
+      const forwardEdges = forward.get(dep);
+      if (forwardEdges) {
+        forwardEdges.add(sprint);
+        inDegree.set(sprint, (inDegree.get(sprint) ?? 0) + 1);
+      }
     }
   }
 

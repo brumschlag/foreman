@@ -29,7 +29,7 @@ function makeExecFileResponder(opts: {
     stderr: "",
   };
 
-  return (cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+  return (cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
     const isBr = cmd.endsWith("/br") || cmd === "br";
     const response = isBr ? brOut : bvOut;
     if (response instanceof Error) {
@@ -68,7 +68,7 @@ describe("BvClient.robotTriage", () => {
   it("calls br sync --flush-only before bv", async () => {
     const calls: string[][] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         calls.push([cmd, ...args]);
         if (cmd.endsWith("/br") || cmd === "br") {
           callback(null, { stdout: "", stderr: "" });
@@ -94,7 +94,7 @@ describe("BvClient.robotTriage", () => {
   it("passes --flush-only to br sync", async () => {
     const brArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/br") || cmd === "br") {
           brArgs.push(...args);
           callback(null, { stdout: "", stderr: "" });
@@ -130,7 +130,7 @@ describe("BvClient.robotTriage", () => {
   it("includes --robot-triage in bv arguments", async () => {
     const bvArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/bv") || cmd === "bv") {
           bvArgs.push(...args);
           callback(null, { stdout: JSON.stringify(MOCK_TRIAGE), stderr: "" });
@@ -149,7 +149,7 @@ describe("BvClient.robotTriage", () => {
   it("always appends --format toon", async () => {
     const bvArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/bv") || cmd === "bv") {
           bvArgs.push(...args);
           callback(null, { stdout: JSON.stringify(MOCK_TRIAGE), stderr: "" });
@@ -168,7 +168,7 @@ describe("BvClient.robotTriage", () => {
 
   it("returns null when bv binary missing (ENOENT)", async () => {
     mockExecFile.mockImplementation(
-      (cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/br") || cmd === "br") {
           callback(null, { stdout: "", stderr: "" });
         } else {
@@ -185,7 +185,7 @@ describe("BvClient.robotTriage", () => {
 
   it("returns null when bv exits non-zero", async () => {
     mockExecFile.mockImplementation(
-      (cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/br") || cmd === "br") {
           callback(null, { stdout: "", stderr: "" });
         } else {
@@ -244,7 +244,7 @@ describe("BvClient.robotNext", () => {
   it("includes --robot-next in bv arguments", async () => {
     const bvArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/bv") || cmd === "bv") {
           bvArgs.push(...args);
           callback(null, { stdout: JSON.stringify(MOCK_NEXT), stderr: "" });
@@ -262,7 +262,7 @@ describe("BvClient.robotNext", () => {
 
   it("returns null when bv binary missing", async () => {
     mockExecFile.mockImplementation(
-      (cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/br") || cmd === "br") {
           callback(null, { stdout: "", stderr: "" });
         } else {
@@ -300,7 +300,7 @@ describe("BvClient.robotPlan", () => {
   it("includes --robot-plan in bv arguments", async () => {
     const bvArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/bv") || cmd === "bv") {
           bvArgs.push(...args);
           callback(null, { stdout: JSON.stringify({ tracks: [] }), stderr: "" });
@@ -318,7 +318,7 @@ describe("BvClient.robotPlan", () => {
 
   it("returns null on failure", async () => {
     mockExecFile.mockImplementation(
-      (cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/br") || cmd === "br") {
           callback(null, { stdout: "", stderr: "" });
         } else {
@@ -341,7 +341,7 @@ describe("BvClient.robotInsights", () => {
   it("includes --robot-insights in bv arguments", async () => {
     const bvArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/bv") || cmd === "bv") {
           bvArgs.push(...args);
           callback(null, { stdout: JSON.stringify({ metrics: {} }), stderr: "" });
@@ -366,7 +366,7 @@ describe("BvClient.robotAlerts", () => {
   it("includes --robot-alerts in bv arguments", async () => {
     const bvArgs: string[] = [];
     mockExecFile.mockImplementation(
-      (cmd: string, args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/bv") || cmd === "bv") {
           bvArgs.push(...args);
           callback(null, { stdout: JSON.stringify({ alerts: [] }), stderr: "" });
@@ -424,7 +424,7 @@ describe("BvClient timeout", () => {
 
   it("returns null when bv call exceeds timeout", async () => {
     mockExecFile.mockImplementation(
-      (cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         if (cmd.endsWith("/br") || cmd === "br") {
           callback(null, { stdout: "", stderr: "" });
           return;

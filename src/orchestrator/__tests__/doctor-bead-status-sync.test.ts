@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type * as NodeChildProcess from "node:child_process";
+import type * as NodeFsPromises from "node:fs/promises";
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
 //
@@ -23,7 +25,7 @@ const { mockExecFileSync } = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actual = await importOriginal<typeof NodeChildProcess>();
   return { ...actual, execFileSync: mockExecFileSync };
 });
 
@@ -35,7 +37,7 @@ const { mockAccess, mockStat, mockRm } = vi.hoisted(() => ({
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const actual = await importOriginal<typeof NodeFsPromises>();
   return { ...actual, access: mockAccess, stat: mockStat, rm: mockRm };
 });
 

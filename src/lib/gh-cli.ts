@@ -398,7 +398,7 @@ export class GhCli {
       if (status === 403 || result.stderr.toLowerCase().includes("rate limit")) {
         // Try to extract retry-after seconds from gh error message
         const retryMatch = result.stderr.match(/retry after (\d+) seconds?/i);
-        const retryAfter = retryMatch ? parseInt(retryMatch[1]!, 10) : 3600;
+        const retryAfter = retryMatch ? parseInt(retryMatch[1], 10) : 3600;
         throw new GhRateLimitError(
           `GitHub API rate limit exceeded. ${result.stderr || "Retry after " + retryAfter + " seconds."}`,
           retryAfter,

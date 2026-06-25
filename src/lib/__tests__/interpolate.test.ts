@@ -56,14 +56,14 @@ describe('interpolateTaskPlaceholders', () => {
     it('logs a warning for unknown placeholder', () => {
       const warnCalls: string[] = [];
       const originalWarn = console.warn;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (console as any).warn = (msg: string) => warnCalls.push(msg);
       try {
         interpolateTaskPlaceholders('{task.unknown}', FULL_TASK);
         expect(warnCalls.length).toBe(1);
         expect(warnCalls[0]).toContain('Unknown placeholder');
       } finally {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         (console as any).warn = originalWarn;
       }
     });
@@ -92,7 +92,7 @@ describe('interpolateTaskPlaceholders', () => {
 
     it('mixed escaped and unescaped placeholders', () => {
       const result = interpolateTaskPlaceholders(
-        '\\{task.title\\} is \"{task.title}\"',
+        '\\{task.title\\} is "{task.title}"',
         FULL_TASK,
       );
       expect(result).toBe('{task.title} is "Fix login timeout"');

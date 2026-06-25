@@ -8,24 +8,29 @@
  *
  * Usage: tsx agent-worker.ts <config-file>
  */
-
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, basename } from "node:path";
+import { dirname, join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { runPhaseSession } from "./phase-runner.js";
 import { createSendMailTool, createGetRunStatusTool, createCloseBeadTool } from "./pi-sdk-tools.js";
 import { executePipeline } from "./pipeline-executor.js";
-import type { EpicTask, PhaseObservabilityInput, PipelineObservabilityWriter } from "./pipeline-executor.js";
+import type {
+  EpicTask,
+  PhaseObservabilityInput,
+  PipelineObservabilityWriter,
+  PhaseResult as PipelinePhaseResult,
+  PhaseRunConfig,
+  PhaseNotificationClient,
+} from "./pipeline-executor.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { ForemanStore } from "../lib/store.js";
 import type { RunProgress } from "../lib/store.js";
 import { PostgresStore } from "../lib/postgres-store.js";
-import type { RunProgressSummary } from "./read-models.js";
+
 import { PostgresAdapter } from "../lib/db/postgres-adapter.js";
 import { initPool, isPoolInitialised } from "../lib/db/pool-manager.js";
-import { PIPELINE_BUFFERS, PIPELINE_TIMEOUTS } from "../lib/config.js";
+import { PIPELINE_TIMEOUTS } from "../lib/config.js";
 import {
   ROLE_CONFIGS,
   getDisallowedTools,
@@ -58,7 +63,6 @@ import { runWorkspaceHook } from "../lib/setup.js";
 import { loadProjectConfig, type ProjectHooksConfig } from "../lib/project-config.js";
 import { nativeTaskStatusForPhase } from "./task-phase-status.js";
 
-const execFileAsync = promisify(execFile);
 
 // ── Notification Client ───────────────────────────────────────────────────
 
@@ -547,9 +551,6 @@ async function main(): Promise<void> {
     // Non-fatal — mail is optional infrastructure
   }
 
-  // Build clean env for SDK
-  const env: Record<string, string | undefined> = { ...process.env };
-
   // ── Pipeline mode: run each phase as a separate SDK session ─────────
   if (pipeline) {
     try {
@@ -753,11 +754,11 @@ interface PhaseResult {
 async function runPhase(
   role: string,
   prompt: string,
-  config: WorkerConfig,
+  config: PhaseRunConfig,
   progress: RunProgress,
   logFile: string,
   store: ForemanStore,
-  notifyClient: NotificationClient,
+  notifyClient: PhaseNotificationClient | null,
   agentMailClient?: AnyMailClient | null,
   observability?: PhaseObservabilityInput,
   observabilityWriter?: PipelineObservabilityWriter,
@@ -845,7 +846,7 @@ async function runPhase(
         } else {
           void Promise.resolve(store.updateRunProgress(config.runId, progress));
         }
-        notifyClient.send({
+        notifyClient?.send({
           type: "progress",
           runId: config.runId,
           progress: { ...progress },
@@ -918,12 +919,6 @@ async function runPhase(
   }
 }
 
-function readReport(worktreePath: string, filename: string): string | null {
-  const p = join(worktreePath, filename);
-  try { return readFileSync(p, "utf-8"); } catch { return null; }
-}
-
-
 /**
  * Run the troubleshooter phase as a separate SDK session.
  *
@@ -935,7 +930,7 @@ function readReport(worktreePath: string, filename: string): string | null {
  */
 async function runTroubleshooterPhase(
   config: WorkerConfig,
-  workflowConfig: import("../lib/workflow-loader.js").WorkflowConfig,
+  workflowConfig: WorkflowConfig,
   store: ForemanStore,
   logFile: string,
   notifyClient: NotificationClient,
@@ -965,7 +960,7 @@ async function runTroubleshooterPhase(
   const roleConfig = ROLE_CONFIGS.troubleshooter;
   const resolvedModel = onFailure.models?.["default"] ?? roleConfig.model;
 
-  const customTools: import("@mariozechner/pi-coding-agent").ToolDefinition[] = [];
+  const customTools: ToolDefinition[] = [];
   if (agentMailClient) {
     customTools.push(createSendMailTool(agentMailClient, `troubleshooter-${beadId}`));
   }
@@ -1110,7 +1105,7 @@ async function runCreatePrBuiltinPhase(args: {
   workflowConfig: WorkflowConfig;
   log: (msg: string) => void;
   agentMailClient: AnyMailClient | null;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const { config, store, runtimeTaskClient, pipelineProjectPath, registeredProjectId, registeredReadStore, vcsBackend, workflowConfig, log, agentMailClient } = args;
 
   // Fallback logic mirrors runPipeline: if registeredReadStore is missing but a database
@@ -1216,7 +1211,7 @@ async function runPrWaitBuiltinPhase(args: {
   phase: WorkflowPhaseConfig;
   pipelineProjectPath: string;
   log: (msg: string) => void;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const prNumber = readPrNumberFromMetadata(args.config.worktreePath, workerReportDir(args.config));
 
   const timeoutMs = (args.phase.timeoutSecs ?? 600) * 1000;
@@ -1268,7 +1263,7 @@ async function runPreparePrReviewBuiltinPhase(args: {
   config: WorkerConfig;
   pipelineProjectPath: string;
   log: (msg: string) => void;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const prNumber = readPrNumberFromMetadata(args.config.worktreePath, workerReportDir(args.config));
   const context = await collectPrReviewContext(args.pipelineProjectPath, prNumber);
   await writePrReviewFindings(args.config.worktreePath, context, workerReportDir(args.config));
@@ -1281,7 +1276,7 @@ async function runCliReviewBuiltinPhase(args: {
   pipelineProjectPath: string;
   vcsBackend?: VcsBackend;
   log: (msg: string) => void;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const baseBranch = args.config.targetBranch
     || await args.vcsBackend?.detectDefaultBranch(args.pipelineProjectPath).catch(() => "main")
     || "main";
@@ -1382,7 +1377,7 @@ async function runMergeBuiltinPhase(args: {
   workflowConfig: WorkflowConfig;
   log: (msg: string) => void;
   agentMailClient: AnyMailClient | null;
-}): Promise<import("./pipeline-executor.js").PhaseResult> {
+}): Promise<PipelinePhaseResult> {
   const { config, store, pipelineProjectPath, registeredProjectId, registeredReadStore, vcsBackend, workflowConfig, log, agentMailClient } = args;
   const mergeStrategy = workflowConfig.merge ?? "auto";
   const prNumber = (() => {
@@ -1532,7 +1527,8 @@ async function runPipeline(
       registeredProjectId,
     },
   );
-  const registeredObservabilityWriter: PipelineObservabilityWriter | undefined = registeredReadStore
+  const observabilityProjectId = registeredProjectId;
+  const registeredObservabilityWriter: PipelineObservabilityWriter | undefined = registeredReadStore && observabilityProjectId
     ? {
         async updateProgress(progress) {
           try {
@@ -1544,7 +1540,7 @@ async function runPipeline(
         },
         async logEvent(eventType, data) {
           try {
-            await registeredReadStore.logEvent(registeredProjectId!, eventType, data, config.runId);
+            await registeredReadStore.logEvent(observabilityProjectId, eventType, data, config.runId);
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             log(`[pipeline-observability] ${eventType} event failed (non-fatal): ${msg}`);
@@ -2251,7 +2247,7 @@ async function markStuck(
   phase: string,
   reason: string,
   projectPath: string,
-  notifyClient?: NotificationClient,
+  notifyClient?: PhaseNotificationClient | null,
   registeredReadStore?: PostgresStore,
 ): Promise<void> {
   const reasonLower = reason.toLowerCase();

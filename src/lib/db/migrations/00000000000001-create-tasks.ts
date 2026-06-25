@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { MigrationBuilder } from "node-pg-migrate";
+ 
+import { type MigrationBuilder } from "node-pg-migrate";
 
 /**
  * Migration 00000000000001: create tasks table with project_id FK.

@@ -104,7 +104,6 @@ CMD_ARGS=(run task "${TASK_ID}" "${WORKFLOW}" --project-path /repo --no-watch --
 echo "[entrypoint] Spawning worker: foreman ${CMD_ARGS[*]}"
 cd /repo
 foreman "${CMD_ARGS[@]}" &
-FOREMAN_PID=$!
 cd /
 # Give the worker time to actually spawn, then we poll independently
 sleep 5
@@ -141,6 +140,7 @@ for i in $(seq 1 "${MAX_POLLS}"); do
         break
       fi
       echo "[entrypoint] ERROR: Pipeline ended with status '${STATUS}'" >&2
+      # shellcheck disable=SC2012  # log filenames are safe runId values; ls -t sorts by mtime
       LAST_LOG=$(ls -t "${HOME}/.foreman/logs"/*.err 2>/dev/null | head -1 || true)
       if [[ -n "${LAST_LOG}" ]]; then
         tail -30 "${LAST_LOG}" >&2

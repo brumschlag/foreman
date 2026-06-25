@@ -30,13 +30,6 @@ const PANEL_LABELS: Record<PanelId, string> = {
   events: "EVENTS",
 };
 
-const PANEL_ICONS: Record<PanelId, string> = {
-  agents: "●",
-  board: "■",
-  inbox: "✉",
-  events: "◈",
-};
-
 // ── Layout mode ────────────────────────────────────────────────────────────
 
 export type LayoutMode = "wide" | "medium" | "narrow" | "too-narrow";
@@ -78,43 +71,6 @@ function truncateMiddle(text: string, maxLen: number): string {
   if (maxLen <= 3) return "…".repeat(maxLen);
   const keep = Math.floor((maxLen - 1) / 2);
   return text.slice(0, keep) + "…" + text.slice(-keep);
-}
-
-// ── Panel header ─────────────────────────────────────────────────────────
-
-function panelHeader(panel: PanelId, state: WatchState, width: number): string {
-  const mode = detectLayoutMode(width);
-  const label = PANEL_LABELS[panel];
-  const isFocused = state.focusedPanel === panel;
-
-  const bg = isFocused ? chalk.cyan : chalk.dim;
-  const fg = isFocused ? (t: string) => chalk.cyan.bold(t) : (t: string) => t;
-
-  const offline = getOfflineIndicator(panel, state);
-  const status = offline ?? chalk.dim("ok");
-
-  // Build header line within panel width
-  const innerWidth = width - 2; // subtract border chars
-  const labelStr = truncate(` ${label} `, innerWidth - 2);
-  const statusStr = chalk.dim(` ${status}`);
-
-  // Assemble with borders
-  let line = fg(bg("┌")) + labelStr.padEnd(innerWidth - statusStr.length, "─") + fg(bg("┐"));
-  line += "\n";
-  line += fg(bg("│")) + chalk.dim("".padEnd(innerWidth)) + fg(bg("│"));
-  line += "\n";
-  line += fg(bg("│")) + ` ${fg(labelStr.trim())}${statusStr}`.padEnd(innerWidth) + fg(bg("│"));
-  line += "\n";
-  line += fg(bg("│")) + chalk.dim("".padEnd(innerWidth)) + fg(bg("│"));
-  line += "\n";
-  line += fg(bg("├")) + chalk.dim("".padEnd(innerWidth, "─")) + fg(bg("┤"));
-
-  return line;
-}
-
-function panelFooter(width: number): string {
-  const innerWidth = width - 2;
-  return chalk.dim("└" + "".padEnd(innerWidth, "─") + "┘");
 }
 
 function getOfflineIndicator(panel: PanelId, state: WatchState): string | null {
@@ -257,7 +213,7 @@ function renderBoardPanel(state: WatchState, width: number): string {
     lines.push(chalk.red("  ⚠ Needs attention:"));
     for (const task of state.board.needsAttention.slice(0, 3)) {
       const isSelected = state.selectedTaskIndex >= 0 &&
-        state.board!.needsAttention[state.selectedTaskIndex]?.id === task.id;
+        state.board.needsAttention[state.selectedTaskIndex]?.id === task.id;
       const marker = isSelected ? chalk.cyan("▶") : chalk.dim(" ");
       const title = truncate(task.title, innerWidth - 10);
       const statusTag = chalk.red(`[${task.status}]`);

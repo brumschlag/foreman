@@ -9,7 +9,7 @@
 
 import chalk from "chalk";
 import { type WatchState } from "./WatchState.js";
-import { renderWatchLayout, computeLayoutSections } from "./WatchLayout.js";
+import { renderWatchLayout } from "./WatchLayout.js";
 import { renderHelpOverlay } from "./WatchState.js";
 
 // ── Terminal dimensions ───────────────────────────────────────────────────
@@ -47,10 +47,6 @@ export function renderWatch(state: WatchState): string {
  * Render the display header bar.
  */
 export function renderWatchHeader(state: WatchState): string {
-  const mode = chalk.dim("[watch]");
-  const refresh = chalk.dim("[refresh: 5s]");
-  const quit = chalk.dim("[Ctrl+C quit]");
-
   const projectName = state.dashboard?.projects[0]?.name ?? "—";
   const title = `${chalk.bold.cyan("FOREMAN WATCH")} — ${chalk.bold(projectName)}`;
 

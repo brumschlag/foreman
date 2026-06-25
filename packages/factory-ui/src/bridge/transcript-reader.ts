@@ -28,6 +28,36 @@ export interface ChatTurn {
   usage?: { input: number; output: number; cost: { total: number } };
 }
 
+/**
+ * Raw shapes parsed from the JSONL log. These mirror the on-disk event
+ * format, which is untrusted input, so all fields are optional and narrowed
+ * before use.
+ */
+interface RawContentItem {
+  type?: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
+  toolCallId?: string;
+  content?: RawContentItem[];
+}
+
+interface RawMessage {
+  role?: string;
+  content?: RawContentItem[];
+  usage?: {
+    input?: number;
+    output?: number;
+    cost?: { total?: number };
+  };
+}
+
+interface RawMessageEndEvent {
+  type: string;
+  message: RawMessage;
+}
+
 const LOGS_DIR = join(homedir(), ".foreman", "logs");
 
 export class TranscriptReader {
@@ -46,11 +76,11 @@ export class TranscriptReader {
     const lines = content.split("\n").filter((line) => line.trim().startsWith("{"));
     
     // Parse and filter message_end events
-    const messageEndEvents: { type: string; message: any }[] = [];
-    
+    const messageEndEvents: RawMessageEndEvent[] = [];
+
     for (const line of lines) {
       try {
-        const parsed = JSON.parse(line);
+        const parsed = JSON.parse(line) as RawMessageEndEvent;
         if (parsed.type === "message_end") {
           messageEndEvents.push(parsed);
         }
@@ -65,7 +95,7 @@ export class TranscriptReader {
 
     for (const event of messageEndEvents) {
       const message = event.message;
-      const role = message.role as string;
+      const role = message.role;
 
       if (role === "assistant") {
         // Extract text and tool calls from content
@@ -75,11 +105,11 @@ export class TranscriptReader {
 
         for (const item of contentArray) {
           if (item.type === "text") {
-            text += item.text;
+            text += item.text ?? "";
           } else if (item.type === "toolCall") {
             toolCalls.push({
-              id: item.id,
-              name: item.name,
+              id: item.id ?? "",
+              name: item.name ?? "",
               arguments: item.arguments || {},
             });
           }
@@ -107,7 +137,7 @@ export class TranscriptReader {
         // Check for tool results in user message
         const contentArray = message.content || [];
         const hasToolResults = contentArray.some(
-          (item: any) => item.type === "toolResult"
+          (item) => item.type === "toolResult"
         );
 
         // Skip user messages that are only text (like system prompts)
@@ -120,12 +150,12 @@ export class TranscriptReader {
               // Extract text from tool result content
               const resultContent = item.content || [];
               const resultText = resultContent
-                .filter((c: any) => c.type === "text")
-                .map((c: any) => c.text)
+                .filter((c) => c.type === "text")
+                .map((c) => c.text ?? "")
                 .join("\n");
 
               toolResults.push({
-                toolCallId: item.toolCallId,
+                toolCallId: item.toolCallId ?? "",
                 text: resultText,
               });
             }

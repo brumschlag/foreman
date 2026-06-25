@@ -8,22 +8,22 @@ type LocalStoreRunResult = { changes: number; lastInsertRowid?: number | bigint 
 
 type LocalStoreStatement = {
   run: (...args: unknown[]) => LocalStoreRunResult;
-  get: (...args: unknown[]) => any;
-  all: (...args: unknown[]) => any[];
+  get: (...args: unknown[]) => unknown;
+  all: (...args: unknown[]) => unknown[];
 };
 
 type LocalStoreDatabase = {
   prepare: (...args: unknown[]) => LocalStoreStatement;
   exec: (...args: unknown[]) => void;
   pragma: (...args: unknown[]) => unknown;
-  transaction: (fn: (...args: unknown[]) => unknown) => (...args: unknown[]) => unknown;
+  transaction: <T>(fn: (...args: unknown[]) => T) => (...args: unknown[]) => T;
   close: () => void;
 };
 
 function createDisabledLocalStoreDb(): LocalStoreDatabase {
   const noopRun = (): LocalStoreRunResult => ({ changes: 0 });
   const noopGet = (): undefined => undefined;
-  const noopAll = (): any[] => [];
+  const noopAll = (): unknown[] => [];
 
   return {
     prepare: () => ({ run: noopRun, get: noopGet, all: noopAll }),
@@ -1832,7 +1832,9 @@ export class ForemanStore {
         }
       }
       this.db.prepare(`UPDATE sentinel_configs SET ${fields.join(", ")} WHERE project_id = @project_id`).run(values);
-      return this.getSentinelConfig(projectId)!;
+      const updated = this.getSentinelConfig(projectId);
+      if (!updated) throw new Error(`Sentinel config for project ${projectId} missing after update`);
+      return updated;
     } else {
       const row: Omit<SentinelConfigRow, "id"> = {
         project_id: projectId,
@@ -1849,7 +1851,9 @@ export class ForemanStore {
         `INSERT INTO sentinel_configs (project_id, branch, test_command, interval_minutes, failure_threshold, enabled, pid, created_at, updated_at)
          VALUES (@project_id, @branch, @test_command, @interval_minutes, @failure_threshold, @enabled, @pid, @created_at, @updated_at)`
       ).run(row);
-      return this.getSentinelConfig(projectId)!;
+      const inserted = this.getSentinelConfig(projectId);
+      if (!inserted) throw new Error(`Sentinel config for project ${projectId} missing after insert`);
+      return inserted;
     }
   }
 
@@ -1959,7 +1963,9 @@ export class ForemanStore {
         });
     }
 
-    return this.getMergeAgentConfig()!;
+    const result = this.getMergeAgentConfig();
+    if (!result) throw new Error("Merge agent config missing after upsert");
+    return result;
   }
 
   // ── Metrics ─────────────────────────────────────────────────────────

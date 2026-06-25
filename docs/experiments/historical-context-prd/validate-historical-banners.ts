@@ -125,7 +125,7 @@ export interface ValidationResult {
 export function validateBanners(
   manifest: Manifest,
   variants: BannerVariants,
-  docsRoot: string
+  _docsRoot: string
 ): ValidationResult {
   const result: ValidationResult = { passed: true, errors: [], warnings: [] };
 

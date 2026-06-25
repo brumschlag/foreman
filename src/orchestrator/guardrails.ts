@@ -122,7 +122,7 @@ function correctFilePath(
 
   // If path starts with a different worktree prefix, try to correct
   // Check if it's a known worktree path pattern (e.g., .foreman-worktrees/<repo>/<seedId>/...)
-  const wrongWorktreeMatch = /^.*?(\.foreman-worktrees\/[^\/]+\/[^\/]+)/.exec(absolutePath);
+  const wrongWorktreeMatch = /^.*?(\.foreman-worktrees\/[^/]+\/[^/]+)/.exec(absolutePath);
   if (wrongWorktreeMatch) {
     const wrongPrefix = wrongWorktreeMatch[1];
     if (wrongPrefix !== expectedNorm) {
@@ -324,7 +324,7 @@ export function wrapToolWithGuardrail<T extends (...args: unknown[]) => unknown>
     // We infer it from the args passed
     const toolName = extractToolName(factory);
     const currentCwd = getCwd();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const toolArgs = (restArgs[0] as Record<string, unknown>) ?? {};
 
     const result = guardrail(toolName, toolArgs, currentCwd);

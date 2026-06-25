@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import chalk from "chalk";
 import { createTrpcClient } from "../../lib/trpc-client.js";
 import { ForemanStore, type StatusReadStore } from "../../lib/store.js";
-import type { Metrics, Run, RunProgress } from "../../lib/store.js";
+import type { Metrics } from "../../lib/store.js";
 import { renderAgentCard, formatSuccessRate, elapsed } from "../watch-ui.js";
 import type { TaskBackend } from "../../lib/feature-flags.js";
 import { fetchTaskCounts } from "../../lib/task-client-factory.js";
@@ -274,10 +274,10 @@ async function renderStatus(projectPath: string): Promise<void> {
     if (activeRuns.length === 0) {
       console.log(chalk.dim("  (no agents running)"));
     } else {
-      for (let i = 0; i < activeRuns.length; i++) {
-        console.log(renderDaemonRunCard(activeRuns[i]!));
+      activeRuns.forEach((activeRun, i) => {
+        console.log(renderDaemonRunCard(activeRun));
         if (i < activeRuns.length - 1) console.log();
-      }
+      });
     }
   } else {
     const store = ForemanStore.forProject(projectPath);

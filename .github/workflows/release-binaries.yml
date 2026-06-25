@@ -33,14 +33,15 @@ on:
           - "false"
           - "true"
 
-# write permission required to upload release assets
-permissions:
-  contents: write
+# Least-privilege default: no permissions unless a job opts in below.
+permissions: {}
 
 jobs:
   # ── Matrix: Build binaries on each OS ────────────────────────────────────────
   build-binaries:
     name: Build binaries (${{ matrix.os }})
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -60,25 +61,21 @@ jobs:
       # ── Checkout ─────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # ── Node.js setup ────────────────────────────────────────────────────────
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        # Accepted: no dependency cache is enabled here (no `cache:` input), so
+        # there is no cache for a release build to poison.
+        uses: actions/setup-node@v4 # zizmor: ignore[cache-poisoning]
         with:
           node-version: "20"
 
-      # ── Dependency cache ──────────────────────────────────────────────────────
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: npm-${{ runner.os }}-20-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-20-
-
+      # ── Install dependencies ──────────────────────────────────────────────────
+      # No dependency cache here: this workflow builds and publishes release
+      # binaries, so caching would expose the artifacts to cache-poisoning.
       - name: Install dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
       # ── TypeScript build ───────────────────────────────────────────────────────
@@ -107,9 +104,12 @@ jobs:
       - name: Determine release tag
         id: tag
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_INPUT: ${{ github.event.inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
@@ -167,8 +167,9 @@ jobs:
       # Unix platforms: tar.gz archives; Windows: zip archive.
       - name: Package binaries
         shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           BINARIES_DIR=dist/binaries
           RELEASE_DIR=dist/release-assets
           mkdir -p "$RELEASE_DIR"
@@ -214,14 +215,20 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: build-binaries
+    # write permission required to upload release assets
+    permissions:
+      contents: write
 
     steps:
       # ── Determine release tag ─────────────────────────────────────────────────
       - name: Determine release tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_INPUT: ${{ github.event.inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
@@ -247,8 +254,9 @@ jobs:
 
       # ── Verify all expected assets are present ────────────────────────────────
       - name: Verify release assets
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           echo "Release assets collected:"
           ls -lh dist/release-assets/
 
@@ -279,8 +287,9 @@ jobs:
       # checksums.txt is used by the update-homebrew-tap workflow and by users
       # who want to verify their downloads manually.
       - name: Generate checksums.txt
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           cd dist/release-assets
           sha256sum \
             "foreman-${TAG}-darwin-arm64.tar.gz" \
@@ -295,7 +304,7 @@ jobs:
       # ── Create GitHub Release + upload assets ─────────────────────────────────
       - name: Create GitHub Release
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: Foreman ${{ steps.tag.outputs.tag }}
@@ -352,6 +361,8 @@ jobs:
       # dry-run: list release assets but do not publish to GitHub Releases.
       - name: Dry-run summary
         if: ${{ github.event.inputs.dry_run == 'true' }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           echo "DRY RUN — binaries compiled but release not published."
           echo ""
@@ -359,7 +370,7 @@ jobs:
           ls -lh dist/release-assets/
           echo ""
           echo "Summary:"
-          echo "  Tag: ${{ steps.tag.outputs.tag }}"
+          echo "  Tag: ${TAG}"
           echo "  Assets: $(ls dist/release-assets/ | wc -l) files"
 
       # ── Trigger Homebrew tap update ───────────────────────────────────────────
@@ -369,7 +380,7 @@ jobs:
       # Skipped during dry run (no real release was created).
       - name: Trigger Homebrew tap update
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           repository: oftheangels/homebrew-tap

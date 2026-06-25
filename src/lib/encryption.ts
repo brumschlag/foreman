@@ -72,7 +72,6 @@ export async function decrypt(encrypted: string, masterKey?: Buffer): Promise<st
     throw new Error("Invalid encrypted data: too short");
   }
 
-  const salt = data.subarray(0, SALT_LENGTH);
   const iv = data.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
   const authTag = data.subarray(
     SALT_LENGTH + IV_LENGTH,

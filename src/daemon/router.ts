@@ -27,7 +27,7 @@ import {
 import { ProjectRegistry } from "../lib/project-registry.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getPrState, type PrState } from "../lib/pr-state.js";
+import { getPrState } from "../lib/pr-state.js";
 import { eventBroadcaster, type EventBroadcaster } from "./event-broadcaster.js";
 // ---------------------------------------------------------------------------
 // Context
@@ -687,21 +687,6 @@ const runsRouter = t.router({
 // GitHub router (TRD-009)
 // ---------------------------------------------------------------------------
 
-/**
- * Parse a "owner/repo" string into owner and repo.
- * Accepts "owner/repo" or "owner/repo/subpath" (extra parts discarded).
- */
-function parseRepoKey(repoKey: string): { owner: string; repo: string } {
-  const parts = repoKey.trim().split("/");
-  if (parts.length < 2) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Invalid repo key '${repoKey}'. Expected format: owner/repo`,
-    });
-  }
-  return { owner: parts[0]!, repo: parts[1]! };
-}
-
 const githubRouter = t.router({
   // --- Issue read operations ------------------------------------------------
 
@@ -996,7 +981,8 @@ const githubRouter = t.router({
 
           if (existing.length > 0) {
             // Update existing task
-            const task = existing[0]!;
+            const task = existing[0];
+            if (!task) throw new Error("existing task missing despite non-empty result");
             // Check for conflict
             hasConflict =
               ghIssue.title !== task.title ||
@@ -1063,7 +1049,7 @@ const githubRouter = t.router({
           if (!issueNumber) continue;
 
           try {
-            const ghIssue = await ctx.gh.updateIssue(
+            await ctx.gh.updateIssue(
               input.owner,
               input.repo,
               issueNumber,
@@ -1712,23 +1698,23 @@ function parseGitHubUrl(url: string): { owner: string; repo: string } {
   const httpsMatch = url.match(
     /^https?:\/\/github\.com\/([^/]+)\/([^/.]+)/i
   );
-  if (httpsMatch) {
+  if (httpsMatch && httpsMatch[1] !== undefined && httpsMatch[2] !== undefined) {
     return {
-      owner: httpsMatch[1]!,
-      repo: httpsMatch[2]!.replace(/\.git$/, ""),
+      owner: httpsMatch[1],
+      repo: httpsMatch[2].replace(/\.git$/, ""),
     };
   }
 
   // SSH URL: git@github.com:owner/repo.git
   const sshMatch = url.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i);
-  if (sshMatch) {
-    return { owner: sshMatch[1]!, repo: sshMatch[2]! };
+  if (sshMatch && sshMatch[1] !== undefined && sshMatch[2] !== undefined) {
+    return { owner: sshMatch[1], repo: sshMatch[2] };
   }
 
   // Shortcut: owner/repo
   const shortcutMatch = url.match(/^([^/]+)\/(.+)$/);
-  if (shortcutMatch) {
-    return { owner: shortcutMatch[1]!, repo: shortcutMatch[2]! };
+  if (shortcutMatch && shortcutMatch[1] !== undefined && shortcutMatch[2] !== undefined) {
+    return { owner: shortcutMatch[1], repo: shortcutMatch[2] };
   }
 
   throw new TrpcProjectError(

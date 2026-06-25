@@ -18,7 +18,7 @@
  * @module pool-manager
  */
 
-import { Pool, PoolConfig, PoolClient, QueryResultRow } from "pg";
+import { Pool, type PoolConfig, type PoolClient, type QueryResultRow } from "pg";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -76,7 +76,7 @@ function validateDatabaseUrl(databaseUrl: string): void {
   let parsed: URL;
   try {
     parsed = new URL(databaseUrl);
-  } catch (cause: unknown) {
+  } catch {
     throw new DatabaseConfigError(
       "Invalid DATABASE_URL. Expected a postgres:// or postgresql:// URL.",
       databaseUrl,
@@ -199,7 +199,6 @@ export function initPool(overrides?: {
       idleTimeoutMillis: idleTimeoutMs,
       connectionTimeoutMillis: connectionTimeoutMs,
     };
-    // @ts-ignore - poolOverride is PoolLike, _pool is PoolLike.
     _pool = overrides.poolOverride;
     return _pool;
   }
@@ -213,7 +212,6 @@ export function initPool(overrides?: {
   };
 
   _config = config;
-  // @ts-ignore - Pool satisfies PoolLike at runtime.
   _pool = new Pool(config);
 
   _pool.on("error", (err) => {

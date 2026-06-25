@@ -31,16 +31,7 @@ import chalk from "chalk";
 import { ForemanStore } from "../../../lib/store.js";
 import { loadDashboardConfig } from "../../../lib/project-config.js";
 import { resolveRepoRootProjectPath } from "../project-task-support.js";
-import {
-  type WatchState,
-  initialWatchState,
-  type WatchOptions,
-  pollWatchData,
-  pollInboxData,
-  pollPipelineEvents,
-  handleWatchKey,
-  nextPanel,
-} from "./WatchState.js";
+import { initialWatchState, pollWatchData, pollInboxData, pollPipelineEvents, handleWatchKey } from "./WatchState.js";
 import { renderWatch } from "./render.js";
 import { approveTask, retryTask } from "./actions.js";
 import { printDeprecationNotice } from "../cli-output.js";
@@ -103,32 +94,14 @@ export const watchCommand = new Command("watch")
       ? Math.max(1, parseInt(opts["inbox-limit"], 10) || 5)
       : 5;
 
-    const inboxPollMs = opts["inbox-poll"]
-      ? Math.max(500, parseInt(opts["inbox-poll"], 10) || 2000)
-      : 2000;
-
     const eventsLimit = opts["events-limit"]
       ? Math.max(1, parseInt(opts["events-limit"], 10) || 5)
       : 5;
 
     const noWatch = opts.watch === false;
-    const noBoard = opts.board === false;
     const noInbox = opts.inbox === false;
     const noEvents = opts.events === false;
     const projectId = opts.project;
-
-    // Options object for poll functions
-    const options: WatchOptions = {
-      refreshMs,
-      inboxLimit,
-      inboxPollMs,
-      eventsLimit,
-      noWatch,
-      noBoard,
-      noInbox,
-      noEvents,
-      projectId,
-    };
 
     // Postgres-backed store is only still needed for inbox fallback.
     const store = noInbox ? null : ForemanStore.forProject(projectPath);
@@ -161,7 +134,7 @@ export const watchCommand = new Command("watch")
     }
 
     // State
-    let state = initialWatchState();
+    const state = initialWatchState();
 
     // Keyboard handling
     let stdinRawMode = false;
@@ -251,7 +224,7 @@ export const watchCommand = new Command("watch")
 
         if (!noInbox) {
           const runIds = result.agents.map(e => e.run.id);
-          const inboxResult = await pollInboxData(store!, null, inboxLimit, runIds, projectPath, projectId);
+          const inboxResult = await pollInboxData(store, null, inboxLimit, runIds, projectPath, projectId);
           state.inbox = {
             messages: inboxResult.messages,
             totalCount: inboxResult.totalCount,
@@ -263,7 +236,7 @@ export const watchCommand = new Command("watch")
         // One-shot: poll pipeline events
         if (!noEvents) {
           const runIds = result.agents.map(e => e.run.id);
-          const eventsResult = await pollPipelineEvents(store!, null, eventsLimit, runIds, projectPath, projectId);
+          const eventsResult = await pollPipelineEvents(store, null, eventsLimit, runIds, projectPath, projectId);
           state.events = {
             events: eventsResult.events,
             totalCount: eventsResult.totalCount,
@@ -278,12 +251,6 @@ export const watchCommand = new Command("watch")
       }
 
       // ── Live mode ─────────────────────────────────────────────────────
-      // Determine which panels are visible
-      const visiblePanels = {
-        agents: true,
-        board: !noBoard,
-        inbox: !noInbox,
-      };
 
       // Initial poll
       {
@@ -299,7 +266,7 @@ export const watchCommand = new Command("watch")
       // Initial inbox poll
       if (!noInbox) {
         const runIds = state.agents.map(e => e.run.id);
-          const inboxResult = await pollInboxData(store!, null, inboxLimit, runIds, projectPath, projectId);
+          const inboxResult = await pollInboxData(store, null, inboxLimit, runIds, projectPath, projectId);
         state.inbox = {
           messages: inboxResult.messages,
           totalCount: inboxResult.totalCount,
@@ -312,7 +279,7 @@ export const watchCommand = new Command("watch")
       // Initial events poll
       if (!noEvents) {
         const runIds = state.agents.map(e => e.run.id);
-        const eventsResult = await pollPipelineEvents(store!, null, eventsLimit, runIds, projectPath, projectId);
+        const eventsResult = await pollPipelineEvents(store, null, eventsLimit, runIds, projectPath, projectId);
         state.events = {
           events: eventsResult.events,
           totalCount: eventsResult.totalCount,
@@ -360,13 +327,13 @@ export const watchCommand = new Command("watch")
         // Inbox-only fast poll
         if (!noInbox) {
           const runIds = result.agents.map(e => e.run.id);
-          const inboxResult = await pollInboxData(store!, state.inboxLastSeenId, inboxLimit, runIds, projectPath, projectId);
+          const inboxResult = await pollInboxData(store, state.inboxLastSeenId, inboxLimit, runIds, projectPath, projectId);
 
           if (inboxResult.messages.length > 0) {
             // Prepend new messages (they come in reverse chronological order)
             const existingMessages = state.inbox?.messages ?? [];
             // Mark all incoming as "new" if they're new since lastSeenId
-            const newEntries = inboxResult.messages.map((entry, i) => ({
+            const newEntries = inboxResult.messages.map((entry, _i) => ({
               ...entry,
               isNew: state.inboxLastSeenId !== null && entry.message.id !== state.inboxLastSeenId,
             }));
@@ -391,7 +358,7 @@ export const watchCommand = new Command("watch")
         // Events fast poll
         if (!noEvents) {
           const runIds = result.agents.map(e => e.run.id);
-          const eventsResult = await pollPipelineEvents(store!, state.eventsLastSeenId, eventsLimit, runIds, projectPath, projectId);
+          const eventsResult = await pollPipelineEvents(store, state.eventsLastSeenId, eventsLimit, runIds, projectPath, projectId);
 
           if (eventsResult.events.length > 0) {
             // Prepend new events (they come in reverse chronological order)

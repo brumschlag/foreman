@@ -33,37 +33,36 @@ jobs:
       # ── Checkout ─────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # ── Node.js setup with npm authentication ────────────────────────────────
       # setup-node@v4 writes an .npmrc that injects NPM_TOKEN automatically
       # when registry-url is provided.
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        # Accepted: no dependency cache is enabled here (no `cache:` input), so
+        # there is no cache for the publish job to poison.
+        uses: actions/setup-node@v4 # zizmor: ignore[cache-poisoning]
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
           scope: "@oftheangels"
 
-      # ── Dependency cache ──────────────────────────────────────────────────────
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: npm-${{ runner.os }}-20-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-20-
-
+      # ── Install dependencies ──────────────────────────────────────────────────
+      # No dependency cache here: this workflow publishes to npm, so a poisoned
+      # cache could taint the published artifact.
       - name: Install dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
       # ── Determine release tag ─────────────────────────────────────────────────
       - name: Determine release tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_INPUT: ${{ github.event.inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
@@ -72,8 +71,9 @@ jobs:
       # Guard against publishing when the git tag version does not match
       # the version declared in package.json (e.g. forgot to bump).
       - name: Verify git tag matches package.json version
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           PKG_VERSION="v$(node -p "require('./package.json').version")"
 
           echo "Git tag:          $TAG"
@@ -117,7 +117,8 @@ jobs:
       # ── Summary ───────────────────────────────────────────────────────────────
       - name: Publish summary
         if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           PKG_NAME=$(node -p "require('./package.json').name")
           echo "✅ Published ${PKG_NAME}@${TAG#v} to https://www.npmjs.com/package/${PKG_NAME}"

@@ -89,7 +89,7 @@ function createTestRefinery() {
     removeWorkspace: vi.fn(async () => undefined),
     resolveRef: vi.fn(async () => "abc123"),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test mock wiring
+   
   const refinery = new Refinery(store as any, seeds as any, "/tmp/project", vcsBackend as any);
   return { store, seeds, refinery };
 }

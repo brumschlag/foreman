@@ -37,5 +37,5 @@ try {
 } catch (err) {
   process.stderr.write(`[poll-run] Error: ${err.message}\n`);
   process.stdout.write('unknown\n');
-  try { await client.end(); } catch {}
+  try { await client.end(); } catch { /* best-effort cleanup */ }
 }

@@ -13,16 +13,11 @@
  * @module postgres-adapter
  */
 
-import {
-  PoolManager,
-  query,
-  execute,
-  acquireClient,
-  releaseClient,
-} from "./pool-manager.js";
+import { query, execute, acquireClient, releaseClient } from "./pool-manager.js";
 import type { RunProgress, SentinelConfigRow, SentinelRunRow } from "../store.js";
 import { randomBytes } from "node:crypto";
 import { normalizeTaskIdPrefix } from "../task-store.js";
+import type { BroadcastEvent } from "../../daemon/broadcast-event.js";
 
 // ---------------------------------------------------------------------------
 // Type definitions
@@ -2042,7 +2037,7 @@ export class PostgresAdapter {
       eventType: string;
       payload?: Record<string, unknown>;
     },
-    broadcaster?: { publish(e: import("../../daemon/broadcast-event.js").BroadcastEvent): void },
+    broadcaster?: { publish(e: BroadcastEvent): void },
   ): Promise<PipelineEventRow> {
     const rows = await query<PipelineEventRow>(
       `INSERT INTO events (project_id, run_id, task_id, event_type, payload, created_at)
@@ -2074,7 +2069,7 @@ export class PostgresAdapter {
     afterSeq: number,
     projectId: string | null,
     limit = 500,
-  ): Promise<import("../../daemon/broadcast-event.js").BroadcastEvent[]> {
+  ): Promise<BroadcastEvent[]> {
     const rows = projectId
       ? await query<PipelineEventRow>(
           `SELECT * FROM events WHERE seq > $1 AND project_id = $2 ORDER BY seq ASC LIMIT $3`,

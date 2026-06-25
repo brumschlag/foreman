@@ -5,7 +5,7 @@
 
 import type { PostgresAdapter } from "../lib/db/postgres-adapter.js";
 import type { JiraProjectConfig, JiraConfig } from "../lib/project-config.js";
-import { JiraApiClient } from "./jira-api-client.js";
+import { type JiraApiClient } from "./jira-api-client.js";
 
 // Re-export types from adapter
 export type { JiraIssueStateRow, JiraIssueStateInput } from "../lib/db/postgres-adapter.js";
@@ -316,11 +316,4 @@ export class JiraIssuesPoller {
   async pollProjectManual(projectConfig: JiraProjectConfig): Promise<{ issues: number; transitions: number }> {
     return this.pollProject(projectConfig);
   }
-}
-
-// ── Minimal JQL response type ──────────────────────────────────────────────────
-
-interface jiraResponse {
-  issues: JiraIssue[];
-  total: number;
 }

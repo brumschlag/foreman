@@ -32,6 +32,7 @@ import type {
   DeleteBranchResult,
   FinalizeCommands,
 } from "../types.js";
+import type { FinalizeTemplateVars } from "../types.js";
 
 // ── Mock VcsBackend ───────────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ class MockVcsBackend implements VcsBackend {
   async getMergeBase(_p: string, _r1: string, _r2: string): Promise<string> { return ''; }
   async getUntrackedFiles(_p: string): Promise<string[]> { return []; }
   async isAncestor(_p: string, _a: string, _d: string): Promise<boolean> { return true; }
-  getFinalizeCommands(_vars: import('../types.js').FinalizeTemplateVars): FinalizeCommands {
+  getFinalizeCommands(_vars: FinalizeTemplateVars): FinalizeCommands {
     return {
       stageCommand: 'git add -A',
       commitCommand: 'git commit -m "test"',

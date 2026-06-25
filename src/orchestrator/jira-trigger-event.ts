@@ -6,8 +6,8 @@
  * all metadata needed for observability, debugging, and audit trails.
  */
 
-import type { JiraProjectConfig } from "../lib/project-config.js";
-import type { JiraIssue } from "../daemon/jira-poller.js";
+
+
 
 // ── Trigger source ─────────────────────────────────────────────────────────────
 

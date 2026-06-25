@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import { resolve } from "node:path";
-import { ForemanStore } from "../../../lib/store.js";
+import { type ForemanStore } from "../../../lib/store.js";
 import type { Run, RunProgress, Message, EventType } from "../../../lib/store.js";
 import type { BoardTask } from "../board.js";
 import { fetchDaemonDashboardState, type DashboardState } from "../../dashboard-state.js";
@@ -272,7 +272,7 @@ export async function pollWatchData(
  * Returns new messages since `lastSeenId` + total count.
  */
 export async function pollInboxData(
-  store: ForemanStore,
+  store: ForemanStore | null,
   lastSeenId: string | null,
   inboxLimit: number,
   runIds: string[],
@@ -322,6 +322,12 @@ export async function pollInboxData(
       }
     }
 
+    // Legacy local-store path requires a store; without one there is nothing
+    // to read (matches the prior behavior where a null store yielded empty).
+    if (!store) {
+      return { messages: [], totalCount: 0, newestId: null };
+    }
+
     const allMessages: Message[] = [];
     for (const runId of runIds) {
       const msgs = store.getAllMessages(runId);
@@ -361,7 +367,7 @@ interface DaemonPipelineEventRow {
  * Returns events + total count for watched runIds.
  */
 export async function pollPipelineEvents(
-  store: ForemanStore,
+  store: ForemanStore | null,
   lastSeenId: string | null,
   eventsLimit: number,
   runIds: string[],
@@ -414,7 +420,12 @@ export async function pollPipelineEvents(
       }
     }
 
-    // Legacy local-store path
+    // Legacy local-store path requires a store; without one there is nothing
+    // to read (matches the prior behavior where a null store yielded empty).
+    if (!store) {
+      return { events: [], totalCount: 0, newestId: null };
+    }
+
     const allEvents: PipelineEventEntry[] = [];
     for (const runId of runIds) {
       const rows = store.getRunEvents(runId);
@@ -589,7 +600,7 @@ export function handleWatchKey(
 
 // ── Help overlay ──────────────────────────────────────────────────────────
 
-export function renderHelpOverlay(width: number): string {
+export function renderHelpOverlay(_width: number): string {
   const lines: string[] = [];
   lines.push(chalk.bold("\n  ── HELP ──────────────────────────────────────────────────"));
   lines.push("");

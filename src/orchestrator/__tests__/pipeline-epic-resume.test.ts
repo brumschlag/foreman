@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+ 
 import { execSync } from "node:child_process";
 import { parseCompletedTaskIds } from "../pipeline-executor.js";
 import type { EpicTask } from "../pipeline-executor.js";

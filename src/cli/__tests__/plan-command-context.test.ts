@@ -37,7 +37,7 @@ vi.mock("../../lib/task-client-factory.js", () => ({
 }));
 
 vi.mock("../../lib/store.js", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/store.js")>("../../lib/store.js");
+  const actual = await vi.importActual<typeof LibStore>("../../lib/store.js");
   return {
     ...actual,
     ForemanStore: {
@@ -52,6 +52,7 @@ vi.mock("../../orchestrator/dispatcher.js", () => ({
 }));
 
 import { planCommand } from "../commands/plan.js";
+import type * as LibStore from "../../lib/store.js";
 
 describe("foreman plan command context", () => {
   beforeEach(() => {

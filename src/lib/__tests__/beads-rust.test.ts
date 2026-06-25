@@ -19,7 +19,7 @@ import { BeadsRustClient, unwrapBrResponse } from "../beads-rust.js";
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeExecFileResponder(overrides: Record<string, object> = {}) {
-  return (_cmd: string, args: string[], _opts: unknown, callback: Function) => {
+  return (_cmd: string, args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
     const subCmd = args[0];
 
     const defaults: Record<string, object> = {
@@ -452,7 +452,7 @@ describe("BeadsRustClient.ready", () => {
 
   it("returns empty array when output is empty", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "", stderr: "" });
       },
     );
@@ -478,7 +478,7 @@ describe("BeadsRustClient.ready", () => {
 
   it("throws on malformed JSON output", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: "not valid json {{{{", stderr: "" });
       },
     );
@@ -496,7 +496,7 @@ describe("BeadsRustClient.comments", () => {
 
   it("returns null when there are no comments", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: JSON.stringify([]), stderr: "" });
       },
     );
@@ -516,7 +516,7 @@ describe("BeadsRustClient.comments", () => {
       },
     ];
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: JSON.stringify(comments), stderr: "" });
       },
     );
@@ -545,7 +545,7 @@ describe("BeadsRustClient.comments", () => {
       },
     ];
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: JSON.stringify(comments), stderr: "" });
       },
     );
@@ -561,7 +561,7 @@ describe("BeadsRustClient.comments", () => {
 
   it("invokes br comments <id> --json", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         callback(null, { stdout: JSON.stringify([]), stderr: "" });
       },
     );
@@ -579,7 +579,7 @@ describe("BeadsRustClient.comments", () => {
 
   it("throws when br command fails", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         const err = new Error("exit 1") as Error & { stderr: string; stdout: string };
         err.stderr = "error: issue not found";
         err.stdout = "";
@@ -619,7 +619,7 @@ describe("BeadsRustClient error handling", () => {
 
   it("throws on non-zero exit from br CLI", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...args: unknown[]) => void) => {
         const err = new Error("exit 1") as Error & { stderr: string; stdout: string };
         err.stderr = "error: issue not found";
         err.stdout = "";

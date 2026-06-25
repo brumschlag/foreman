@@ -7,6 +7,7 @@ import { VcsBackendFactory } from "../lib/vcs/index.js";
 import type { VcsBackend } from "../lib/vcs/interface.js";
 import type { MonitorReport } from "./types.js";
 import { PIPELINE_LIMITS } from "../lib/config.js";
+import type { RunProgress } from "../lib/store.js";
 
 // ── Hung session detection types ─────────────────────────────────────────
 
@@ -29,7 +30,7 @@ interface MonitorStore {
   getRun?(runId: string): Promise<Run | null> | Run | null;
   updateRun(runId: string, updates: Partial<Pick<Run, "status" | "worktree_path" | "started_at" | "completed_at">>): Promise<void>;
   logEvent(projectId: string, eventType: "complete" | "stuck" | "fail" | "recover", data: Record<string, unknown>, runId?: string): Promise<void>;
-  getRunProgress(runId: string): Promise<import("../lib/store.js").RunProgress | null>;
+  getRunProgress(runId: string): Promise<RunProgress | null>;
   getRunEvents(runId: string, eventType?: "recover"): Promise<Array<{ id: string; event_type: string; data: string; created_at: string }>>;
 }
 

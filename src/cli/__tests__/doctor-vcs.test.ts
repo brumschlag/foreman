@@ -15,6 +15,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, realpathSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { stat } from "node:fs/promises";
+import type * as NodeChildProcess from "node:child_process";
+import type * as NodeFsPromises from "node:fs/promises";
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
 //
@@ -29,7 +32,7 @@ const { mockExecFile, mockStat } = vi.hoisted(() => {
 });
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actual = await importOriginal<typeof NodeChildProcess>();
   return {
     ...actual,
     execFile: mockExecFile,
@@ -37,7 +40,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const actual = await importOriginal<typeof NodeFsPromises>();
   return {
     ...actual,
     stat: mockStat,
@@ -105,7 +108,7 @@ function mockJjNotFound(): void {
  * Configure mockStat to simulate .jj/repo/store/git existing (colocated mode).
  */
 function mockColocatedMode(): void {
-  mockStat.mockResolvedValue({} as ReturnType<typeof import("node:fs/promises").stat>);
+  mockStat.mockResolvedValue({} as ReturnType<typeof stat>);
 }
 
 /**

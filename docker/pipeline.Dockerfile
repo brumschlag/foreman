@@ -15,24 +15,31 @@
 
 FROM node:22-slim
 
+# Install system packages, configure git for worktree operations, and prepare
+# the postgres runtime directory (single layer).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    openssh-client \
     ca-certificates \
+    git \
+    gosu \
+    openssh-client \
     postgresql \
     postgresql-client \
-    gosu \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --global user.email "foreman@container" \
+    && git config --global user.name "Foreman Agent" \
+    && git config --global safe.directory '*' \
+    && mkdir -p /var/run/postgresql \
+    && chown postgres:postgres /var/run/postgresql
 
-# Git config for worktree operations
-RUN git config --global user.email "foreman@container" && \
-    git config --global user.name "Foreman Agent" && \
-    git config --global safe.directory '*'
-
-# Init postgres cluster as postgres user
-RUN mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
+# Init postgres cluster as postgres user.
 USER postgres
+# The glob is intentional: it resolves the installed PostgreSQL version's bin
+# directory (version-agnostic across base-image updates).
+# hadolint ignore=SC2211
 RUN /usr/lib/postgresql/*/bin/initdb -D /var/lib/postgresql/data --auth-local=trust --auth-host=trust -U postgres
+# Intentional: this ephemeral pipeline sandbox runs as root so the entrypoint
+# can manage the embedded PostgreSQL cluster and agent worktrees.
+# hadolint ignore=DL3002
 USER root
 
 WORKDIR /app
@@ -57,12 +64,11 @@ COPY src/defaults/ ./src/defaults/
 # Copy the bin shim
 COPY bin/ ./bin/
 
-# Copy container helpers
+# Copy container helpers, then create the foreman user (available, though the
+# container runs as root for postgres access) and fix ownership/permissions.
 COPY docker/ ./docker/
-RUN chmod +x /app/docker/entrypoint.sh
-
-# Create foreman user (available but container runs as root for postgres access)
-RUN useradd -m -s /bin/bash foreman && \
+RUN chmod +x /app/docker/entrypoint.sh && \
+    useradd -m -s /bin/bash foreman && \
     chown -R foreman:foreman /app && \
     chown -R postgres:postgres /var/lib/postgresql/data && \
     chmod 777 /var/run/postgresql
