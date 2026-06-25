@@ -1258,6 +1258,8 @@ export class Dispatcher {
     /** URL of the notification server (e.g. "http://127.0.0.1:PORT") */
     notifyUrl?: string;
     runtimeMode?: RuntimeMode;
+    /** Workflow override (`--workflow`) to preserve on the resumed worker. */
+    workflow?: string;
   }): Promise<DispatchResult> {
     const maxAgents = opts?.maxAgents ?? 5;
     const projectId = await this.resolveProjectId();
@@ -1346,16 +1348,41 @@ export class Dispatcher {
       // Native-only: use updateNativeTaskStatus which routes through nativeTaskOps
       await this.updateNativeTaskStatus(run.seed_id, "in-progress");
 
+      // Recover the seed's type/labels so the resumed worker resolves the SAME
+      // workflow it was originally dispatched with. Without this the worker
+      // re-resolves by a missing task type and runs the wrong pipeline.
+      let resumeSeed: SeedInfo = { id: run.seed_id, title: run.seed_id };
+      try {
+        const detail = await this.seeds.show(run.seed_id) as Partial<SeedInfo> & { labels?: string[] };
+        resumeSeed = {
+          id: run.seed_id,
+          title: detail.title ?? run.seed_id,
+          type: detail.type,
+          labels: detail.labels,
+          priority: detail.priority,
+        };
+      } catch {
+        // Best-effort: fall back to the id-only stub if the seed is unavailable.
+      }
+      const projectCfg = loadProjectConfig(this.projectPath);
+      const resumeWorkflow = resolveWorkflowName(
+        resumeSeed.type ?? "feature",
+        resumeSeed.labels,
+        projectCfg?.taskTypeWorkflowMap,
+        opts?.workflow,
+      );
+
       // Spawn the resumed agent
       const { sessionKey } = await this.resumeAgent(
         model,
         run.worktree_path,
-        { id: run.seed_id, title: run.seed_id },
+        resumeSeed,
         newRun.id,
         sessionId,
         opts?.telemetry,
         opts?.notifyUrl,
         opts?.runtimeMode,
+        resumeWorkflow,
       );
 
       await this.updateRunRecord(newRun.id, {
@@ -1650,6 +1677,7 @@ export class Dispatcher {
     telemetry?: boolean,
     notifyUrl?: string,
     runtimeMode?: RuntimeMode,
+    workflowName?: string,
   ): Promise<{ sessionKey: string }> {
     const resumePrompt = this.buildResumePrompt(seed.id, seed.title);
 
@@ -1669,6 +1697,12 @@ export class Dispatcher {
       resume: sdkSessionId,
       taskId: seed.id,
       dbPath: join(this.projectPath, ".foreman", "foreman.db"),
+      // Preserve workflow + task type so the resumed worker loads the SAME
+      // workflow (not a type-fallback). Without these the override is lost.
+      workflowName,
+      seedType: resolveWorkflowType(seed.type ?? "feature", seed.labels),
+      seedLabels: seed.labels,
+      seedPriority: seed.priority,
     });
 
     const sessionKey = buildSdkSessionKey(model, runId, pid, sdkSessionId);

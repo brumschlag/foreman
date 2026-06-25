@@ -940,6 +940,7 @@ export const runCommand = new Command("run")
           statuses,
           notifyUrl,
           runtimeMode,
+          workflow: workflowOverride,
         });
 
         if (result.resumed.length > 0) {
