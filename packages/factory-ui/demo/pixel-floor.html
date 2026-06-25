@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Foreman — Pixel Factory Floor (concept demo)</title>
+<!--
+  SELF-CONTAINED CONCEPT DEMO. No build step, no network, no assets.
+  Open directly in a browser:  packages/factory-ui/demo/pixel-floor.html
+
+  Purpose: show how the pixel-art / RPG-personification idea looks inside the
+  existing "dark factory" theme (packages/factory-ui). Each pipeline phase is a
+  pixel "worker"; its animation is driven by the same run state the real UI uses
+  (RunSummary.status + RunProgress.currentPhase/turns/costUsd).
+
+  The sprites here are PLACEHOLDER procedural pixel art (drawn on <canvas>) so the
+  demo is dependency-free. In the real build these would be swapped for:
+    - UI chrome:  RPGUI (https://github.com/RonenNess/RPGUI) or pixelact-ui
+    - characters: Universal LPC Spritesheet Generator (CC-BY-SA 3.0 / GPLv3)
+    - animation:  CSS steps() over the LPC spritesheet (image-rendering: pixelated)
+  See thoughts/shared/plans/web-tui-dashboard.md.
+-->
+<style>
+  :root {
+    --bg:      #0d0f12;
+    --surface: #161a1f;
+    --border:  #2a2f38;
+    --amber:   #f59e0b;
+    --green:   #22c55e;
+    --red:     #ef4444;
+    --blue:    #3b82f6;
+    --purple:  #a855f7;
+    --muted:   #6b7280;
+    --text:    #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  header {
+    border-bottom: 1px solid var(--border); padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 13px; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--amber); margin: 0; }
+  .badge { font-size: 11px; color: var(--muted); }
+  main { padding: 24px; max-width: 1180px; margin: 0 auto; }
+
+  /* ── Controls ───────────────────────────────────────────── */
+  .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
+  button.ctl {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-bottom-width: 3px; border-radius: 4px; padding: 7px 13px; cursor: pointer;
+    font-family: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+  }
+  button.ctl:hover { border-color: var(--amber); color: var(--amber); }
+  button.ctl:active { border-bottom-width: 1px; transform: translateY(2px); }
+  .controls label { font-size: 11px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+
+  /* ── Pipeline of stations ───────────────────────────────── */
+  .pipeline { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding-bottom: 8px; }
+  .arrow { align-self: center; color: var(--muted); font-size: 20px; padding: 0 6px; flex: 0 0 auto; }
+  .station {
+    flex: 1 1 0; min-width: 188px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px; position: relative; transition: border-color .2s;
+  }
+  .station.active { border-color: var(--amber); box-shadow: 0 0 14px -2px rgba(245,158,11,.4); }
+  .station.pass   { border-color: var(--green); box-shadow: 0 0 14px -2px rgba(34,197,94,.45); }
+  .station.fail   { border-color: var(--red);   box-shadow: 0 0 14px -2px rgba(239,68,68,.5); }
+
+  .st-head { display: flex; align-items: center; justify-content: space-between; }
+  .st-name { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+  .st-role { font-size: 10px; color: var(--muted); }
+  .model-chip { font-size: 9px; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); }
+
+  .stage {
+    height: 142px; display: flex; align-items: flex-end; justify-content: center;
+    background:
+      linear-gradient(180deg, transparent 0%, transparent 78%, rgba(0,0,0,.35) 78%, rgba(0,0,0,.35) 100%),
+      repeating-linear-gradient(90deg, #12161b 0 14px, #14181e 14px 28px);
+    border: 1px solid var(--border); border-radius: 6px; position: relative; overflow: hidden;
+  }
+  .bead-chip {
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: var(--text); background: rgba(0,0,0,.55);
+    border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; white-space: nowrap;
+  }
+  .verdict-pop {
+    position: absolute; top: 28px; left: 50%; transform: translateX(-50%);
+    font-size: 22px; font-weight: bold; opacity: 0; pointer-events: none;
+  }
+
+  /* ── RPGUI-style bars ───────────────────────────────────── */
+  .bars { display: flex; flex-direction: column; gap: 5px; }
+  .bar-row { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--muted); }
+  .bar-row .lbl { width: 30px; flex: 0 0 auto; text-transform: uppercase; }
+  .bar { flex: 1; height: 12px; background: #0a0d10; border: 1px solid var(--border);
+    border-radius: 2px; overflow: hidden; position: relative; }
+  .bar > i { display: block; height: 100%; width: 0%;
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.18) 0 3px, transparent 3px 6px);
+    transition: width .25s linear; }
+  .bar.hp   > i { background-color: var(--green); }
+  .bar.mana > i { background-color: var(--blue); }
+  .bar.xp   > i { background-color: var(--amber); }
+  .bar-row .val { width: 42px; flex: 0 0 auto; text-align: right; color: var(--text); }
+
+  /* ── In-flight table + ticker ───────────────────────────── */
+  .grid2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-top: 26px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
+    margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: normal; text-transform: uppercase; font-size: 9px; }
+  .pill { font-size: 9px; padding: 1px 6px; border-radius: 3px; }
+  .pill.working { background: rgba(245,158,11,.18); color: var(--amber); }
+  .pill.pass    { background: rgba(34,197,94,.18);  color: var(--green); }
+  .pill.fail    { background: rgba(239,68,68,.18);   color: var(--red); }
+  .pill.retry   { background: rgba(168,85,247,.18);  color: var(--purple); }
+  .pill.merged  { background: rgba(34,197,94,.10);   color: var(--green); }
+
+  #ticker { height: 188px; overflow: hidden; display: flex; flex-direction: column-reverse; }
+  .ev { font-size: 11px; padding: 2px 0; border-bottom: 1px dotted var(--border); white-space: nowrap; }
+  .ev .t { color: var(--muted); margin-right: 8px; }
+
+  /* ── Legend ─────────────────────────────────────────────── */
+  .legend { margin-top: 26px; }
+  .legend table td:first-child { color: var(--text); }
+  footer { border-top: 1px solid var(--border); margin-top: 30px; padding: 14px 24px;
+    font-size: 10px; color: var(--muted); text-align: center; }
+  a { color: var(--amber); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⬡ Foreman Dark Factory — Pixel Floor <span style="color:var(--muted)">(concept demo)</span></h1>
+  <div class="badge" id="hud">simulated</div>
+</header>
+
+<main>
+  <div class="controls">
+    <button class="ctl" id="play">⏸ Pause</button>
+    <button class="ctl" id="step">⏭ Step</button>
+    <button class="ctl" id="spawn">＋ Spawn run</button>
+    <label>Speed
+      <input id="speed" type="range" min="1" max="6" value="3" />
+    </label>
+    <span class="badge" id="counts"></span>
+  </div>
+
+  <div class="pipeline" id="pipeline"><!-- stations injected --></div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>⬡ Runs in flight</h2>
+      <table id="runs-table">
+        <thead><tr><th>Bead</th><th>Phase</th><th>State</th><th>Turns</th><th>Cost</th><th>Retries</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>⬡ Event feed</h2>
+      <div id="ticker"></div>
+    </div>
+  </div>
+
+  <div class="panel legend">
+    <h2>⬡ Phase → class → animation mapping</h2>
+    <table>
+      <thead><tr><th>Phase</th><th>Factory role</th><th>Model</th><th>RunSummary.status →</th><th>Sprite animation</th></tr></thead>
+      <tbody>
+        <tr><td>Explorer</td><td>Surveyor — cap, specs, pickaxe ⛏</td><td>haiku</td><td><code>running</code></td><td>walk cycle while active; ✓ → forward</td></tr>
+        <tr><td>Developer</td><td>Machinist — apron, welding goggles, hammer 🔨</td><td>sonnet</td><td><code>running</code> (+ retries)</td><td>walk cycle; failed verdicts loop back here</td></tr>
+        <tr><td>QA</td><td>Inspector — bowler + monocle 🧐</td><td>sonnet</td><td>verdict <code>PASS/FAIL</code></td><td>green ✓ / red ✗ shake flash</td></tr>
+        <tr><td>Reviewer</td><td>Foreman — tophat, cane 🎩</td><td>sonnet</td><td>verdict <code>PASS/FAIL</code></td><td>green ✓ / red ✗ shake flash</td></tr>
+        <tr><td>Finalize</td><td>Loader — overalls, gloves, flat cap 📦</td><td>haiku</td><td><code>completed/merged</code></td><td>walk cycle; ✓ → merged to dev</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  Real <strong>Liberated Pixel Cup</strong> spritesheets styled as a steampunk-industrial crew, composited
+  at runtime (z-ordered 64×64 layers, walk cycle). Assets CC-BY-SA 3.0 / GPL 3.0 — see
+  <code>assets/lpc/CREDITS.md</code>; re-style/regenerate via <code>scripts/fetch-lpc.mjs</code>. RPGUI-style HP/MP/XP bars. Bound to the same
+  <code>RunSummary</code> / <code>RunProgress</code> shapes as the live Floor view.
+</footer>
+
+<script src="assets/lpc/manifest.js"></script>
+<script type="module">
+// ───────────────────────────────────────────────────────────────────────────
+// Phase / class definitions
+// ───────────────────────────────────────────────────────────────────────────
+const PHASES = [
+  { key:'explorer',  name:'Explorer',  role:'Surveyor',  model:'haiku',  hat:'#16a34a', body:'#22c55e', shade:'#15803d', accent:'#bbf7d0' },
+  { key:'developer', name:'Developer', role:'Machinist', model:'sonnet', hat:'#b45309', body:'#f59e0b', shade:'#92400e', accent:'#fde68a' },
+  { key:'qa',        name:'QA',        role:'Inspector', model:'sonnet', hat:'#1d4ed8', body:'#3b82f6', shade:'#1e40af', accent:'#bfdbfe' },
+  { key:'reviewer',  name:'Reviewer',  role:'Foreman',   model:'sonnet', hat:'#7c3aed', body:'#a855f7', shade:'#6d28d9', accent:'#e9d5ff' },
+  { key:'finalize',  name:'Finalize',  role:'Loader',    model:'haiku',  hat:'#b91c1c', body:'#ef4444', shade:'#991b1b', accent:'#fecaca' },
+];
+const DEV_INDEX = 1;
+const SKIN = '#e8b07a', SKIN_S = '#c98a5a', EYE = '#0a0a0a', BOOT = '#1c1614';
+const WHITE = '#e5e7eb', GOLD = '#fbbf24', GLASS = '#60a5fa', WOOD = '#92400e',
+      LEATHER = '#78350f', STEEL = '#cbd5e1', STEEL_D = '#94a3b8';
+
+// ───────────────────────────────────────────────────────────────────────────
+// Pixel renderer — 16w x 18h grid drawn to canvas, scaled up, pixelated
+// ───────────────────────────────────────────────────────────────────────────
+const GW = 18, GH = 22, SCALE = 6;
+function makeGrid(ctx) {
+  return {
+    px(x, y, c) { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); },
+    rect(x0, y0, x1, y1, c) { ctx.fillStyle = c; ctx.fillRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1); },
+  };
+}
+
+// ── LPC spritesheet renderer (real Liberated Pixel Cup layers) ──────────────
+// Loads window.LPC (assets/lpc/manifest.js), composites z-ordered 64x64 layers
+// per character, and blits the walk-cycle frame. Falls back to the procedural
+// sprites below if the manifest/images are unavailable.
+const LPC = window.LPC || null;
+const lpcChar = {};
+const lpcImages = {};
+let lpcReady = false;
+if (LPC) for (const c of LPC.characters) lpcChar[c.key] = c;
+
+function preloadLPC(done) {
+  if (!LPC) return done(false);
+  const files = [...new Set(LPC.characters.flatMap((c) => c.layers.map((l) => l.file)))];
+  if (!files.length) return done(false);
+  let n = 0, ok = true;
+  for (const f of files) {
+    const im = new Image();
+    im.onload = () => { if (++n === files.length) done(ok); };
+    im.onerror = () => { ok = false; if (++n === files.length) done(ok); };
+    im.src = 'assets/lpc/' + f;
+    lpcImages[f] = im;
+  }
+}
+
+const _oc = document.createElement('canvas'); _oc.width = 64; _oc.height = 64;
+const _octx = _oc.getContext('2d'); _octx.imageSmoothingEnabled = false;
+
+function compositeLPC(charKey, anim, frameIdx) {
+  _octx.clearRect(0, 0, 64, 64);
+  const ch = lpcChar[charKey]; if (!ch) return _oc;
+  const a = LPC.anims[anim];
+  const row = a.single ? a.row : a.row + 2;          // down-facing row (up,left,down,right)
+  const sx = (frameIdx % a.frames) * 64, sy = row * 64;
+  for (const layer of ch.layers) {                    // manifest is z-sorted ascending
+    const im = lpcImages[layer.file];
+    if (im && im.complete && im.naturalWidth) _octx.drawImage(im, sx, sy, 64, 64, 0, 0, 64, 64);
+  }
+  return _oc;
+}
+
+function drawLPC(s, i, now, working, flashing) {
+  const cx = s.cx, W = cx.canvas.width, H = cx.canvas.height;
+  const a = LPC.anims.walk;
+  const fi = working ? Math.floor(now / (1000 / 8)) % a.frames : 0; // walk cycle / standing
+  const bob = Math.round(Math.sin(now / (working ? 160 : 440) + i) * (working ? 2 : 1));
+  const shake = (flashing && s.flashMood === 'fail') ? Math.round(Math.sin(now / 35) * 3) : 0;
+  const oc = compositeLPC(s.conf.key, 'walk', fi);
+  const scale = Math.max(2, Math.floor((H - 6) / 64));
+  const dw = 64 * scale, dh = 64 * scale;
+  const dx = Math.round((W - dw) / 2 + shake), dy = Math.round(H - dh + bob);
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  cx.imageSmoothingEnabled = false;
+  cx.clearRect(0, 0, W, H);
+  cx.drawImage(oc, dx, dy, dw, dh);
+  if (flashing) {                                     // verdict tint over the sprite only
+    cx.globalCompositeOperation = 'source-atop';
+    cx.fillStyle = s.flashMood === 'pass' ? 'rgba(34,197,94,.45)' : 'rgba(239,68,68,.5)';
+    cx.fillRect(dx, dy, dw, dh);
+    cx.globalCompositeOperation = 'source-over';
+  }
+}
+
+// ── Procedural fallback sprites (18w x 22h grid) ────────────────────────────
+function shadow(g) { g.rect(5, 21, 12, 21, 'rgba(0,0,0,0.35)'); }
+
+function face(g) {
+  g.rect(6, 4, 11, 8, SKIN);
+  g.px(11, 4, SKIN_S); g.px(11, 8, SKIN_S);   // jaw/cheek shadow
+  g.px(7, 6, EYE); g.px(10, 6, EYE);          // eyes
+  g.px(8, 7, SKIN_S); g.px(9, 7, SKIN_S);     // nose/mouth
+}
+
+// alternating stride; one boot lifts per frame
+function legs(g, frame, pant) {
+  g.rect(6, 16, 8, 19, pant); g.rect(9, 16, 11, 19, pant);
+  const l = frame ? 1 : 0, r = frame ? 0 : 1;
+  g.rect(6, 20 - l, 8, 21 - l, BOOT);
+  g.rect(9, 20 - r, 11, 21 - r, BOOT);
+}
+
+// ── Class sprites ───────────────────────────────────────────────────────────
+function ranger(g, conf, frame, working) {
+  shadow(g);
+  g.rect(5, 9, 12, 16, '#14532d');                       // cloak
+  g.rect(5, 9, 5, 16, '#166534'); g.rect(12, 9, 12, 16, '#0f3d22');
+  g.rect(5, 13, 12, 13, LEATHER); g.px(8, 13, GOLD);     // belt + buckle
+  g.px(6, 9, LEATHER); g.px(7, 10, LEATHER); g.px(8, 11, LEATHER); // quiver strap
+  g.rect(4, 9, 4, 14, '#166534'); g.px(4, 14, SKIN);     // left arm
+  g.rect(13, 9, 13, 14, '#166534'); g.px(13, 14, SKIN);  // right arm
+  legs(g, frame, '#4a2f1a');
+  face(g);
+  g.rect(5, 1, 12, 3, '#166534');                        // hood
+  g.rect(6, 3, 11, 3, '#0f3d22');
+  g.rect(4, 3, 4, 5, '#166534'); g.rect(13, 3, 13, 5, '#166534'); // hood sides
+  // longbow on left + nocked arrow when working
+  g.rect(2, 7, 2, 15, WOOD); g.px(3, 6, WOOD); g.px(3, 16, WOOD);
+  for (let y = 7; y <= 15; y++) g.px(1, y, y % 2 ? '#d6d3d1' : '#a8a29e');
+  if (working && frame) { g.rect(1, 11, 5, 11, '#a8a29e'); g.px(5, 11, GOLD); }
+}
+
+function artificer(g, conf, frame, working) {
+  shadow(g);
+  g.rect(5, 9, 12, 16, '#b45309');                       // leather apron
+  g.rect(5, 9, 12, 9, '#d97706'); g.rect(11, 9, 12, 16, '#7c2d12');
+  g.px(7, 9, '#7c2d12'); g.px(7, 10, '#7c2d12'); g.px(7, 11, '#7c2d12'); // bib straps
+  g.px(10, 9, '#7c2d12'); g.px(10, 10, '#7c2d12'); g.px(10, 11, '#7c2d12');
+  g.rect(8, 12, 9, 13, GOLD); g.px(8, 12, '#fde047');    // gear emblem
+  g.rect(5, 14, 12, 14, '#44403c'); g.px(6, 14, STEEL); g.px(11, 14, STEEL); // tool belt
+  g.rect(4, 9, 4, 13, '#b45309'); g.px(4, 13, SKIN);     // left arm
+  legs(g, frame, '#44403c');
+  face(g);
+  g.rect(5, 2, 12, 3, LEATHER); g.rect(5, 2, 12, 2, '#92400e'); // cap
+  g.rect(5, 5, 12, 5, '#1c1917');                        // goggle strap
+  g.rect(6, 5, 7, 6, GOLD); g.px(7, 6, GLASS);           // left lens
+  g.rect(9, 5, 10, 6, GOLD); g.px(10, 6, GLASS);         // right lens
+  if (working && frame) {                                // hammer raised
+    g.rect(14, 4, 14, 9, WOOD); g.rect(12, 3, 16, 4, STEEL); g.px(12, 3, '#f1f5f9');
+    g.px(13, 9, SKIN);
+  } else {                                               // hammer down
+    g.rect(14, 8, 14, 13, WOOD); g.rect(12, 13, 16, 14, STEEL); g.px(12, 14, '#f1f5f9');
+    g.px(13, 13, SKIN);
+  }
+}
+
+function cleric(g, conf, frame, working) {
+  shadow(g);
+  g.rect(5, 9, 12, 16, '#1d4ed8');                       // robe
+  g.rect(4, 17, 13, 20, '#1d4ed8');                      // flare
+  g.rect(4, 17, 4, 20, '#1e3a8a'); g.rect(13, 17, 13, 20, '#1e3a8a');
+  g.rect(8, 9, 9, 18, WHITE); g.px(8, 9, '#cbd5e1');     // stole
+  g.rect(5, 9, 12, 9, GOLD);                             // collar trim
+  g.px(8, 12, GOLD); g.px(9, 12, GOLD); g.px(8, 11, '#fde047'); g.px(9, 13, '#fde047'); // holy symbol
+  g.rect(4, 9, 5, 14, '#2563eb'); g.px(4, 14, SKIN);     // sleeves
+  g.rect(12, 9, 13, 14, '#2563eb');
+  g.rect(7, 20, 8, 21, BOOT); g.rect(9, 20, 10, 21, BOOT); // boots peek
+  face(g);
+  g.rect(6, 1, 11, 3, '#1d4ed8'); g.rect(6, 3, 11, 3, WHITE); // mitre + band
+  g.px(8, 0, GOLD); g.px(9, 0, GOLD);
+  const py = working && frame ? 8 : 10;                  // raised glowing potion
+  g.px(13, py - 1, '#cbd5e1'); g.rect(12, py, 14, py + 2, '#bbf7d0');
+  g.rect(12, py + 1, 14, py + 2, '#22c55e');
+  if (working) g.px(13, py - 2, '#86efac');
+}
+
+function paladin(g, conf, frame, working) {
+  shadow(g);
+  g.rect(5, 9, 12, 16, STEEL); g.rect(11, 9, 12, 16, STEEL_D); // plate torso
+  g.rect(7, 9, 10, 16, '#7c3aed'); g.rect(8, 9, 9, 16, '#a855f7'); // tabard
+  g.rect(4, 8, 5, 9, STEEL_D); g.rect(12, 8, 13, 9, STEEL_D);  // pauldrons
+  g.rect(4, 10, 4, 14, STEEL); g.px(4, 14, SKIN);
+  g.rect(13, 10, 13, 14, STEEL);
+  g.rect(6, 16, 8, 20, STEEL_D); g.rect(9, 16, 11, 20, STEEL_D); // greaves
+  g.rect(7, 20, 10, 21, BOOT);
+  g.rect(6, 3, 11, 7, STEEL); g.rect(11, 3, 11, 7, STEEL_D);   // helm
+  g.rect(6, 6, 11, 6, EYE);                               // visor slit
+  g.rect(6, 2, 11, 2, STEEL_D); g.rect(8, 0, 9, 2, '#a855f7'); // plume
+  // shield (left)
+  g.rect(1, 9, 4, 16, '#6d28d9'); g.rect(1, 9, 4, 9, STEEL_D); g.rect(1, 16, 4, 17, '#4c1d95');
+  g.px(2, 12, WHITE); g.px(3, 12, WHITE); g.px(2, 11, WHITE); g.px(3, 13, WHITE);
+  if (working && frame) {                                 // sword raised
+    g.rect(15, 2, 15, 11, STEEL); g.px(15, 1, '#f8fafc');
+    g.rect(14, 11, 16, 11, GOLD); g.rect(15, 12, 15, 13, LEATHER);
+  } else {                                                // sword rest
+    g.rect(15, 8, 15, 17, STEEL); g.px(15, 18, '#f8fafc');
+    g.rect(14, 8, 16, 8, GOLD); g.rect(15, 6, 15, 7, LEATHER);
+  }
+}
+
+function bard(g, conf, frame, working) {
+  shadow(g);
+  g.rect(5, 9, 12, 16, '#ef4444'); g.rect(11, 9, 12, 16, '#b91c1c'); // tunic
+  g.rect(5, 9, 12, 9, GOLD); g.rect(5, 13, 12, 13, GOLD);            // collar + belt
+  g.rect(4, 9, 4, 12, '#dc2626'); g.px(4, 13, SKIN);                 // puffy sleeves
+  g.rect(13, 9, 13, 12, '#dc2626');
+  legs(g, frame, '#7c2d12');
+  face(g);
+  g.rect(5, 2, 12, 3, '#b91c1c'); g.rect(5, 2, 12, 2, '#ef4444');    // cap
+  g.rect(11, 0, 14, 2, '#22c55e'); g.px(14, 0, '#86efac'); g.px(13, 1, '#4ade80'); // feather
+  // lute (front-right)
+  g.rect(12, 12, 15, 15, WOOD); g.px(11, 12, WOOD); g.px(11, 15, WOOD);
+  g.rect(13, 13, 14, 14, '#451a03');                                // sound hole
+  g.rect(15, 8, 15, 12, '#a8a29e'); g.px(15, 7, LEATHER);           // neck
+  for (let y = 12; y <= 15; y++) g.px(12, y, y % 2 ? '#fde68a' : WOOD); // strings
+  if (working && frame) g.px(11, 13, '#fde047');                    // strum spark
+}
+
+const SPRITES = { explorer: ranger, developer: artificer, qa: cleric, reviewer: paladin, finalize: bard };
+
+// frame: 0/1 alternation; `working` raises the weapon. (canvas is pre-cleared by animate)
+function drawCharacter(ctx, conf, frame, working) {
+  const g = makeGrid(ctx);
+  (SPRITES[conf.key] || ranger)(g, conf, frame, working);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Build station DOM
+// ───────────────────────────────────────────────────────────────────────────
+const pipelineEl = document.getElementById('pipeline');
+const stations = PHASES.map((conf, i) => {
+  if (i > 0) {
+    const a = document.createElement('div'); a.className = 'arrow';
+    a.textContent = (conf.key === 'reviewer') ? '⇄' : '▸';
+    a.title = (conf.key === 'qa' || conf.key === 'reviewer') ? 'PASS → forward · FAIL → back to Developer' : '';
+    pipelineEl.appendChild(a);
+  }
+  const el = document.createElement('div'); el.className = 'station';
+  el.innerHTML = `
+    <div class="st-head">
+      <div><div class="st-name">${conf.name}</div><div class="st-role">${conf.role}</div></div>
+      <span class="model-chip">${conf.model}</span>
+    </div>
+    <div class="stage">
+      <canvas width="128" height="140"></canvas>
+      <div class="bead-chip" style="display:none"></div>
+      <div class="verdict-pop"></div>
+    </div>
+    <div class="bars">
+      <div class="bar-row"><span class="lbl">HP</span><div class="bar hp"><i></i></div><span class="val phase-val">—</span></div>
+      <div class="bar-row"><span class="lbl">MP</span><div class="bar mana"><i></i></div><span class="val cost-val">$0</span></div>
+      <div class="bar-row"><span class="lbl">XP</span><div class="bar xp"><i></i></div><span class="val turn-val">0t</span></div>
+    </div>`;
+  pipelineEl.appendChild(el);
+  const canvas = el.querySelector('canvas');
+  const cx = canvas.getContext('2d');
+  cx.imageSmoothingEnabled = false;
+  return {
+    conf, el, cx,
+    chip: el.querySelector('.bead-chip'),
+    pop: el.querySelector('.verdict-pop'),
+    hp: el.querySelector('.bar.hp > i'),   phaseVal: el.querySelector('.phase-val'),
+    mana: el.querySelector('.bar.mana > i'), costVal: el.querySelector('.cost-val'),
+    xp: el.querySelector('.bar.xp > i'),    turnVal: el.querySelector('.turn-val'),
+    flashUntil: 0, flashMood: null,
+  };
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Simulation — runs walk the pipeline; QA/Reviewer FAIL bounces to Developer
+// ───────────────────────────────────────────────────────────────────────────
+let runs = [];
+let beadSeq = 1000;
+let merged = 0, failedOut = 0;
+const events = [];
+
+function rnd(a, b) { return a + Math.random() * (b - a); }
+function newBead() { beadSeq += Math.floor(rnd(1, 7)); return `foreman-${beadSeq.toString(16)}`; }
+
+function spawn() {
+  if (runs.length >= 6) return;
+  runs.push({
+    id: crypto.randomUUID(), bead: newBead(), phase: 0, t: 0,
+    dur: Math.round(rnd(3, 6)), cost: 0, turns: 0, retries: 0, state: 'working',
+  });
+  logEv(`dispatch · ${runs[runs.length - 1].bead} → explorer`, 'var(--blue)');
+}
+
+function logEv(msg, color) {
+  const d = new Date();
+  events.push({ t: d.toLocaleTimeString('en-US', { hour12: false }), msg, color });
+  if (events.length > 60) events.shift();
+}
+
+function verdictFor(phaseKey, run) {
+  // explorer/developer/finalize always advance; qa & reviewer can FAIL
+  if (phaseKey === 'qa' || phaseKey === 'reviewer') {
+    const failChance = Math.max(0.12, 0.5 - run.retries * 0.18); // converges after retries
+    return Math.random() < failChance ? 'FAIL' : 'PASS';
+  }
+  return 'PASS';
+}
+
+function flashStation(i, mood) {
+  stations[i].flashMood = mood;
+  stations[i].flashUntil = performance.now() + 1100;
+}
+
+function tick() {
+  // progress each run
+  for (const run of [...runs]) {
+    run.t += 1;
+    run.cost += rnd(0.002, 0.02);
+    if (Math.random() < 0.6) run.turns += 1;
+    if (run.t < run.dur) continue;
+
+    const phase = PHASES[run.phase];
+    const verdict = verdictFor(phase.key, run);
+
+    if (verdict === 'FAIL') {
+      flashStation(run.phase, 'fail');
+      run.retries += 1;
+      logEv(`${phase.name} FAIL · ${run.bead} → back to developer (retry ${run.retries})`, 'var(--red)');
+      if (run.retries > 3) { // give up
+        runs = runs.filter(r => r !== run); failedOut += 1;
+        logEv(`${run.bead} marked FAILED (max retries)`, 'var(--red)');
+        continue;
+      }
+      run.phase = DEV_INDEX; run.t = 0; run.dur = Math.round(rnd(3, 6)); run.state = 'retry';
+      continue;
+    }
+
+    // PASS
+    flashStation(run.phase, 'pass');
+    run.state = 'working';
+    if (run.phase >= PHASES.length - 1) {
+      runs = runs.filter(r => r !== run); merged += 1;
+      logEv(`✓ ${run.bead} finalize PASS → merged to dev`, 'var(--green)');
+    } else {
+      logEv(`${phase.name} PASS · ${run.bead} → ${PHASES[run.phase + 1].name.toLowerCase()}`, 'var(--green)');
+      run.phase += 1; run.t = 0; run.dur = Math.round(rnd(3, 6));
+    }
+  }
+  // keep the floor lively
+  if (runs.length < 2 && Math.random() < 0.8) spawn();
+  else if (runs.length < 5 && Math.random() < 0.25) spawn();
+
+  renderState();
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Rendering: stations, bars, table, ticker  (data-driven, every tick)
+// ───────────────────────────────────────────────────────────────────────────
+function renderState() {
+  // map: phase index -> the run currently there (first one)
+  const byPhase = PHASES.map((_, i) => runs.find(r => r.phase === i) || null);
+
+  stations.forEach((s, i) => {
+    const run = byPhase[i];
+    const active = !!run;
+    s.el.classList.toggle('active', active && (performance.now() > s.flashUntil));
+    // bead chip
+    if (run) { s.chip.style.display = ''; s.chip.textContent = run.bead + (run.retries ? ` ⟳${run.retries}` : ''); }
+    else s.chip.style.display = 'none';
+    // bars
+    const hp = run ? Math.min(1, run.t / run.dur) : 0;
+    s.hp.style.width = (hp * 100).toFixed(0) + '%';
+    s.phaseVal.textContent = run ? `${run.t}/${run.dur}` : '—';
+    s.mana.style.width = run ? Math.min(100, run.cost / 0.15 * 100).toFixed(0) + '%' : '0%';
+    s.costVal.textContent = run ? '$' + run.cost.toFixed(3) : '$0';
+    s.xp.style.width = run ? Math.min(100, run.turns / 30 * 100).toFixed(0) + '%' : '0%';
+    s.turnVal.textContent = run ? run.turns + 't' : '0t';
+  });
+
+  // runs table
+  const tbody = document.querySelector('#runs-table tbody');
+  tbody.innerHTML = runs.map(r => {
+    const ph = PHASES[r.phase];
+    return `<tr>
+      <td style="color:var(--text)">${r.bead}</td>
+      <td style="color:${ph.body}">${ph.name}</td>
+      <td><span class="pill ${r.state}">${r.state}</span></td>
+      <td>${r.turns}</td><td>$${r.cost.toFixed(3)}</td><td>${r.retries || ''}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" style="color:var(--muted)">floor idle — spawn a run</td></tr>`;
+
+  // ticker
+  document.getElementById('ticker').innerHTML = events.slice(-40).map(e =>
+    `<div class="ev"><span class="t">${e.t}</span><span style="color:${e.color}">${e.msg}</span></div>`
+  ).join('');
+
+  // counts
+  document.getElementById('counts').textContent =
+    `${runs.length} in flight · ${merged} merged · ${failedOut} failed`;
+  document.getElementById('hud').textContent =
+    `${runs.length} runs · ${lpcReady ? 'LPC sprites' : 'loading sprites…'}`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Animation loop (decoupled from sim tick) — bob, working motion, verdict pops
+// ───────────────────────────────────────────────────────────────────────────
+function animate(now) {
+  const byPhase = PHASES.map((_, i) => runs.find(r => r.phase === i) || null);
+  stations.forEach((s, i) => {
+    const run = byPhase[i];
+    const working = !!run;
+    const flashing = now < s.flashUntil;
+    const cx = s.cx;
+    if (lpcReady) {
+      drawLPC(s, i, now, working, flashing);
+    } else {
+      // procedural fallback until LPC layers finish loading (or if absent)
+      const speed = working ? 6 : 2.2;
+      const frame = Math.floor(now / (1000 / speed)) % 2;
+      const bob = Math.round(Math.sin(now / (working ? 130 : 320) + i) * (working ? 1.2 : 0.7));
+      const shake = (flashing && s.flashMood === 'fail') ? Math.round(Math.sin(now / 35) * 2) : 0;
+      cx.save();
+      cx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+      cx.clearRect(0, 0, GW, GH);
+      cx.translate(shake, bob);
+      drawCharacter(cx, s.conf, frame, working);
+      if (flashing) {
+        cx.globalCompositeOperation = 'source-atop';
+        cx.fillStyle = s.flashMood === 'pass' ? 'rgba(34,197,94,.35)' : 'rgba(239,68,68,.40)';
+        cx.fillRect(0, 0, GW, GH);
+        cx.globalCompositeOperation = 'source-over';
+      }
+      cx.restore();
+    }
+
+    // station border flash + verdict popup
+    s.el.classList.toggle('pass', flashing && s.flashMood === 'pass');
+    s.el.classList.toggle('fail', flashing && s.flashMood === 'fail');
+    if (flashing) {
+      const left = (s.flashUntil - now) / 1100;
+      s.pop.textContent = s.flashMood === 'pass' ? '✓' : '✗';
+      s.pop.style.color = s.flashMood === 'pass' ? 'var(--green)' : 'var(--red)';
+      s.pop.style.opacity = Math.min(1, left * 1.6).toFixed(2);
+      s.pop.style.transform = `translateX(-50%) translateY(${(-(1 - left) * 14).toFixed(0)}px)`;
+    } else {
+      s.pop.style.opacity = 0;
+    }
+  });
+  requestAnimationFrame(animate);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Wiring
+// ───────────────────────────────────────────────────────────────────────────
+let playing = true;
+let timer = null;
+function speedMs() { return 1100 - (Number(document.getElementById('speed').value) - 1) * 160; }
+function reschedule() {
+  if (timer) clearInterval(timer);
+  if (playing) timer = setInterval(tick, speedMs());
+}
+document.getElementById('play').onclick = (e) => {
+  playing = !playing; e.target.textContent = playing ? '⏸ Pause' : '▶ Play'; reschedule();
+};
+document.getElementById('step').onclick = () => tick();
+document.getElementById('spawn').onclick = () => { spawn(); renderState(); };
+document.getElementById('speed').oninput = () => { if (playing) reschedule(); };
+
+// seed a few runs spread across the pipeline so every worker is doing something
+function seed() {
+  for (let i = 0; i < PHASES.length; i++) {
+    runs.push({ id: crypto.randomUUID(), bead: newBead(), phase: i, t: Math.floor(rnd(0, 3)),
+      dur: Math.round(rnd(3, 6)), cost: rnd(0.01, 0.08), turns: Math.floor(rnd(2, 18)),
+      retries: i === DEV_INDEX ? 1 : 0, state: i === DEV_INDEX ? 'retry' : 'working' });
+  }
+  logEv('factory floor warm — 5 workers staffed', 'var(--amber)');
+}
+seed();
+renderState();
+reschedule();
+requestAnimationFrame(animate);
+// Load real LPC layers; swaps in automatically when ready (procedural until then).
+preloadLPC((ok) => { lpcReady = ok; renderState(); });
+</script>
+</body>
+</html>

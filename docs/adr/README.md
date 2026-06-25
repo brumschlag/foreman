@@ -27,3 +27,4 @@ Lightweight [MADR](https://adr.github.io/madr/)-style. Each ADR has:
 | [0002](0002-ci-supply-chain-hardening.md) | CI supply-chain hardening posture | Accepted |
 | [0003](0003-typescript-strictness-enforcement.md) | Enforce TypeScript strictness (no `any`, no `!`) | Accepted |
 | [0004](0004-accepted-findings-policy.md) | Accepted-findings policy (no-fix CVEs, lint ignores) | Accepted |
+| [0005](0005-pixel-factory-floor-visualization.md) | Pixel-art "factory floor" visualization (LPC spritesheets) | Accepted |
