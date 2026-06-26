@@ -1412,12 +1412,45 @@ describe("validateWorkflowConfig — epic mode", () => {
   it("bundled epic.yaml loads with taskPhases and finalPhases", () => {
     const tmpDir2 = tmpdir() + `/wl-epic-test-${Date.now()}`;
     mkdirSync(tmpDir2, { recursive: true });
+    process.env["FOREMAN_HOME"] = tmpDir2;
     const config = loadWorkflowConfig("epic", tmpDir2);
+    delete process.env["FOREMAN_HOME"];
     rmSync(tmpDir2, { recursive: true, force: true });
     expect(config.name).toBe("epic");
-    expect(config.taskPhases).toEqual(["developer", "qa"]);
+    expect(config.taskPhases).toEqual(["explorer", "developer", "qa"]);
     expect(config.finalPhases).toEqual(["finalize"]);
+    expect(config.epicMaxBudgetUsd).toBe(50);
+    expect(config.maxConsecutiveEpicTaskFailures).toBe(3);
     expect(config.phases.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("parses epicMaxBudgetUsd and maxConsecutiveEpicTaskFailures", () => {
+    const raw = {
+      ...epicConfig,
+      taskPhases: ["developer", "qa"],
+      finalPhases: ["finalize"],
+      epicMaxBudgetUsd: 25,
+      maxConsecutiveEpicTaskFailures: 2,
+    };
+    const config = validateWorkflowConfig(raw, "epic");
+    expect(config.epicMaxBudgetUsd).toBe(25);
+    expect(config.maxConsecutiveEpicTaskFailures).toBe(2);
+  });
+
+  it("throws on invalid epicMaxBudgetUsd", () => {
+    const raw = {
+      ...epicConfig,
+      epicMaxBudgetUsd: 0,
+    };
+    expect(() => validateWorkflowConfig(raw, "epic")).toThrow(/epicMaxBudgetUsd must be a positive number/);
+  });
+
+  it("throws on invalid maxConsecutiveEpicTaskFailures", () => {
+    const raw = {
+      ...epicConfig,
+      maxConsecutiveEpicTaskFailures: -1,
+    };
+    expect(() => validateWorkflowConfig(raw, "epic")).toThrow(/maxConsecutiveEpicTaskFailures must be a positive integer/);
   });
 
   it("includes the bundled default/smoke/epic workflows", () => {

@@ -764,7 +764,8 @@ describe("executePipeline(): onTaskPhaseChange() called at phase transitions", (
       epicTasksCompleted: 2,
       epicCostByTask: {
         "epic-child-001": 1,
-        "epic-child-002": 1.5,
+        // child-002 skips explorer (skip-explorer-on-epic): developer-only cost 0.7, not 1.5
+        "epic-child-002": 0.7,
       },
     });
     expect(mockStore.updateRunProgress).not.toHaveBeenCalled();

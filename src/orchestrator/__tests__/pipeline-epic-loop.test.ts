@@ -53,7 +53,7 @@ function makeEpicPipelineArgs(
       taskPhases: ["developer", "qa"],
       finalPhases: ["finalize"],
       onError: opts?.onError ?? "continue",
-    } as never,
+    } as Record<string, unknown>,
     store: mockStore as never,
     logFile: join(tmpDir, "epic.log"),
     notifyClient: null,
@@ -89,6 +89,14 @@ function makeEpicTasks(count: number): EpicTask[] {
     seedTitle: `Task ${i + 1}`,
     seedDescription: `Description for task ${i + 1}`,
   }));
+}
+
+function noRetryEpicPhases() {
+  return [
+    { name: "developer", prompt: "developer.md", artifact: "DEVELOPER_REPORT.md" },
+    { name: "qa", prompt: "qa.md", artifact: "QA_REPORT.md", verdict: true, retryWith: "developer", retryOnFail: 0 },
+    { name: "finalize", prompt: "finalize.md", artifact: "FINALIZE_VALIDATION.md" },
+  ];
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -197,8 +205,9 @@ describe("epic task loop (TRD-005)", () => {
     const qaCount = phaseOrder.filter((p) => p === "qa").length;
     expect(devCount).toBeGreaterThanOrEqual(4);
     expect(qaCount).toBeGreaterThanOrEqual(4);
-    expect(phaseOrder[phaseOrder.length - 1]).toBe("finalize");
+    expect(phaseOrder[phaseOrder.lastIndexOf("finalize")]).toBe("finalize");
     expect(log).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
+    expect(log).toHaveBeenCalledWith("[EPIC] Task loop complete: 1 passed, 1 failed");
   });
 
   it("single-task mode unchanged (no epicTasks)", async () => {
@@ -331,5 +340,260 @@ describe("epic task loop (TRD-005)", () => {
     // 2 tasks × 2 phases + 1 finalize = 5 phases total
     expect(callArg.progress.costUsd).toBeGreaterThan(0);
     expect(callArg.phaseRecords.length).toBe(5);
+  });
+
+  it("halts epic when cumulative cost exceeds epicMaxBudgetUsd after task failure", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaFailReport("Broken."));
+      }
+      return { success: true, costUsd: 0.75, turns: 1, tokensIn: 100, tokensOut: 50 };
+    });
+
+    const epicTasks = makeEpicTasks(1);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      epicMaxBudgetUsd: 1,
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).toHaveBeenCalledOnce();
+    expect(markStuck.mock.calls[0]?.[6]).toBe("epic-budget-exceeded");
+    expect(String(markStuck.mock.calls[0]?.[7])).toContain("Epic budget exceeded");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Epic budget exceeded"));
+  });
+
+  it("halts epic when cumulative cost equals epicMaxBudgetUsd exactly after task failure", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaFailReport("Broken."));
+      }
+      return {
+        success: true,
+        costUsd: phaseName === "developer" ? 1 : 0,
+        turns: 1,
+        tokensIn: 100,
+        tokensOut: 50,
+      };
+    });
+
+    const epicTasks = makeEpicTasks(1);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      epicMaxBudgetUsd: 1,
+      phases: noRetryEpicPhases(),
+      taskPhases: ["developer", "qa"],
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).toHaveBeenCalledOnce();
+    expect(markStuck.mock.calls[0]?.[6]).toBe("epic-budget-exceeded");
+    expect(String(markStuck.mock.calls[0]?.[7])).toMatch(/\$1\.00 >= \$1\.00/);
+  });
+
+  it("does not halt epic when cumulative cost is below epicMaxBudgetUsd after task failure", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaFailReport("Broken."));
+      }
+      return {
+        success: true,
+        costUsd: phaseName === "developer" ? 0.99 : 0,
+        turns: 1,
+        tokensIn: 100,
+        tokensOut: 50,
+      };
+    });
+
+    const epicTasks = makeEpicTasks(1);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      epicMaxBudgetUsd: 1,
+      phases: noRetryEpicPhases(),
+      taskPhases: ["developer", "qa"],
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith("[EPIC] Task loop complete: 0 passed, 1 failed");
+  });
+
+  it("halts epic after maxConsecutiveEpicTaskFailures consecutive task failures", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaFailReport("Broken."));
+      }
+      return successResult();
+    });
+
+    const epicTasks = makeEpicTasks(4);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      maxConsecutiveEpicTaskFailures: 3,
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).toHaveBeenCalledOnce();
+    expect(markStuck.mock.calls[0]?.[6]).toBe("epic-consecutive-failures");
+    expect(String(markStuck.mock.calls[0]?.[7])).toContain("3 consecutive task failures");
+    // Three failed tasks (developer/qa retries) but not a fourth task.
+    expect(runPhase.mock.calls.length).toBeLessThan(24);
+  });
+
+  it("resets consecutive failure counter after a successful task", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const log = vi.fn();
+    const markStuck = vi.fn().mockResolvedValue(undefined);
+
+    const passTaskIndices = new Set([1, 3]); // task-2 and task-4 pass; others fail
+    let currentTaskIndex = 0;
+    let qaAttemptsThisTask = 0;
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      if (phaseName === "qa") {
+        qaAttemptsThisTask++;
+        const shouldPass = passTaskIndices.has(currentTaskIndex);
+        writeFileSync(
+          join(tmpDir, "QA_REPORT.md"),
+          shouldPass ? qaPassReport() : qaFailReport("Broken."),
+        );
+
+        if (shouldPass || qaAttemptsThisTask >= 3) {
+          currentTaskIndex++;
+          qaAttemptsThisTask = 0;
+        }
+      }
+      return successResult();
+    });
+
+    const epicTasks = makeEpicTasks(5);
+    const args = makeEpicPipelineArgs(tmpDir, runPhase, log, epicTasks);
+    args.workflowConfig = {
+      ...args.workflowConfig,
+      maxConsecutiveEpicTaskFailures: 3,
+    };
+    args.markStuck = markStuck;
+    await executePipeline(args as never);
+
+    expect(markStuck).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("finalize"));
+  });
+
+  it("runs explorer only on the first epic task when taskPhases include explorer", async () => {
+    const { executePipeline, resolveEpicTaskPhases } = await import("../pipeline-executor.js");
+    const phaseOrder: string[] = [];
+    const log = vi.fn();
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      phaseOrder.push(phaseName);
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaPassReport("All good."));
+      }
+      return successResult();
+    });
+
+    const phases = [
+      { name: "explorer", prompt: "explorer.md", artifact: "EXPLORER_REPORT.md" },
+      { name: "developer", prompt: "developer.md", artifact: "DEVELOPER_REPORT.md" },
+      { name: "qa", prompt: "qa.md", artifact: "QA_REPORT.md", verdict: true, retryWith: "developer", retryOnFail: 2 },
+      { name: "finalize", prompt: "finalize.md", artifact: "FINALIZE_VALIDATION.md" },
+    ];
+
+    const args = {
+      ...makeEpicPipelineArgs(tmpDir, runPhase, log, makeEpicTasks(3)),
+      workflowConfig: {
+        name: "epic",
+        phases,
+        taskPhases: ["explorer", "developer", "qa"],
+        finalPhases: ["finalize"],
+        onError: "continue",
+      } as never,
+    };
+
+    await executePipeline(args as never);
+
+    expect(phaseOrder).toEqual([
+      "explorer", "developer", "qa",
+      "developer", "qa",
+      "developer", "qa",
+      "finalize",
+    ]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Skipping explorer for task 2/3"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Skipping explorer for task 3/3"));
+    expect(resolveEpicTaskPhases(phases.slice(0, 3), 0).map((p) => p.name)).toEqual(["explorer", "developer", "qa"]);
+    expect(resolveEpicTaskPhases(phases.slice(0, 3), 1).map((p) => p.name)).toEqual(["developer", "qa"]);
+  });
+
+  it("skips explorer on resumed epic tasks after prior commits", async () => {
+    const { executePipeline } = await import("../pipeline-executor.js");
+    const phaseOrder: string[] = [];
+    const log = vi.fn();
+
+    const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
+      phaseOrder.push(phaseName);
+      if (phaseName === "qa") {
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), qaPassReport("All good."));
+      }
+      return successResult();
+    });
+
+    const { execSync } = await import("node:child_process");
+    execSync("git init", { cwd: tmpDir, stdio: "ignore" });
+    execSync('git config user.email "test@example.com"', { cwd: tmpDir, stdio: "ignore" });
+    execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "ignore" });
+    writeFileSync(join(tmpDir, "README.md"), "seed");
+    execSync("git add -A", { cwd: tmpDir, stdio: "ignore" });
+    execSync('git commit -m "Task 1 (task-1)"', { cwd: tmpDir, stdio: "ignore" });
+
+    const phases = [
+      { name: "explorer", prompt: "explorer.md", artifact: "EXPLORER_REPORT.md" },
+      { name: "developer", prompt: "developer.md", artifact: "DEVELOPER_REPORT.md" },
+      { name: "qa", prompt: "qa.md", artifact: "QA_REPORT.md", verdict: true, retryWith: "developer", retryOnFail: 2 },
+      { name: "finalize", prompt: "finalize.md", artifact: "FINALIZE_VALIDATION.md" },
+    ];
+
+    const args = {
+      ...makeEpicPipelineArgs(tmpDir, runPhase, log, makeEpicTasks(3)),
+      workflowConfig: {
+        name: "epic",
+        phases,
+        taskPhases: ["explorer", "developer", "qa"],
+        finalPhases: ["finalize"],
+        onError: "continue",
+      } as never,
+    };
+
+    await executePipeline(args as never);
+
+    expect(phaseOrder).toEqual([
+      "developer", "qa",
+      "developer", "qa",
+      "finalize",
+    ]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Skipping explorer for task 2/3"));
   });
 });
