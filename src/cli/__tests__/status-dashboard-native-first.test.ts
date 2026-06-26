@@ -65,6 +65,10 @@ describe("native task store counts (characterization)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Pin the Node backend so fetchStatusCounts does not auto-start the Elixir
+    // server (spawn `mix run`), which leaks unhandled ENOENT rejections in
+    // environments without Elixir installed (e.g. CI). dev commit 9298ccb5.
+    vi.stubEnv("FOREMAN_BACKEND", "node");
     mockBrList.mockResolvedValue([]);
     mockBrReady.mockResolvedValue([]);
     mockHasNativeTasks.mockReturnValue(false);
