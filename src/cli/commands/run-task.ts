@@ -18,6 +18,7 @@ import { Command, Option } from "commander";
 import chalk from "chalk";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { resolveRepoRootProjectPath, listRegisteredProjects } from "./project-task-support.js";
 import type { RegisteredProjectSummary } from "./project-task-support.js";
@@ -438,7 +439,9 @@ export async function runTaskAction(
   }
 
   // ── Create run record ────────────────────────────────────────────────
-  let runId = requestedRunId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  // runs.id is a Postgres `uuid` column — the fallback must be a valid UUID, not a
+  // `run-<ts>-<rand>` string, or createPipelineRun's COALESCE inserts an invalid value.
+  let runId = requestedRunId ?? randomUUID();
   const attemptNumber = 1;
 
   try {
