@@ -238,6 +238,7 @@ Recommended order:
 
 ```bash
 foreman logs <run-id>
+foreman logs <run-id> --live      # Interactive viewer with run tabs and log filtering
 FOREMAN_BACKEND=node foreman reset --bead <task-id> --dry-run
 foreman retry <task-id> --dispatch
 ```

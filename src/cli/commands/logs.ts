@@ -12,6 +12,7 @@ import { ForemanStore, type Run, type RunProgress } from "../../lib/store.js";
 import { createTrpcClient } from "../../lib/trpc-client.js";
 import { elapsed } from "../watch-ui.js";
 import { listRegisteredProjects, resolveProjectPathFromOptions } from "./project-task-support.js";
+import { launchAgentLogs } from "./AgentLogs.js";
 
 interface LogsOpts {
   project?: string;
@@ -23,6 +24,7 @@ interface LogsOpts {
   compact?: boolean;
   plain?: boolean;
   view?: "compact" | "plain" | "raw";
+  live?: boolean;
 }
 
 interface ResolvedRun {
@@ -422,6 +424,7 @@ export const logsCommand = new Command("logs")
   .option("--raw", "Print only the raw JSON log tail")
   .option("--compact", "Compact plain view — strips message_update noise, fetches from Elixir backend")
   .option("--plain", "Alias for --compact")
+  .option("--live", "Launch interactive log viewer with run tabs and filtering")
   .addOption(new Option("--view <view>", "Log view for event-backed logs").choices(["compact", "plain", "raw"]))
   .action(async (id: string | undefined, opts: LogsOpts) => {
     const tailCount = parseTailCount(opts.tail);
@@ -429,6 +432,11 @@ export const logsCommand = new Command("logs")
     if (!resolved) {
       console.error(chalk.red(`Error: No run found for '${opts.run ?? id ?? "(none)"}'.`));
       process.exit(1);
+    }
+
+    if (opts.live) {
+      await launchAgentLogs({ runs: [resolved.run] });
+      return;
     }
 
     const rawPath = logPath(resolved.run.id, "log");
