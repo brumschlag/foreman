@@ -1239,6 +1239,9 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
 
   let completedCount = 0;
   let failedCount = 0;
+  let consecutiveTaskFailures = 0;
+  const epicMaxBudgetUsd = workflowConfig.epicMaxBudgetUsd ?? 50;
+  const maxConsecutiveEpicTaskFailures = workflowConfig.maxConsecutiveEpicTaskFailures ?? 3;
   const completedTaskIds: string[] = [];
 
   // ── Outer task loop ──────────────────────────────────────────────────
@@ -1293,6 +1296,7 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
 
     if (result.success) {
       completedCount++;
+      consecutiveTaskFailures = 0;
       completedTaskIds.push(task.seedId);
 
       // TRD-010: Close bug bead if QA passed after retry
@@ -1329,6 +1333,31 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
       await appendFile(logFile, `\n[EPIC] Task ${task.seedId} PASSED\n`);
     } else {
       failedCount++;
+      consecutiveTaskFailures++;
+
+      if (totalProgress.costUsd >= epicMaxBudgetUsd) {
+        const budgetMsg = `Epic budget exceeded: $${totalProgress.costUsd.toFixed(2)} >= $${epicMaxBudgetUsd.toFixed(2)}`;
+        ctx.log(`[EPIC] ${budgetMsg}`);
+        await appendFile(logFile, `\n[EPIC] ${budgetMsg}\n`);
+        await ctx.markStuck(
+          store, runId, config.projectId, seedId, config.seedTitle,
+          totalProgress, "epic-budget-exceeded", budgetMsg,
+          config.projectPath, ctx.notifyClient,
+        );
+        return;
+      }
+
+      if (consecutiveTaskFailures >= maxConsecutiveEpicTaskFailures) {
+        const streakMsg = `Epic halted after ${consecutiveTaskFailures} consecutive task failures`;
+        ctx.log(`[EPIC] ${streakMsg}`);
+        await appendFile(logFile, `\n[EPIC] ${streakMsg}\n`);
+        await ctx.markStuck(
+          store, runId, config.projectId, seedId, config.seedTitle,
+          totalProgress, "epic-consecutive-failures", streakMsg,
+          config.projectPath, ctx.notifyClient,
+        );
+        return;
+      }
 
       // TRD-010: Create bug bead on QA failure
       if (result.retriesExhausted && ctx.onTaskQaFailure && config.epicId) {

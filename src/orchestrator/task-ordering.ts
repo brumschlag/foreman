@@ -54,6 +54,64 @@ export class CircularDependencyError extends Error {
  * @param useBv       - Whether to attempt bv ordering (default: true).
  * @returns Ordered list of child tasks.
  */
+export interface NativeEpicTaskOps {
+  getChildren(parentId: string): Promise<string[]>;
+  getTask(taskId: string): Promise<{
+    id: string;
+    title: string;
+    type: string;
+    priority: string | number;
+    description?: string | null;
+  } | null>;
+  getBlockingDependencies(taskId: string): Promise<string[]>;
+}
+
+/**
+ * Order epic child tasks using the native Postgres task graph.
+ * Mirrors getTaskOrder() but uses explicit parent/child and blocks edges.
+ */
+export async function getNativeEpicTaskOrder(
+  epicId: string,
+  ops: NativeEpicTaskOps,
+  projectPath: string,
+  useBv: boolean = true,
+): Promise<OrderedTask[]> {
+  const childIds = await ops.getChildren(epicId);
+  if (childIds.length === 0) {
+    return [];
+  }
+
+  const childDetails = new Map<string, TaskOrderingIssueDetail>();
+  for (const childId of childIds) {
+    const task = await ops.getTask(childId);
+    if (!task) continue;
+    if (task.type === "task" || task.type === "bug" || task.type === "chore") {
+      const blockers = await ops.getBlockingDependencies(childId);
+      childDetails.set(childId, {
+        id: task.id,
+        title: task.title,
+        type: task.type,
+        priority: String(task.priority),
+        description: task.description ?? null,
+        dependencies: blockers,
+      });
+    }
+  }
+
+  if (childDetails.size === 0) {
+    return [];
+  }
+
+  if (useBv) {
+    const bvOrder = await getBvOrder(childDetails, projectPath);
+    if (bvOrder !== null) {
+      return bvOrder;
+    }
+  }
+
+  return topologicalSort(childDetails);
+}
+
 export async function getTaskOrder(
   epicId: string,
   brClient: TaskOrderingClient,

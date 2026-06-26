@@ -455,6 +455,9 @@ export const retryCommand = new Command("retry")
               getTaskByExternalId: async (externalId) => await pg.getTaskByExternalId(registered.id, externalId) as never,
               getTaskById: async (taskId) => await pg.getTask(registered.id, taskId) as never,
               claimTask: async (taskId, runId) => await pg.claimTask(registered.id, taskId, runId),
+              getParentTaskId: async (taskId) => await pg.getParentTaskId(registered.id, taskId),
+              getChildren: async (taskId) => await pg.listChildTaskIds(registered.id, taskId),
+              getBlockingDependencies: async (taskId) => await pg.listBlockingDependencyIds(registered.id, taskId),
             },
             runOps: {
               createRun: async ({ runId, seedId, branchName, worktreePath, baseBranch, mergeStrategy, agentType }) => {
