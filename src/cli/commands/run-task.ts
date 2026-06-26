@@ -28,6 +28,7 @@ import type { Run } from "../../lib/store.js";
 import { PostgresStore } from "../../lib/postgres-store.js";
 import { PostgresAdapter } from "../../lib/db/postgres-adapter.js";
 import { loadProjectConfig, resolveVcsConfig } from "../../lib/project-config.js";
+import { getDefaultModel } from "../../lib/config.js";
 import { VcsBackendFactory } from "../../lib/vcs/index.js";
 import type { VcsBackend } from "../../lib/vcs/interface.js";
 import { WorktreeManager } from "../../lib/worktree-manager.js";
@@ -373,7 +374,7 @@ export async function runTaskAction(
     return 1;
   }
 
-  const selectedModel: ModelSelection = (model as ModelSelection) ?? "anthropic/claude-sonnet-4-6";
+  const selectedModel: ModelSelection = (model as ModelSelection) ?? (getDefaultModel() as ModelSelection);
   const seedInfo: SeedInfo = issueToSeedInfo(task);
 
   try {
