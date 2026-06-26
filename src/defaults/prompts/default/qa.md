@@ -80,25 +80,75 @@ Proceed with the normal QA instructions below.
 ## Instructions
 1. If `{{reportDir}}/QA_TASK.md` exists, read it first and treat it as this phase's normalized input/feedback contract.
 2. Read TASK.md, `{{reportDir}}/EXPLORER_REPORT.md`, and `{{reportDir}}/DEVELOPER_REPORT.md` for context
-3. Review only the implementation surface:
+3. Check the validation ledger for prior test runs: `cat {{reportDir}}/VALIDATION_LEDGER.md 2>/dev/null || echo "No ledger found"`
+   - If the Developer phase already ran targeted tests, note the scope in your report
+   - Avoid re-running the same scope unless new information warrants it
+4. Review only the implementation surface:
    - `git diff --name-only`
    - `git diff -- <changed files>` when needed to choose verification
    - For Foreman runtime/state/MCP/activity-feed work during the Elixir cutover, do not fail an implementation for missing `PostgresStore`, `src/lib/store.ts`, or legacy Postgres/native TS storage changes unless the task or Explorer explicitly targets that legacy path. Verify the Elixir server, MCP/Elixir client, and current CLI/read-model consumers named by Explorer.
-4. Choose the narrowest verification that can prove the changed behavior:
+5. Choose the narrowest verification that can prove the changed behavior. **Prefer targeted verification first.**
    - Prefer targeted verification first for narrow tasks
    - Prefer the command/test target from Developer's **QA Handoff** when it matches the changed files
    - Otherwise infer one targeted command from the changed files and Explorer's verification notes
    - Do **not** run broad discovery (`find`, unscoped `rg`/`grep`, recursive `ls`, `tree`, `git log --all`) unless the handoff is unusable; if unusable, write QA FAIL/BLOCKED instead of exploring broadly
-   - Do **not** run the full suite (`npm test`, `npx vitest run` without file filters, or equivalent). Finalize owns broad/full-suite validation
+
+   **Targeted verification (preferred for narrow tasks):**
+   - Run tests for changed files: `npm test -- path/to/changed.test.ts` (or `mix test test/path_test.exs` for Elixir)
+   - Or targeted module tests: `npm test -- --grep "feature name"`
+   - Use for: localized CLI/status/output/display changes
+
+   **Expanded targeted (default for most tasks):**
+   - Run module-level or feature-area tests
+   - Use `--grep` to target relevant test files
+   - Use for: tasks that touch multiple related files
+
+   **Full suite (requires explicit justification):**
+   - Do **not** run the full suite (`npm test`, `npx vitest run` without file filters, `mix test`, or equivalent) by default. Finalize owns broad/full-suite validation. Only run a full suite (e.g. `npm test -- --reporter=dot 2>&1`) when:
+     - Task scope is broad (epic, large feature, architecture change)
+     - Targeted verification reveals broader regression risk
+     - Changes affect core/shared code or critical paths
+     - Task explicitly requests full validation
+   - **You MUST document why full suite was necessary in the report**
+
    - Stop after targeted evidence is sufficient; do not investigate unrelated or pre-existing failures unless a targeted check exposes them
    - If you pipe test output through another command, preserve the test command exit code. Use `set -o pipefail` with `tee`, or avoid pipes. Do **not** use patterns like `npm test ... 2>&1 | tail -30` because `tail` can return success while tests fail
-5. If targeted tests fail due to the changes, do not modify source code. Report the failure clearly and route the task back to Developer
-6. Write any additional test recommendations needed for uncovered edge cases, but do not implement source changes in QA
-7. Write your findings to **{{reportDir}}/QA_REPORT.md**. Create the directory if it doesn't exist:
+6. If targeted tests fail due to the changes, do not modify source code. Report the failure clearly and route the task back to Developer
+7. If the full test suite has pre-existing failures unrelated to this implementation, verify they existed BEFORE your changes. If pre-existing failures are the ONLY failures, set verdict to PASS and note the pre-existing failures in the report.
+8. Write any additional test recommendations needed for uncovered edge cases, but do not implement source changes in QA
+9. Write your findings to **{{reportDir}}/QA_REPORT.md**. Create the directory if it doesn't exist:
    ```bash
    mkdir -p "{{reportDir}}"
    ```
-8. Write **SESSION_LOG.md** in the worktree root documenting your session (see CLAUDE.md Session Logging section)
+10. Write **SESSION_LOG.md** in the worktree root documenting your session (see CLAUDE.md Session Logging section)
+11. **Mandatory:** Update the validation ledger so downstream phases can skip redundant re-validation:
+    ```bash
+    mkdir -p "{{reportDir}}"
+    if [ -f "{{reportDir}}/VALIDATION_LEDGER.md" ]; then
+      # Append row to existing ledger
+      printf '\n| qa | %s | <targeted|expanded|full> | <affected paths> | <PASS|FAIL> | <justification if full, else empty> |\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "{{reportDir}}/VALIDATION_LEDGER.md"
+    else
+      # Create new ledger with header
+      cat > "{{reportDir}}/VALIDATION_LEDGER.md" << 'LEDGER'
+    # Validation Ledger
+    
+    This ledger tracks test validation runs across pipeline phases to prevent redundant test execution.
+    
+    | Phase | Timestamp | Scope | Files/Modules | Result | Notes |
+    |-------|-----------|-------|---------------|--------|-------|
+    | qa | TIMESTAMP | SCOPE | PATHS | RESULT | NOTES |
+    LEDGER
+      sed "s/TIMESTAMP/$(date -u +%Y-%m-%dT%H:%M:%SZ)/; s/SCOPE/<targeted|expanded|full>/; s|PATHS|<affected paths>|; s|RESULT|<PASS\|FAIL>|; s|NOTES|<justification if full, else empty>|" "{{reportDir}}/VALIDATION_LEDGER.md" > "{{reportDir}}/VALIDATION_LEDGER.md.tmp" && mv "{{reportDir}}/VALIDATION_LEDGER.md.tmp" "{{reportDir}}/VALIDATION_LEDGER.md"
+    fi
+    ```
+
+    **Schema columns:**
+    - **Phase**: Always `qa` for this phase
+    - **Timestamp**: ISO 8601 format
+    - **Scope**: `targeted` (single file), `expanded` (module/feature), or `full` (complete suite)
+    - **Files/Modules**: Comma-separated list of affected paths, or `-` if skipped
+    - **Result**: `PASS`, `FAIL`, or `N/A` if skipped
+    - **Notes**: Justification required if `full` scope; otherwise explain why skipped or empty
 
 ## QA_REPORT.md Format
 ```markdown
@@ -113,11 +163,16 @@ Proceed with the normal QA instructions below.
 ## Evidence
 *(Required if verdict is FAIL. List each failed check and its output.)*
 
+## Test Scope Justification
+- Scope: targeted | expanded | full
+- Justification (required if full): <why full suite was necessary, or "N/A - used targeted/expanded">
+
 ## Test Results
-- Targeted command(s) run: <exact targeted test command, e.g. npm test -- --reporter=dot 2>&1 or mix test test/path_test.exs>
+- Command(s) run: <exact targeted test command, e.g. npm test -- --reporter=dot 2>&1 or mix test test/path_test.exs>
 - Command run: <same exact targeted command>
-- Full suite command: SKIPPED (finalize owns broad/full-suite validation)
-- Test suite: X passed, Y failed
+- Test scope: targeted | expanded | full
+- Full suite command: SKIPPED (finalize owns broad/full-suite validation) unless explicitly justified above
+- Test suite: X passed, Y failed | SKIPPED
 - Raw summary: <copy the pass/fail count lines from the command actually used>
 - Test changes: none (QA is verification-only)
 
@@ -139,7 +194,9 @@ The acceptance contract from `{{reportDir}}/EXPLORER_REPORT.md` defines the succ
 - Focus on correctness and regressions, not style
 - Do not invent legacy backend requirements. During the Elixir cutover, Postgres/native TS store parity is not required unless explicitly requested by the task or Explorer.
 - Be specific about failures — include error messages
-- Use targeted verification only; do not run broad/full-suite commands in QA. Full-suite commands belong only to finalize
+- Prefer targeted verification first for narrow tasks; do not default to the broadest possible test run. Full-suite commands normally belong only to finalize
+- **Full suite runs require explicit justification** — document why targeted/expanded validation was insufficient.
 - QA_REPORT.md MUST include `Command run:` plus `Test suite: X passed, Y failed` with real pass/fail evidence; JavaScript (`npm test`, `vitest`) and Elixir (`mix test`) targeted commands are valid evidence; reports without real test evidence are invalid
 - **DO NOT** commit, push, or close the seed
 - **Write SESSION_LOG.md** documenting your session work (required, not optional)
+- Update the validation ledger after running tests

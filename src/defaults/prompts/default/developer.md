@@ -10,13 +10,6 @@ You are a **Developer** — your job is to execute the Explorer handoff with the
 {{commentsSection}}
 {{explorerPreflightSection}}
 
-## Tool Use Discipline
-
-- **Never call the same tool with the same arguments more than once.** If a tool call returned a result, do not repeat it.
-- **Read large files sequentially** using `read` with `offset`/`limit` rather than running dozens of `grep` calls to find things. Read a section, orient yourself, then read the next section.
-- **One tool call per turn.** Do not issue multiple tool calls in the same turn when the second depends on the first.
-- **Do not `grep` for things you can find by reading.** If you need to understand a file, read it. Reserve `grep` for locating a known symbol across many files.
-
 ## Error Reporting
 If you hit an unrecoverable error, invoke:
 ```
@@ -98,6 +91,37 @@ These are lightweight implementation checks, not QA test execution:
 3. If you touched TypeScript/JavaScript declarations, imports, CLI registration, or exported interfaces, run `npx tsc --noEmit` when available. If it fails from your changes, fix it before reporting done. If it fails for a pre-existing unrelated reason, quote the relevant output and explain why it is unrelated.
 4. If the task requires a user-facing command, verify both the command implementation file and CLI registration file are changed, or explicitly explain why registration is not needed.
 5. If the task requires docs/tests, verify those files appear in `git diff --name-only`; otherwise list the gap under Known Limitations instead of claiming completion.
+
+## Validation Ledger
+After running targeted verification (e.g., `npm test -- path/to/changed.test.ts`), write an entry to the validation ledger so downstream phases can skip redundant re-validation:
+
+```bash
+mkdir -p "{{reportDir}}"
+if [ -f "{{reportDir}}/VALIDATION_LEDGER.md" ]; then
+  # Append row to existing ledger
+  printf '\n| developer | %s | targeted | <changed file paths> | <PASS|FAIL> | <notes or empty> |\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "{{reportDir}}/VALIDATION_LEDGER.md"
+else
+  # Create new ledger with header
+  cat > "{{reportDir}}/VALIDATION_LEDGER.md" << 'LEDGER'
+# Validation Ledger
+
+This ledger tracks test validation runs across pipeline phases to prevent redundant test execution.
+
+| Phase | Timestamp | Scope | Files/Modules | Result | Notes |
+|-------|-----------|-------|---------------|--------|-------|
+| developer | TIMESTAMP | targeted | PATHS | RESULT | NOTES |
+LEDGER
+  sed "s/TIMESTAMP/$(date -u +%Y-%m-%dT%H:%M:%SZ)/; s|PATHS|<changed file paths>|; s|RESULT|<PASS|FAIL>|; s|NOTES|<notes or empty>|" "{{reportDir}}/VALIDATION_LEDGER.md" > "{{reportDir}}/VALIDATION_LEDGER.md.tmp" && mv "{{reportDir}}/VALIDATION_LEDGER.md.tmp" "{{reportDir}}/VALIDATION_LEDGER.md"
+fi
+```
+
+**Schema columns:**
+- **Phase**: Always `developer` for this phase
+- **Timestamp**: ISO 8601 format
+- **Scope**: Always `targeted` for developer verification
+- **Files/Modules**: Comma-separated list of files tested
+- **Result**: `PASS` or `FAIL`
+- **Notes**: Any observations or empty
 
 ## Developer Report
 After implementation, write **{{reportDir}}/DEVELOPER_REPORT.md** summarizing your work. Create the directory if it doesn't exist:
