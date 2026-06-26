@@ -36,6 +36,10 @@ async function run(
       FOREMAN_TASK_BACKEND: undefined,
       DATABASE_URL: undefined,
       FOREMAN_REGISTRY_BASE_DIR: registryBaseDir,
+      // Pin the legacy Node backend: dev defaults to Elixir, so `status --all`
+      // would read empty Elixir projections instead of the node registry these
+      // tests populate (dev commit 9298ccb5).
+      FOREMAN_BACKEND: "node",
     },
   });
 }

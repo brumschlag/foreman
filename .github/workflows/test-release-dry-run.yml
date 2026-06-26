@@ -29,17 +29,23 @@ on:
         default: ""
         type: string
 
+# Least-privilege default: jobs opt into read access as needed.
+permissions: {}
+
 jobs:
   # ── Validate package contents ─────────────────────────────────────────────────
   validate-npm-pack:
     name: Validate npm pack contents
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
+          persist-credentials: false
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -98,12 +104,15 @@ jobs:
   validate-version-detection:
     name: Validate version detection configuration
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
+          persist-credentials: false
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -177,12 +186,15 @@ jobs:
           - os: windows-latest
             targets: "win-x64"
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
+          persist-credentials: false
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -250,12 +262,14 @@ jobs:
 
     steps:
       - name: Print summary
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           echo "╔══════════════════════════════════════════════════════╗"
           echo "║          Release Dry-Run Summary                     ║"
           echo "╚══════════════════════════════════════════════════════╝"
           echo ""
-          echo "All validation checks passed on branch: ${{ github.ref_name }}"
+          echo "All validation checks passed on branch: $REF_NAME"
           echo ""
           echo "The following would be produced in a real release:"
           echo "  📦 npm package:  @oftheangels/foreman (via publish-npm.yml)"

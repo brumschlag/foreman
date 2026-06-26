@@ -128,6 +128,9 @@ describe("CLI smoke tests", () => {
       env: {
         ...process.env,
         HOME: tmp,
+        // Legacy dry-run pipeline output is gated behind the Node backend;
+        // dev defaults to Elixir which prints a deprecation notice instead.
+        FOREMAN_BACKEND: "node",
       },
     });
 

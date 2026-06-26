@@ -188,6 +188,10 @@ describe("Pi extensions build check in foreman run", () => {
     // Override test-mode env var so Pi extension check runs (not skipped).
     // collectRuntimeAssetIssues() returns [] via mocked prompt/workflow loaders.
     process.env.FOREMAN_RUNTIME_MODE = "normal";
+    // The Pi extensions build check lives on the legacy Node dispatch path. On the
+    // Elixir-default backend, `foreman run` short-circuits before that check runs,
+    // so opt into the legacy node dispatcher explicitly (the behavior under test).
+    process.env.FOREMAN_BACKEND = "node";
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -232,6 +236,7 @@ describe("Pi extensions build check in foreman run", () => {
 
   afterEach(() => {
     delete process.env.FOREMAN_RUNTIME_MODE;
+    delete process.env.FOREMAN_BACKEND;
     vi.restoreAllMocks();
   });
 

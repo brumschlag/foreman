@@ -73,6 +73,19 @@ async function gh(args: string[], cwd: string): Promise<string> {
   return stdout.trim();
 }
 
+/** Returns "owner/repo" from the origin remote URL, e.g. "brumschlag/foreman" */
+async function getOriginRepo(cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", ["remote", "get-url", "origin"], { cwd });
+    const url = stdout.trim();
+    // Handles https://github.com/owner/repo.git and git@github.com:owner/repo.git
+    const m = url.match(/github\.com[/:]([\w-]+\/[\w.-]+?)(?:\.git)?$/);
+    if (m) return m[1];
+  } catch { /* fall through */ }
+  return "";
+}
+
+
 function shouldCreateFreshPrAfterReopenFailure(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return message.includes("Could not open the pull request")
@@ -435,7 +448,10 @@ export class Refinery {
 
   private async getExistingPrUrl(branchName: string): Promise<string | null> {
     try {
-      const prUrl = await gh(["pr", "view", branchName, "--json", "url", "--jq", ".url"], this.projectPath);
+      const originRepo = await getOriginRepo(this.projectPath);
+      const args = ["pr", "view", branchName, "--json", "url", "--jq", ".url",
+        ...(originRepo ? ["--repo", originRepo] : [])];
+      const prUrl = await gh(args, this.projectPath);
       return prUrl.trim() || null;
     } catch {
       return null;
@@ -444,7 +460,10 @@ export class Refinery {
 
   private async getExistingPrState(branchName: string): Promise<{ state: string; headRefName?: string; headRefOid?: string; url?: string } | null> {
     try {
-      const prRaw = await gh(["pr", "view", branchName, "--json", "state,headRefName,headRefOid,url", "--jq", "."], this.projectPath);
+      const originRepo = await getOriginRepo(this.projectPath);
+      const args = ["pr", "view", branchName, "--json", "state,headRefName,headRefOid,url", "--jq", ".",
+        ...(originRepo ? ["--repo", originRepo] : [])];
+      const prRaw = await gh(args, this.projectPath);
       const parsed = JSON.parse(prRaw) as { state?: string; headRefName?: string; headRefOid?: string; url?: string };
       if (!parsed.state) return null;
       return {
@@ -521,6 +540,9 @@ export class Refinery {
 
     if (!this.isTestRuntime()) {
       await this.vcsBackend.push(this.projectPath, branchName);
+      await gitSpecial(["fetch", "origin"], this.projectPath).catch(() => {
+        // non-fatal — best effort to refresh remote refs
+      });
     }
 
     if (opts.existingOk !== false && !this.isTestRuntime()) {
@@ -642,17 +664,36 @@ export class Refinery {
 
     const prUrl = this.isTestRuntime()
       ? `foreman://pr/${run.seed_id}`
-      : await gh((() => {
+      : await (async () => {
+        const originRepo = await getOriginRepo(this.projectPath);
         const ghArgs = [
           "pr", "create",
           "--base", baseBranch,
           "--head", branchName,
           "--title", prTitle,
           "--body", body,
+          ...(originRepo ? ["--repo", originRepo] : []),
         ];
         if (opts.draft) ghArgs.push("--draft");
-        return ghArgs;
-      })(), this.projectPath);
+        // Retry up to 4 times with 3s delay — GitHub API may need a moment
+        // to index a freshly pushed branch before accepting a PR creation.
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, 3000));
+          }
+          try {
+            return await gh(ghArgs, this.projectPath);
+          } catch (err: unknown) {
+            lastError = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!msg.includes("sha can't be blank") && !msg.includes("Head ref must be a branch") && !msg.includes("No commits between")) {
+              throw err; // Not a timing issue — fail fast
+            }
+          }
+        }
+        throw lastError;
+      })();
 
     await this.persistRunEvent(
       run,
@@ -746,7 +787,11 @@ export class Refinery {
         testFailures.push(...report.testFailures);
         unexpectedErrors.push(...report.unexpectedErrors);
       } else {
-        await gh(["pr", "merge", branchName, "--squash"], this.projectPath);
+        const originRepo = await getOriginRepo(this.projectPath);
+        await gh([
+          "pr", "merge", branchName, "--squash",
+          ...(originRepo ? ["--repo", originRepo] : []),
+        ], this.projectPath);
 
         await this.finalizeSuccessfulMerge(run, branchName, targetBranch);
 

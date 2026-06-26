@@ -196,6 +196,7 @@ Active Agents
     developer  $1.25 (anthropic/sonnet-4-6)
   Turns      18
   Phase      qa
+  Pipeline   EXP·DEV·QA·REV·FIN
   Tools      70 (last: bash)
   bash     ███████████████ 27
   read     ██████████ 18
@@ -471,6 +472,7 @@ foreman logs <run-id> --compact        # Compact event-backed tail, no message_u
 foreman logs <run-id> --plain          # Alias for --compact
 foreman logs <run-id> --view plain     # Explicit plain compact view
 foreman logs <run-id> --raw --tail 200 # Raw JSON tail
+foreman logs <run-id> --live           # Interactive viewer with run tabs and filtering
 ```
 
 | Option | Description |
@@ -482,6 +484,16 @@ foreman logs <run-id> --raw --tail 200 # Raw JSON tail
 | `--view <compact|plain|raw>` | Select event-backed log view |
 | `--raw` | Print raw worker JSON log lines, falling back to the Elixir raw event view when the local file is absent |
 | `--follow` | Follow the raw worker log after the summary |
+| `--live` | Launch interactive log viewer with run tabs and filtering |
+
+**Interactive viewer (`--live`):**
+
+Opens a chalk-based TUI with:
+- **Run selector tabs** — shows `beadId.slice(0,8)` + status LED per run, plus an "All" tab. Press `Tab`/`n` to cycle, `0`–`9` to select directly.
+- **Log level filter** — cycles ALL → INFO → WARN → ERROR with `f` key.
+- **Auto-scroll** — enabled by default, scrolls to bottom on new lines. Disables when you scroll up; press `a` to re-enable.
+- **Formatted lines** — `HH:MM:SS │ level badge │ message`. ERROR lines have a red left border.
+- Press `q` or `Esc` to quit.
 
 ### `foreman doctor`
 
@@ -835,7 +847,7 @@ foreman task create --from-text "..." --no-llm      # Skip AI parsing (text beco
 |--------|---------|-------------|
 | `--title <text>` | — | Task title (required unless `--from-text` is used) |
 | `--description <text>` | — | Optional task description |
-| `--type <type>` | `task` | Task type: `task`, `bug`, `feature`, `epic`, `chore`, `docs`, `question` |
+| `--type <type>` | `task` | Task type: `task`, `bug`, `feature`, `epic`, `chore`, `docs`, `question`, `milestone` (TRD-2026-016) |
 | `--priority <level>` | `medium` | Priority: `0`–`4` or `critical`/`high`/`medium`/`low`/`backlog` |
 | `--from-text <description>` | — | Create task(s) from a natural-language description (or file path) using an LLM |
 | `--parent <id>` | — | Parent task ID (only with `--from-text`) |

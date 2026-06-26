@@ -18,6 +18,7 @@ import { Command, Option } from "commander";
 import chalk from "chalk";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { resolveRepoRootProjectPath, listRegisteredProjects } from "./project-task-support.js";
 import type { RegisteredProjectSummary } from "./project-task-support.js";
@@ -28,6 +29,7 @@ import type { Run } from "../../lib/store.js";
 import { PostgresStore } from "../../lib/postgres-store.js";
 import { PostgresAdapter } from "../../lib/db/postgres-adapter.js";
 import { loadProjectConfig, resolveVcsConfig } from "../../lib/project-config.js";
+import { getDefaultModel } from "../../lib/config.js";
 import { VcsBackendFactory } from "../../lib/vcs/index.js";
 import type { VcsBackend } from "../../lib/vcs/interface.js";
 import { WorktreeManager } from "../../lib/worktree-manager.js";
@@ -373,7 +375,7 @@ export async function runTaskAction(
     return 1;
   }
 
-  const selectedModel: ModelSelection = (model as ModelSelection) ?? "anthropic/claude-sonnet-4-6";
+  const selectedModel: ModelSelection = (model as ModelSelection) ?? (getDefaultModel() as ModelSelection);
   const seedInfo: SeedInfo = issueToSeedInfo(task);
 
   try {
@@ -437,7 +439,9 @@ export async function runTaskAction(
   }
 
   // ── Create run record ────────────────────────────────────────────────
-  let runId = requestedRunId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  // runs.id is a Postgres `uuid` column — the fallback must be a valid UUID, not a
+  // `run-<ts>-<rand>` string, or createPipelineRun's COALESCE inserts an invalid value.
+  let runId = requestedRunId ?? randomUUID();
   const attemptNumber = 1;
 
   try {

@@ -392,6 +392,15 @@ export interface WorkflowConfig {
    */
   taskTimeout?: number;
   /**
+   * Epic mode: maximum USD spend for the entire epic run before the pipeline halts.
+   */
+  epicMaxBudgetUsd?: number;
+  /**
+   * Epic mode: halt after this many consecutive task failures in the epic loop.
+   * @default 3
+   */
+  maxConsecutiveEpicTaskFailures?: number;
+  /**
    * Per-workflow merge strategy. Controls how completed branches are merged:
    *
    * - `'auto'`: refinery merges completed branches automatically (default)
@@ -1035,6 +1044,20 @@ export function validateWorkflowConfig(raw: unknown, workflowName: string): Work
       throw new WorkflowConfigError(workflowName, "taskTimeout must be a positive number (seconds)");
     }
     config.taskTimeout = raw["taskTimeout"];
+  }
+
+  if (raw["epicMaxBudgetUsd"] !== undefined) {
+    if (typeof raw["epicMaxBudgetUsd"] !== "number" || raw["epicMaxBudgetUsd"] <= 0) {
+      throw new WorkflowConfigError(workflowName, "epicMaxBudgetUsd must be a positive number");
+    }
+    config.epicMaxBudgetUsd = raw["epicMaxBudgetUsd"];
+  }
+
+  if (raw["maxConsecutiveEpicTaskFailures"] !== undefined) {
+    if (typeof raw["maxConsecutiveEpicTaskFailures"] !== "number" || raw["maxConsecutiveEpicTaskFailures"] <= 0) {
+      throw new WorkflowConfigError(workflowName, "maxConsecutiveEpicTaskFailures must be a positive integer");
+    }
+    config.maxConsecutiveEpicTaskFailures = raw["maxConsecutiveEpicTaskFailures"];
   }
 
   // ── Parse optional onError strategy ─────────────────────────────────────

@@ -56,6 +56,33 @@ function statusColor(status: string, text: string): string {
 
 const RULE = chalk.dim("━".repeat(60));
 
+// ── Phase progress bar ──────────────────────────────────────────────────
+
+/** Ordered list of pipeline phases for the mini progress bar. */
+export const PIPELINE_PHASES = ["explorer", "developer", "qa", "reviewer", "finalize"] as const;
+
+/**
+ * Render a compact phase progress bar: completed=green ■, current=yellow ■,
+ * future=gray □.  Each segment shows its abbreviated phase name on hover
+ * (not applicable in terminal, so we use 3-letter abbreviations inline).
+ *
+ * Returns an empty string when `currentPhase` is undefined.
+ */
+export function renderPhaseProgressBar(currentPhase?: string): string {
+  if (!currentPhase) return "";
+  const currentIdx = PIPELINE_PHASES.indexOf(currentPhase as typeof PIPELINE_PHASES[number]);
+  if (currentIdx === -1) return chalk.dim(`[${currentPhase}]`);
+
+  const ABBREVS = ["EXP", "DEV", "QA", "REV", "FIN"];
+
+  return PIPELINE_PHASES.map((_, i) => {
+    const label = ABBREVS[i];
+    if (i < currentIdx) return chalk.green(label);
+    if (i === currentIdx) return chalk.yellow(label);
+    return chalk.gray(label);
+  }).join(chalk.dim("·"));
+}
+
 // ── Success rate display ─────────────────────────────────────────────────
 
 /**
@@ -126,6 +153,9 @@ export function renderAgentCardSummary(run: Run, progress: RunProgress | null, i
     if (activity) line += `  ${activity}`;
     line += `  ${chalk.green("$" + progress.costUsd.toFixed(4))}`;
     line += `  ${chalk.dim(progress.turns + "t " + progress.toolCalls + " tools")}`;
+
+    const phaseBar = renderPhaseProgressBar(progress.currentPhase);
+    if (phaseBar) line += `  ${phaseBar}`;
   } else if (isRunning) {
     line += `  ${chalk.dim("Initializing...")}`;
   }
@@ -208,6 +238,10 @@ export function renderAgentCard(run: Run, progress: RunProgress | null, isExpand
     };
     const colorFn = phaseColors[progress.currentPhase] ?? chalk.white;
     lines.push(`  ${chalk.dim("Phase     ")} ${colorFn(progress.currentPhase)}`);
+    const phaseBar = renderPhaseProgressBar(progress.currentPhase);
+    if (phaseBar) {
+      lines.push(`  ${chalk.dim("Pipeline  ")} ${phaseBar}`);
+    }
   }
 
   const lastTool = progress.lastToolCall

@@ -2,6 +2,8 @@
 
 Workflow YAML files define the complete pipeline configuration for Foreman: which phases to run, which models to use, how to handle retries, and how to set up the development environment. Foreman is stack-agnostic — workflows work with any language or framework.
 
+> **Test Execution Policy:** All bundled workflows follow a test ownership model that prevents redundant test runs. See [Test Execution Policy](./guides/test-execution-policy.md) for details.
+
 ## File Locations
 
 | Location | Purpose |
@@ -23,12 +25,9 @@ Foreman ships with bundled workflows for common task types:
 Workflows are resolved per task:
 1. `foreman run --workflow <name>` CLI override (applies to every task in that dispatch; fails fast if the workflow cannot be loaded)
 2. First `workflow:<name>` label on the task (e.g. `workflow:smoke`)
-3. Workflow-declared `task_type` in YAML (for example, `task_type: bug` maps bug tasks to that workflow)
-4. `taskTypeWorkflowMap[task.type]` in project config (compatibility fallback)
-5. `taskTypeWorkflowMap.default`
-6. File-existence fallback (`~/.foreman/workflows/<type>.yaml` or bundled defaults)
-
-Startup/doctor validation fails if multiple workflows declare the same `task_type`, because type-based dispatch would be ambiguous.
+3. `taskTypeWorkflowMap[task.type]` in project config
+4. `taskTypeWorkflowMap.default`
+5. File-existence fallback (`~/.foreman/workflows/<type>.yaml` or bundled defaults)
 
 ```bash
 # Dispatch with default workflow
@@ -52,7 +51,6 @@ foreman run task <task-id> task --project <name> --no-watch
 
 ```yaml
 name: default                    # Workflow name (required)
-task_type: task                  # Task type this workflow handles (optional)
 setup: [...]                     # Setup steps (optional)
 setupCache: { key, path }        # Dependency cache (optional)
 vcs: { backend, git, jujutsu }   # VCS backend override (optional)

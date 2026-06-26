@@ -134,7 +134,12 @@ const VALID_MODELS: readonly ModelSelection[] = [
   "anthropic/claude-haiku-4-5",
   "minimax/MiniMax-M2.7",
   "minimax/MiniMax-M2.7-highspeed",
-  "openai/gpt-5.2-chat-latest"
+  "openai/gpt-5.2-chat-latest",
+  "openrouter/qwen/qwen3-coder-next",
+  "minimax/minimax-m3",
+  "z-ai/glm-5.2",
+  "openrouter/z-ai/glm-5.2",
+  "openrouter/minimax/minimax-m3",
 ];
 
 /**
@@ -191,10 +196,11 @@ const DEFAULT_MODELS: Readonly<Record<Exclude<AgentRole, "lead" | "worker" | "se
  * variable is absent or empty the hard-coded default is used.
  */
 export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" | "sentinel">, RoleConfig> {
+  const defaultModel = getDefaultModel() as ModelSelection;
   return {
     explorer: {
       role: "explorer",
-      model: resolveModel("FOREMAN_EXPLORER_MODEL", DEFAULT_MODELS.explorer),
+      model: resolveModel("FOREMAN_EXPLORER_MODEL", defaultModel),
       maxBudgetUsd: getExplorerBudget(),
       permissionMode: "acceptEdits",
       reportFile: "EXPLORER_REPORT.md",
@@ -202,7 +208,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     developer: {
       role: "developer",
-      model: resolveModel("FOREMAN_DEVELOPER_MODEL", DEFAULT_MODELS.developer),
+      model: resolveModel("FOREMAN_DEVELOPER_MODEL", defaultModel),
       maxBudgetUsd: getDeveloperBudget(),
       permissionMode: "acceptEdits",
       reportFile: "DEVELOPER_REPORT.md",
@@ -221,7 +227,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     qa: {
       role: "qa",
-      model: resolveModel("FOREMAN_QA_MODEL", DEFAULT_MODELS.qa),
+      model: resolveModel("FOREMAN_QA_MODEL", defaultModel),
       maxBudgetUsd: getQaBudget(),
       permissionMode: "acceptEdits",
       reportFile: "QA_REPORT.md",
@@ -229,7 +235,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     reviewer: {
       role: "reviewer",
-      model: resolveModel("FOREMAN_REVIEWER_MODEL", DEFAULT_MODELS.reviewer),
+      model: resolveModel("FOREMAN_REVIEWER_MODEL", defaultModel),
       maxBudgetUsd: getReviewerBudget(),
       permissionMode: "acceptEdits",
       reportFile: "REVIEW.md",
@@ -237,7 +243,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     finalize: {
       role: "finalize",
-      model: DEFAULT_MODELS.finalize,
+      model: defaultModel,
       maxBudgetUsd: 1.00,
       permissionMode: "acceptEdits",
       reportFile: "FINALIZE_REPORT.md",
@@ -245,7 +251,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     troubleshooter: {
       role: "troubleshooter",
-      model: resolveModel("FOREMAN_TROUBLESHOOTER_MODEL", DEFAULT_MODELS.troubleshooter),
+      model: resolveModel("FOREMAN_TROUBLESHOOTER_MODEL", defaultModel),
       maxBudgetUsd: getTroubleshooterBudget(),
       permissionMode: "acceptEdits",
       reportFile: "TROUBLESHOOT_REPORT.md",
@@ -253,7 +259,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     fix: {
       role: "fix",
-      model: resolveModel("FOREMAN_FIX_MODEL", DEFAULT_MODELS.fix),
+      model: resolveModel("FOREMAN_FIX_MODEL", defaultModel),
       maxBudgetUsd: getDeveloperBudget(),
       permissionMode: "acceptEdits",
       reportFile: "DEVELOPER_REPORT.md",
@@ -264,7 +270,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     test: {
       role: "test",
-      model: resolveModel("FOREMAN_TEST_MODEL", DEFAULT_MODELS.test),
+      model: resolveModel("FOREMAN_TEST_MODEL", defaultModel),
       maxBudgetUsd: getQaBudget(),
       permissionMode: "acceptEdits",
       reportFile: "TEST_RESULTS.md",
@@ -272,7 +278,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     prd: {
       role: "prd",
-      model: DEFAULT_MODELS.prd,
+      model: defaultModel,
       maxBudgetUsd: 5.00,
       permissionMode: "acceptEdits",
       reportFile: "PRD.md",
@@ -283,7 +289,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     trd: {
       role: "trd",
-      model: DEFAULT_MODELS.trd,
+      model: defaultModel,
       maxBudgetUsd: 8.00,
       permissionMode: "acceptEdits",
       reportFile: "TRD.md",
@@ -294,7 +300,7 @@ export function buildRoleConfigs(): Record<Exclude<AgentRole, "lead" | "worker" 
     },
     implement: {
       role: "implement",
-      model: DEFAULT_MODELS.implement,
+      model: defaultModel,
       maxBudgetUsd: 10.00,
       permissionMode: "acceptEdits",
       reportFile: "IMPLEMENT_REPORT.md",
@@ -782,9 +788,11 @@ export function parseFinalizeIntegrationStatus(reportContent: string): FinalizeI
 }
 
 export function qaReportHasTestEvidence(reportContent: string): boolean {
-  const hasCommand = /(npm test|npx\s+vitest(?:\s+run)?|pnpm\s+vitest(?:\s+run)?|yarn\s+vitest(?:\s+run)?|vitest\s+run|mix\s+test)/i.test(reportContent);
+  const hasCommand = /(npm test|npm run test|npx\s+vitest(?:\s+run)?|pnpm\s+vitest(?:\s+run)?|yarn\s+vitest(?:\s+run)?|vitest\s+run|mix\s+test)/i.test(reportContent);
   const hasCounts = /(\b\d+\s+passed\b|\b\d+\s+failed\b|\b\d+\s+failures\b|\b\d+\s+tests?,\s*\d+\s+failures?\b|\btests? failed out of\b|\btests?:\s*\d+\s+passed[, ]+\d+\s+failed\b)/i.test(reportContent);
-  return hasCommand && hasCounts;
+  // Also accept explicit N/A or skipped evidence for trivial changes
+  const hasExplicitSkip = /(N\/A\s*-\s*(no tests|not required|trivial)|Test suite:\s*N\/A|not required\s*-\s*(trivial|minimal|no tests)|tests?\s+not\s+affected|no\s+tests?\s+affected)/i.test(reportContent);
+  return (hasCommand && hasCounts) || hasExplicitSkip;
 }
 
 export function extractIssues(reportContent: string): string {

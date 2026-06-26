@@ -59,3 +59,4 @@ docs/reports/queue-entry-*/
 
 var/
 dist-new-*/
+.foreman-pipeline-cache/

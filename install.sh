@@ -1,8 +1,8 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # install.sh — Foreman curl installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ldangelo/foreman/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ldangelo/foreman/main/install.sh | bash
 #
 # Options (via environment variables):
 #   FOREMAN_VERSION   — specific version tag to install (default: latest)
@@ -125,7 +125,7 @@ fetch_latest_version() {
     if printf '%s' "$response" | grep -q "API rate limit exceeded"; then
       die "GitHub API rate limit exceeded (60 requests/hour for unauthenticated users).
 Set GITHUB_TOKEN=<your-token> and re-run, or specify the version manually:
-  FOREMAN_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sh"
+  FOREMAN_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash"
     fi
     die "Could not determine latest release tag from GitHub API response.
 Specify the version manually with FOREMAN_VERSION=<tag> and retry."
@@ -371,6 +371,7 @@ $(ls -la "$extract_dir" 2>/dev/null || echo '  (empty)')"
   if [ "$in_path" -eq 0 ]; then
     printf '\n%s%s is not in your PATH.%s\n' "${YELLOW}" "$install_dir" "${RESET}"
     printf 'Add the following to your shell config (~/.bashrc, ~/.zshrc, etc.):\n\n'
+    # shellcheck disable=SC2016  # $PATH must stay literal — it is printed advice for the user's shell config
     printf '  %sexport PATH="%s:$PATH"%s\n\n' "${BOLD}" "$install_dir" "${RESET}"
     printf 'Then restart your shell or run:\n\n'
     printf '  %ssource ~/.bashrc%s   # or source ~/.zshrc\n\n' "${BOLD}" "${RESET}"

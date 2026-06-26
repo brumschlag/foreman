@@ -119,7 +119,7 @@ export interface ValidationResult {
 export function validateBanners(
   manifest: Manifest,
   variants: BannerVariants,
-  docsRoot: string
+  _docsRoot: string
 ): ValidationResult {
   const result: ValidationResult = {
     passed: true,
@@ -174,9 +174,8 @@ export function validateBanners(
 
     // Handle directory exclusions (e.g., "guides/")
     if (exclusion.path.endsWith("/")) {
-      const dirPath = join(docsRoot, exclusion.path);
       // Check if any file in directory has banner
-      const dirBannerCheck = allCanonicalBanners.some((banner) => {
+      const dirBannerCheck = allCanonicalBanners.some((_banner) => {
         // This is a simplified check; full implementation would glob the directory
         return false; // Directory check handled separately
       });

@@ -469,8 +469,17 @@ export async function runWithPiSdk(opts: PiRunOptions): Promise<PiRunResult> {
       authStorage,
       model,
       thinkingLevel: "medium",
-      tools,
-      customTools: opts.customTools,
+      // Pass tool names as strings — createAgentSession expects string[] for its allowlist
+      // filter against built-in tools (read, bash, edit, write, etc.). Passing AgentTool
+      // objects here caused tool lookup to fail for non-Anthropic models (the Set.has check
+      // compares strings against objects). Guardrail-wrapped tools are passed as customTools.
+      tools: tools.map((t) => t.name),
+      customTools: [
+        ...(opts.customTools ?? []),
+        // If guardrails are configured, include the wrapped tools as customTools so they
+        // override the built-ins and apply guardrail checks.
+        ...(opts.guardrailConfig ? (tools as unknown as ToolDefinition[]) : []),
+      ],
       resourceLoader,
       sessionManager: SessionManager.inMemory(),
       settingsManager: SettingsManager.create(opts.cwd, agentDir),

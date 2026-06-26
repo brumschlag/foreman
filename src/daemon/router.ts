@@ -18,6 +18,7 @@ import type { inferRouterContext } from "@trpc/server";
 import { z } from "zod";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { PostgresAdapter } from "../lib/db/postgres-adapter.js";
+import { query as dbQuery } from "../lib/db/pool-manager.js";
 import {
   GhCli,
   GhNotInstalledError,
@@ -28,6 +29,7 @@ import { ProjectRegistry } from "../lib/project-registry.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getPrState, type PrState } from "../lib/pr-state.js";
+import { eventBroadcaster, type EventBroadcaster } from "./event-broadcaster.js";
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -43,6 +45,8 @@ export interface Context {
   registry: ProjectRegistry;
   /** Current project ID (from X-Project-Id header or FOREMAN_PROJECT_ID env var). */
   projectId?: string;
+  /** Event broadcaster — passed to recordPipelineEvent for SSE push. */
+  broadcaster: EventBroadcaster;
 }
 export async function createContext({
   req,
@@ -61,6 +65,7 @@ export async function createContext({
     registry,
     // Pre-extract projectId from headers for convenience
     projectId: req.headers?.["x-project-id"] as string | undefined,
+    broadcaster: eventBroadcaster,
   };
 }
 export type ContextFn = typeof createContext;
@@ -622,7 +627,7 @@ const runsRouter = t.router({
         taskId: input.taskId,
         eventType: input.eventType,
         payload: input.payload,
-      });
+      }, ctx.broadcaster);
     }),
 
   /**
@@ -1292,6 +1297,23 @@ const projectsRouter = t.router({
       const pendingRuns = activeRuns.filter((run) => run.status === "pending");
       const runningRuns = activeRuns.filter((run) => run.status === "running");
 
+      // 24h cost + success rate from runs table
+      const costRows = await dbQuery<{ cost_usd: string; status: string }>(
+        `SELECT
+           COALESCE((progress->>'costUsd')::float, 0) AS cost_usd,
+           status
+         FROM runs
+         WHERE project_id = $1
+           AND finished_at > NOW() - INTERVAL '24 hours'
+           AND status IN ('success', 'failure')`,
+        [input.projectId]
+      );
+      const totalRuns24h = costRows.length;
+      const successRuns24h = costRows.filter((r) => r.status === "success").length;
+      const costUsd24h = costRows.reduce((sum, r) => sum + parseFloat(r.cost_usd ?? "0"), 0);
+      const successRate24h = totalRuns24h > 0 ? (successRuns24h / totalRuns24h) * 100 : 0;
+      const avgCostPerRun = totalRuns24h > 0 ? costUsd24h / totalRuns24h : 0;
+
       return {
         tasks: {
           backlog: backlog.length,
@@ -1306,6 +1328,9 @@ const projectsRouter = t.router({
           active: runningRuns.length,
           pending: pendingRuns.length,
         },
+        successRate24h,
+        costUsd24h,
+        avgCostPerRun,
       };
     }),
 

@@ -88,6 +88,8 @@ See [Elixir Backend Architecture](./docs/guides/elixir-backend-architecture.md) 
 
 TDD is now opt-in via `foreman run --workflow tdd`, a `workflow:tdd` label, or task type `tdd`. The `tdd` workflow inserts `test-red` and `test-review` between Explorer and Developer; Test Red is capped to small focused tests and Test Review retries it once. Default `default`/`feature`/`bug` workflows use the faster implementation-first path to produce working code in fewer cycles. QA retries Developer up to 3x; Finalize can retry Developer up to 6x. Retry budgets are charged to the failing/source phase, not to the Developer target, so Developer can run once initially plus source-phase retries. Before retrying any target phase, Foreman writes normalized input such as `DEVELOPER_TASK.md` or `QA_TASK.md` in the report dir with the source phase, source artifact, failure, retry attempt, and feedback content. Before QA, Foreman validates Developer's report/diff evidence, claimed files, required docs/tests (or explicit no-docs-needed self-check evidence), and runs `npx tsc --noEmit` when TS/JS changed; failures loop back to Developer before spending QA. Runtime preflight flags stale project/global prompt overrides that are missing required acceptance-contract markers. Phase reports are preserved as `REPORT.attempt-N.md` plus a `RETRY_ATTEMPTS.md` summary while the canonical report remains the latest attempt. If QA or Review still fails after its retry budget, the pipeline stops instead of proceeding to finalize with invalid/no changes. Documentation runs after final validation/finalization and before PR creation so fixes/features do not open PRs without an explicit documentation decision. Task-worker merge phases merge only their own queued PR/branch; broader queue draining remains an operator/dispatcher action. `maxTurns` remains an emergency fuse; phase overwatch/tool telemetry now provides targeted steering for prompt-backed phases rather than only Explorer/QA.
 
+The `milestone` task type is detected at dispatch and routed to a dedicated milestone pipeline (acceptance/quality-gate phases) instead of the standard single-agent path; the `milestone.yaml` workflow is delivered separately (TRD-2026-016 / TRD-004).
+
 ## Dispatch Flow
 
 The following legacy diagram shows the full Node-backed lifecycle from `FOREMAN_BACKEND=node foreman run` to merged branch (daemon shown in legacy mode):
@@ -262,7 +264,7 @@ npm install -g @oftheangels/foreman
 ### curl (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ldangelo/foreman/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ldangelo/foreman/main/install.sh | bash
 ```
 
 ## Development with Devbox + Docker
@@ -993,7 +995,7 @@ foreman/
 │   │   ├── router.ts               # tRPC procedures (projects, tasks, runs, mail)
 │   │   └── webhook-handler.ts      # GitHub webhook receiver
 │   ├── orchestrator/               # Core orchestration engine
-│   │   ├── dispatcher.ts           # Task → agent spawning strategies
+│   │   ├── dispatcher.ts           # Task → agent spawning strategies (includes milestone detection, TRD-2026-016)
 │   │   ├── pi-rpc-spawn-strategy.ts  # Pi RPC spawn (primary)
 │   │   ├── agent-worker.ts         # Claude SDK pipeline (fallback)
 │   │   ├── refinery.ts             # Merge + test + cleanup

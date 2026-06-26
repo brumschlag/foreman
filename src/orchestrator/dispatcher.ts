@@ -23,6 +23,12 @@ import { resolveWorkflowType } from "../lib/workflow-config-loader.js";
 import { loadWorkflowConfig, resolveWorkflowName, type WorkflowConfig, type WorkflowPhaseConfig } from "../lib/workflow-loader.js";
 import { getPoolConfig } from "../lib/db/pool-manager.js";
 import type { EpicTask } from "./pipeline-executor.js";
+import { getNativeEpicTaskOrder, getTaskOrder, type TaskOrderingClient } from "./task-ordering.js";
+import {
+  buildDispatchSeedPlan,
+  collapseReadyStoryChildren,
+  resolveNativeStoryParent,
+} from "./dispatch-planning.js";
 import { loadProjectConfig, resolveVcsConfig } from "../lib/project-config.js";
 import { getWorkspacePath } from "../lib/workspace-paths.js";
 import { VcsBackendFactory } from "../lib/vcs/index.js";
@@ -69,6 +75,10 @@ interface NativeTaskOps {
   updateTaskLabels?(taskId: string, labels: string[]): Promise<void>;
   /** Get child task IDs for a given parent task (inverse of Beads' children field). */
   getChildren?(taskId: string): Promise<string[]>;
+  /** Parent task id via parent-child edge, if any. */
+  getParentTaskId?(taskId: string): Promise<string | null>;
+  /** Blocker task ids via blocks edges. */
+  getBlockingDependencies?(taskId: string): Promise<string[]>;
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -188,6 +198,94 @@ export class Dispatcher {
     for (const method of requiredMethods) {
       this.requireRegisteredRunOp(method);
     }
+  }
+
+  private storyParentLookup(): {
+    getTaskById: (id: string) => Promise<NativeTask | null>;
+    show?: (id: string) => Promise<Record<string, unknown>>;
+  } {
+    return {
+      getTaskById: async (id: string) => {
+        if (this.overrides?.nativeTaskOps) {
+          return this.overrides.nativeTaskOps.getTaskById(id);
+        }
+        return this.store.getTaskById(id);
+      },
+      show: async (id: string) => {
+        const detail = await this.seeds.show(id);
+        return detail as Record<string, unknown>;
+      },
+    };
+  }
+
+  private async prepareEpicTasks(seed: Issue): Promise<
+    | { action: "none" }
+    | { action: "skip"; reason: string }
+    | { action: "dispatch"; epicTasks: EpicTask[] }
+  > {
+    if (seed.type !== "epic") {
+      return { action: "none" };
+    }
+
+    let childCount = 0;
+    if (this.overrides?.nativeTaskOps?.getChildren) {
+      childCount = (await this.overrides.nativeTaskOps.getChildren(seed.id)).length;
+    } else {
+      try {
+        const detail = await this.seeds.show(seed.id) as { children?: string[] };
+        childCount = detail.children?.length ?? 0;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { action: "skip", reason: `Epic dispatch failed: ${msg}` };
+      }
+    }
+
+    if (childCount === 0) {
+      try {
+        await this.seeds.close(seed.id, "Auto-closed: no children (empty epic)");
+      } catch {
+        // Non-fatal
+      }
+      return { action: "skip", reason: "Type 'epic' auto-closed — no children" };
+    }
+
+    let epicTasks: EpicTask[] = [];
+    const nativeOps = this.overrides?.nativeTaskOps;
+    if (nativeOps?.getChildren && nativeOps.getTaskById) {
+      epicTasks = await getNativeEpicTaskOrder(
+        seed.id,
+        {
+          getChildren: (parentId) => nativeOps.getChildren!(parentId),
+          getTask: async (taskId) => {
+            const task = await nativeOps.getTaskById!(taskId);
+            if (!task) return null;
+            return {
+              id: task.id,
+              title: task.title,
+              type: task.type,
+              priority: task.priority,
+              description: task.description,
+            };
+          },
+          getBlockingDependencies: (taskId) =>
+            nativeOps.getBlockingDependencies?.(taskId) ?? Promise.resolve([]),
+        },
+        this.projectPath,
+      );
+    } else {
+      epicTasks = await getTaskOrder(seed.id, this.seeds as unknown as TaskOrderingClient, this.projectPath);
+    }
+
+    if (epicTasks.length === 0) {
+      try {
+        await this.seeds.close(seed.id, "Auto-closed: no actionable child tasks");
+      } catch {
+        // Non-fatal
+      }
+      return { action: "skip", reason: "Type 'epic' auto-closed — no actionable child tasks" };
+    }
+
+    return { action: "dispatch", epicTasks };
   }
 
   private async createRunRecord(
@@ -445,7 +543,21 @@ export class Dispatcher {
     const nativeTasks = this.overrides?.nativeTaskOps
       ? await this.overrides.nativeTaskOps.getReadyTasks()
       : await this.store.getReadyTasks();
-    let readySeeds: Issue[] = nativeTasks.map(nativeTaskToIssue);
+    let readySeeds: Issue[] = await Promise.all(
+      nativeTasks.map(async (task) => {
+        const issue = nativeTaskToIssue(task);
+        if (!issue.parent) {
+          const parentId = task.parent
+            ?? (this.overrides?.nativeTaskOps?.getParentTaskId
+              ? await this.overrides.nativeTaskOps.getParentTaskId(task.id)
+              : null);
+          if (parentId) {
+            issue.parent = parentId;
+          }
+        }
+        return issue;
+      }),
+    );
 
     // Sort ready seeds using bv triage scores when available, falling back to priority sort.
     if (!opts?.seedId) {
@@ -542,6 +654,10 @@ export class Dispatcher {
       readySeeds = [target];
     }
 
+    if (!opts?.seedId) {
+      readySeeds = await collapseReadyStoryChildren(readySeeds, this.storyParentLookup());
+    }
+
     const dispatched: DispatchedTask[] = [];
     const skipped: SkippedTask[] = [];
 
@@ -582,87 +698,151 @@ export class Dispatcher {
         ? await this.overrides.getActiveSeedIds()
         : activeRuns.map((r) => r.seed_id),
     );
+    const activeWorktreePaths = new Set(
+      activeRuns
+        .map((r) => r.worktree_path)
+        .filter((path): path is string => Boolean(path)),
+    );
 
     // Also skip seeds that have a completed-but-unmerged run (prevent duplicate runs)
     const completedRuns = await this.getRunsByStatusRecord("completed", projectId);
     const completedSeedIds = new Set(completedRuns.map((r) => r.seed_id));
+    const completedWorktreePaths = new Set(
+      completedRuns
+        .map((r) => r.worktree_path)
+        .filter((path): path is string => Boolean(path)),
+    );
+    const scheduledWorktreePaths = new Set<string>();
 
     for (const seed of readySeeds) {
-      if (await this.hasMergedOutcomeWithoutLaterReset(seed.id, projectId)) {
+      const groupedTasks = (seed as unknown as Record<string, unknown>).__epicTasks as EpicTask[] | undefined;
+      const dispatchPlan = await buildDispatchSeedPlan(seed, {
+        groupedTasks,
+        resolveStoryParent: this.overrides?.nativeTaskOps?.getParentTaskId
+          ? (taskId) => resolveNativeStoryParent(taskId, {
+              getParentTaskId: (id) => this.overrides!.nativeTaskOps!.getParentTaskId!(id),
+              getTaskById: (id) => this.overrides!.nativeTaskOps!.getTaskById(id),
+            })
+          : undefined,
+      });
+      const dispatchSeed = dispatchPlan.seed;
+      const worktreeSeedId = dispatchPlan.worktreeSeedId;
+      const plannedWorktreePath = getWorkspacePath(this.projectPath, worktreeSeedId);
+
+      if (await this.hasMergedOutcomeWithoutLaterReset(dispatchSeed.id, projectId)) {
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: dispatchSeed.id,
+          title: dispatchSeed.title,
           reason: "Latest authoritative run already merged — explicit reset/retry required",
         });
         continue;
       }
 
-      if (activeSeedIds.has(seed.id)) {
+      if (scheduledWorktreePaths.has(plannedWorktreePath)) {
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
-          reason: "Already has an active run",
+          seedId: dispatchSeed.id,
+          title: dispatchSeed.title,
+          reason: dispatchPlan.groupingParentId
+            ? `Story ${dispatchPlan.groupingParentId} already scheduled in this dispatch cycle`
+            : "Already scheduled in this dispatch cycle",
         });
         continue;
       }
 
-      if (completedSeedIds.has(seed.id)) {
+      if (activeSeedIds.has(dispatchSeed.id) || activeWorktreePaths.has(plannedWorktreePath)) {
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: dispatchSeed.id,
+          title: dispatchSeed.title,
+          reason: dispatchPlan.groupingParentId
+            ? `Story ${dispatchPlan.groupingParentId} already has an active worktree`
+            : "Already has an active run",
+        });
+        continue;
+      }
+
+      if (completedSeedIds.has(dispatchSeed.id) || completedWorktreePaths.has(plannedWorktreePath)) {
+        skipped.push({
+          seedId: dispatchSeed.id,
+          title: dispatchSeed.title,
           reason: "Has completed run awaiting merge — run 'foreman merge' or wait for auto-merge",
         });
         continue;
       }
 
-      // ── Epic beads: dispatch through epic pipeline ─────────────────────────
-      // Epic beads are dispatched as a single epic runner that executes all
-      // child tasks sequentially within one worktree. Native task store does not
-      // have children support, so epics dispatch as single-agent tasks.
-      if (seed.type === "epic") {
-        log(`[dispatch] Epic ${seed.id} — dispatching as single-agent task`);
-        // Fall through to regular dispatch so the epic's phases
-        // (developer → qa → finalize) run as a single worktree.
+      const epicPrep = await this.prepareEpicTasks(dispatchSeed);
+      if (epicPrep.action === "skip") {
+        skipped.push({
+          seedId: dispatchSeed.id,
+          title: dispatchSeed.title,
+          reason: epicPrep.reason,
+        });
+        continue;
+      }
+
+      let epicTasksForSeed = groupedTasks ?? dispatchPlan.groupedTasks;
+      let epicIdForSeed: string | undefined;
+      if (epicPrep.action === "dispatch") {
+        epicTasksForSeed = epicPrep.epicTasks;
+        epicIdForSeed = dispatchSeed.id;
+        (dispatchSeed as unknown as Record<string, unknown>).__epicTasks = epicPrep.epicTasks;
+        log(`[dispatch] Epic ${dispatchSeed.id} has ${epicPrep.epicTasks.length} ordered tasks — dispatching epic runner`);
+      } else if (dispatchPlan.groupedTasks && dispatchSeed.type === "story") {
+        epicTasksForSeed = dispatchPlan.groupedTasks;
+        epicIdForSeed = dispatchSeed.id;
+        (dispatchSeed as unknown as Record<string, unknown>).__epicTasks = dispatchPlan.groupedTasks;
+      }
+
+      // Use dispatchSeed for the remainder of this iteration
+      const seedForDispatch = dispatchSeed;
+
+      // ── Milestone beads: route to milestone pipeline ──────────────────────
+      // Milestone tasks are first-class task types that group epics and run
+      // acceptance + mutation + quality-gate phases. They must NOT run the
+      // standard single-agent pipeline. See TRD-2026-016 / TRD-001.
+      // The actual `milestone.yaml` workflow is delivered in TRD-004; for now
+      // `spawnMilestonePipeline()` is a routing stub.
+      if (seedForDispatch.type === "milestone") {
+        log(`[dispatch] Milestone ${seedForDispatch.id} — routing to milestone pipeline`);
+        // Fall through to the standard dispatch path; the agent-spawn step
+        // below branches to `spawnMilestonePipeline()` instead of `spawnAgent()`
+        // when it sees the milestone type. The `isMilestone` flag is read in
+        // the spawn branch and is the single source of truth for routing.
       }
 
       // Skip seeds that are in cooldown state after a retryable failure.
       // Cooldown is checked BEFORE stuck backoff because a task in cooldown
       // should not be subject to stuck backoff — it has a specific wait period
       // defined by the cooldown_until timestamp on the run record.
-      const cooldownResult = await this.checkCooldownState(seed.id, projectId);
+      const cooldownResult = await this.checkCooldownState(seedForDispatch.id, projectId);
       if (cooldownResult.inCooldown) {
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           reason: cooldownResult.reason ?? "In cooldown period after retryable failure",
         });
         continue;
       }
 
-      // Skip seeds that are in exponential backoff after recent stuck runs
-      const backoffResult = await this.checkStuckBackoff(seed.id, projectId);
+      const backoffResult = await this.checkStuckBackoff(seedForDispatch.id, projectId);
       if (backoffResult.inBackoff) {
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           reason: backoffResult.reason ?? "In backoff period after recent stuck runs",
         });
         continue;
       }
 
-      // ── Per-state concurrency limit check (Backlog-006) ─────────────────────
-      // Check if this seed's target state has hit its per-state concurrency limit.
-      // States not in byState are unlimited (only constrained by global available).
       if (concurrencyConfig?.byState) {
-        const stateLimit = concurrencyConfig.byState[seed.status];
+        const stateLimit = concurrencyConfig.byState[seedForDispatch.status];
         if (stateLimit != null && stateLimit > 0) {
-          const activeCount = activeRunsByState.get(seed.status) ?? 0;
-          const pendingCount = statePendingCount[seed.status] ?? 0;
+          const activeCount = activeRunsByState.get(seedForDispatch.status) ?? 0;
+          const pendingCount = statePendingCount[seedForDispatch.status] ?? 0;
           if (activeCount + pendingCount >= stateLimit) {
             skipped.push({
-              seedId: seed.id,
-              title: seed.title,
-              reason: `State '${seed.status}' concurrency limit reached (${stateLimit} active + pending)`,
+              seedId: seedForDispatch.id,
+              title: seedForDispatch.title,
+              reason: `State '${seedForDispatch.status}' concurrency limit reached (${stateLimit} active + pending)`,
             });
             continue;
           }
@@ -671,34 +851,32 @@ export class Dispatcher {
 
       if (dispatched.length >= available) {
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           reason: `Agent limit reached (${effectiveMaxAgents})`,
         });
         continue;
       }
 
-      // Track this pending dispatch for per-state limit accounting
-      if (concurrencyConfig?.byState?.[seed.status] != null) {
-        statePendingCount[seed.status] = (statePendingCount[seed.status] ?? 0) + 1;
+      if (concurrencyConfig?.byState?.[seedForDispatch.status] != null) {
+        statePendingCount[seedForDispatch.status] = (statePendingCount[seedForDispatch.status] ?? 0) + 1;
       }
 
-      // Fetch full issue details (description, labels) for agent context
-      // Native-only: uses nativeTaskOps.getTaskById() or store.getTaskById()
+      scheduledWorktreePaths.add(plannedWorktreePath);
+
       let seedDetail: { description?: string | null; notes?: string | null; labels?: string[] } | undefined;
       try {
         if (this.overrides?.nativeTaskOps) {
-          const nativeTask = await this.overrides.nativeTaskOps.getTaskById(seed.id);
+          const nativeTask = await this.overrides.nativeTaskOps.getTaskById(seedForDispatch.id);
           if (nativeTask) {
             seedDetail = {
               description: nativeTask.description,
-              notes: null, // Native tasks do not support notes
+              notes: null,
               labels: nativeTask.labels ?? undefined,
             };
           }
         } else {
-          // Non-native mode: use store.getTaskById() as primary, not this.seeds
-          const storeTask = await this.store.getTaskById(seed.id);
+          const storeTask = await this.store.getTaskById(seedForDispatch.id);
           if (storeTask) {
             seedDetail = {
               description: storeTask.description,
@@ -708,20 +886,15 @@ export class Dispatcher {
           }
         }
       } catch {
-        // Non-fatal: if fetch fails, proceed without detail context
-        log(`Warning: failed to fetch details for seed ${seed.id}`);
+        log(`Warning: failed to fetch details for seed ${seedForDispatch.id}`);
       }
 
-      // Fetch task comments (design notes, reviewer feedback, etc.) for agent context.
-      // NativeTaskClient implements comments() via task_notes table when using postgres backend.
-      // Non-native/legacy mode may return null if the backend doesn't support comments.
-      // This is non-fatal — dispatch proceeds even if comment fetch fails.
       let beadComments: string | null = null;
       try {
-        beadComments = await this.seeds.comments?.(seed.id) ?? null;
+        beadComments = await this.seeds.comments?.(seedForDispatch.id) ?? null;
       } catch (commentErr: unknown) {
         const msg = commentErr instanceof Error ? commentErr.message : String(commentErr);
-        log(`Warning: failed to fetch comments for ${seed.id}: ${msg}`);
+        log(`Warning: failed to fetch comments for ${seedForDispatch.id}: ${msg}`);
       }
 
       // ── Branch label auto-labeling ─────────────────────────────────────────
@@ -734,7 +907,7 @@ export class Dispatcher {
       //
       // Only applied when the bead doesn't already have a branch: label.
       if (currentBranch && defaultBranch) {
-        const existingLabels: string[] = seedDetail?.labels ?? seed.labels ?? [];
+        const existingLabels: string[] = seedDetail?.labels ?? seedForDispatch.labels ?? [];
         const existingBranchLabel = await resolveUsableBranchLabel(extractBranchLabel(existingLabels));
 
         if (!existingBranchLabel) {
@@ -744,14 +917,13 @@ export class Dispatcher {
 
           if (!isDefaultBranch(currentBranch, defaultBranch)) {
             labelBranch = currentBranch;
-          } else if (seed.parent) {
-            // Check parent's branch: label for inheritance via native store
+          } else if (seedForDispatch.parent) {
             try {
               const parentTask = this.overrides?.nativeTaskOps
-                ? await this.overrides.nativeTaskOps.getTaskByExternalId(seed.parent)
-                  ?? await this.overrides.nativeTaskOps.getTaskById(seed.parent)
-                : await this.store.getTaskByExternalId(seed.parent)
-                  ?? await this.store.getTaskById(seed.parent);
+                ? await this.overrides.nativeTaskOps.getTaskByExternalId(seedForDispatch.parent)
+                  ?? await this.overrides.nativeTaskOps.getTaskById(seedForDispatch.parent)
+                : await this.store.getTaskByExternalId(seedForDispatch.parent)
+                  ?? await this.store.getTaskById(seedForDispatch.parent);
               if (parentTask) {
                 const parentBranchLabel = await resolveUsableBranchLabel(extractBranchLabel(parentTask.labels ?? []));
                 if (parentBranchLabel && !isDefaultBranch(parentBranchLabel, defaultBranch)) {
@@ -768,11 +940,11 @@ export class Dispatcher {
             try {
               // Update labels via native store
               if (this.overrides?.nativeTaskOps?.updateTaskLabels) {
-                await this.overrides.nativeTaskOps.updateTaskLabels(seed.id, updatedLabels);
+                await this.overrides.nativeTaskOps.updateTaskLabels(seedForDispatch.id, updatedLabels);
               } else if (this.store.updateTaskLabels) {
-                await this.store.updateTaskLabels(seed.id, updatedLabels);
+                await this.store.updateTaskLabels(seedForDispatch.id, updatedLabels);
               }
-              log(`[foreman] Auto-labeled ${seed.id} with branch:${labelBranch}`);
+              log(`[foreman] Auto-labeled ${seedForDispatch.id} with branch:${labelBranch}`);
               // Update seedDetail.labels so seedToInfo() sees the updated labels
               if (seedDetail) {
                 seedDetail = { ...seedDetail, labels: updatedLabels };
@@ -782,13 +954,13 @@ export class Dispatcher {
             } catch (labelErr: unknown) {
               // Non-fatal: label failure must not block dispatch
               const msg = labelErr instanceof Error ? labelErr.message : String(labelErr);
-              log(`Warning: failed to add branch label to ${seed.id}: ${msg}`);
+              log(`Warning: failed to add branch label to ${seedForDispatch.id}: ${msg}`);
             }
           }
         }
       }
 
-      const seedInfo = seedToInfo(seed, seedDetail, beadComments);
+      const seedInfo = seedToInfo(seedForDispatch, seedDetail, beadComments);
       const runtime: RuntimeSelection = "claude-code";
       // Pipeline model is now resolved per-phase from the workflow YAML + bead priority.
       // Use opts.model if provided (e.g. --model flag), otherwise fall back to the
@@ -798,13 +970,13 @@ export class Dispatcher {
 
       if (opts?.dryRun) {
         dispatched.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           runtime,
           model,
-          worktreePath: getWorkspacePath(this.projectPath, seed.id),
+          worktreePath: plannedWorktreePath,
           runId: "(dry-run)",
-          branchName: `foreman/${seed.id}`,
+          branchName: `foreman/${worktreeSeedId}`,
         });
         continue;
       }
@@ -816,29 +988,28 @@ export class Dispatcher {
         // run for this seed between our getActiveRuns() call and now.  This
         // just-in-time check prevents duplicate runs in that race window.
         const hasCompetingRun = this.overrides?.hasActiveOrPendingRun
-          ? await this.overrides.hasActiveOrPendingRun(seed.id)
-          : this.store.hasActiveOrPendingRun(seed.id, projectId);
+          ? await this.overrides.hasActiveOrPendingRun(seedForDispatch.id)
+          : this.store.hasActiveOrPendingRun(seedForDispatch.id, projectId);
         if (hasCompetingRun) {
           skipped.push({
-            seedId: seed.id,
-            title: seed.title,
+            seedId: seedForDispatch.id,
+            title: seedForDispatch.title,
             reason: "Another run was created concurrently (race guard)",
           });
           continue;
         }
-        const attemptNumber = (await this.getRunsForSeedRecord(seed.id, projectId)).length + 1;
-        if (await this.hasMergedOutcomeWithoutLaterReset(seed.id, projectId)) {
+        const attemptNumber = (await this.getRunsForSeedRecord(seedForDispatch.id, projectId)).length + 1;
+        if (await this.hasMergedOutcomeWithoutLaterReset(seedForDispatch.id, projectId)) {
           skipped.push({
-            seedId: seed.id,
-            title: seed.title,
+            seedId: seedForDispatch.id,
+            title: seedForDispatch.title,
             reason: "Another run merged before dispatch could create a new run (merged guard)",
           });
           continue;
         }
 
-        // 1. Resolve base branch (may stack on a dependency branch)
         const baseBranch = await resolveBaseBranch(
-          seed.id,
+          seedForDispatch.id,
           this.projectPath,
           {
             getRunsForSeed: (seedId: string) => this.overrides?.getRunsForSeed
@@ -848,7 +1019,7 @@ export class Dispatcher {
           branchBackend,
         );
         if (baseBranch) {
-          log(`[foreman] Stacking ${seed.id} on ${baseBranch}`);
+          log(`[foreman] Stacking ${seedForDispatch.id} on ${baseBranch}`);
         }
 
         // 1a. Load project config and resolve workflow name.
@@ -912,7 +1083,7 @@ export class Dispatcher {
         const dispatcherPhases = configuredDispatcherPhases.length > 0 ? configuredDispatcherPhases : defaultDispatcherPhases;
         let workspaceContext: WorkspaceActionContext = {
           projectId,
-          seedId: seed.id,
+          seedId: worktreeSeedId,
           repoPath: this.projectPath,
           baseBranch,
           defaultBranch,
@@ -927,11 +1098,11 @@ export class Dispatcher {
         };
         for (const phase of dispatcherPhases) {
           const actionType = inferPhaseActionType(phase);
-          log(`[foreman] Workspace action ${actionType} for ${seed.id}`);
+          log(`[foreman] Workspace action ${actionType} for ${seedForDispatch.id}`);
           workspaceContext = await runWorkspaceAction(actionType, workspaceContext, phaseActionCapabilities(actionType, phase.capabilities));
         }
         if (!workspaceContext.worktreePath || !workspaceContext.branchName) {
-          throw new Error(`Workspace actions did not produce worktree metadata for ${seed.id}`);
+          throw new Error(`Workspace actions did not produce worktree metadata for ${seedForDispatch.id}`);
         }
         const worktreePath = workspaceContext.worktreePath;
         const branchName = workspaceContext.branchName;
@@ -940,17 +1111,16 @@ export class Dispatcher {
         // TRD-007: pass merge_strategy from workflow config
         const run = await this.createRunRecord(
           projectId,
-          seed.id,
+          seedForDispatch.id,
           model,
           worktreePath,
           branchName,
           { baseBranch: baseBranch ?? null, mergeStrategy: workflowMerge },
         );
 
-        // 5. Log dispatch event
         await this.logEventRecord(projectId, "dispatch", {
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           model,
           worktreePath,
           branchName,
@@ -959,8 +1129,8 @@ export class Dispatcher {
         // 5a. Send worktree-created mail so inbox shows worktree lifecycle event
         try {
           await this.sendMailRecord(run.id, "foreman", "foreman", "worktree-created", JSON.stringify({
-            seedId: seed.id,
-            title: seed.title,
+            seedId: seedForDispatch.id,
+            title: seedForDispatch.title,
             worktreePath,
             branchName,
             model,
@@ -974,16 +1144,14 @@ export class Dispatcher {
         // Atomic claim: UPDATE tasks SET status='in-progress', run_id=? WHERE id=? AND status='ready'
         // Native-only: use nativeTaskOps.claimTask() — never use legacy beads claim
         const claimed = this.overrides?.nativeTaskOps
-          ? await this.overrides.nativeTaskOps.claimTask(seed.id, run.id)
+          ? await this.overrides.nativeTaskOps.claimTask(seedForDispatch.id, run.id)
           : typeof this.store.claimTask === "function"
-            ? this.store.claimTask(seed.id, run.id)
+            ? this.store.claimTask(seedForDispatch.id, run.id)
             : false;
         if (!claimed) {
-          // Another dispatcher instance claimed this task between our getReadyTasks() query
-          // and now — skip it and clean up the run we just created.
           skipped.push({
-            seedId: seed.id,
-            title: seed.title,
+            seedId: seedForDispatch.id,
+            title: seedForDispatch.title,
             reason: "Already claimed by another dispatcher (atomic claim failed)",
           });
           // Best-effort cleanup: mark run as failed so it doesn't appear as active
@@ -998,8 +1166,8 @@ export class Dispatcher {
         // 6a. Send bead-claimed mail so inbox shows bead lifecycle event
         try {
           await this.sendMailRecord(run.id, "foreman", "foreman", "bead-claimed", JSON.stringify({
-            seedId: seed.id,
-            title: seed.title,
+            seedId: seedForDispatch.id,
+            title: seedForDispatch.title,
             model,
             runId: run.id,
             timestamp: new Date().toISOString(),
@@ -1008,18 +1176,11 @@ export class Dispatcher {
           // Non-fatal — mail is optional infrastructure
         }
 
-        // 7. Spawn the coding agent
-        // Extract epic context if this seed was marked as an epic dispatch
-        const epicTasksForSeed = (seed as unknown as Record<string, unknown>).__epicTasks as EpicTask[] | undefined;
-        const epicIdForSeed = epicTasksForSeed ? seed.id : undefined;
-
-        // Run beforeRun hook (before agent launch)
-        // Failures are fatal — block agent spawn
         if (projectHooks?.beforeRun) {
           const hookEnv: Record<string, string> = {
             FOREMAN_WORKSPACE_PATH: worktreePath,
-            FOREMAN_ISSUE_ID: seed.id,
-            FOREMAN_ISSUE_IDENTIFIER: seed.id,
+            FOREMAN_ISSUE_ID: seedForDispatch.id,
+            FOREMAN_ISSUE_IDENTIFIER: seedForDispatch.id,
             FOREMAN_ATTEMPT: String(attemptNumber),
           };
           try {
@@ -1029,34 +1190,58 @@ export class Dispatcher {
             const now = new Date().toISOString();
             await this.updateRunRecord(run.id, { status: "failed", completed_at: now });
             try {
-              await this.updateNativeTaskStatus(seed.id, "failed");
+              await this.updateNativeTaskStatus(seedForDispatch.id, "failed");
             } catch (taskErr: unknown) {
               const taskMsg = taskErr instanceof Error ? taskErr.message : String(taskErr);
-              log(`[foreman] Could not mark ${seed.id} failed after beforeRun hook failure — ${taskMsg.slice(0, 200)}`);
+              log(`[foreman] Could not mark ${seedForDispatch.id} failed after beforeRun hook failure — ${taskMsg.slice(0, 200)}`);
             }
-            throw new Error(`beforeRun hook failed for ${seed.id}: ${hookMsg}`);
+            throw new Error(`beforeRun hook failed for ${seedForDispatch.id}: ${hookMsg}`);
           }
         }
 
-        const { sessionKey } = await this.spawnAgent(
-          model,
-          worktreePath,
-          seedInfo,
-          run.id,
-          opts?.telemetry,
-          {
-            pipeline: opts?.pipeline,
-            workflowName: resolvedWorkflow,
-          },
-          opts?.notifyUrl,
-          vcsBackend,
-          opts?.runtimeMode,
-          opts?.targetBranch,
-          epicTasksForSeed,
-          epicIdForSeed,
-          projectHooks,
-          attemptNumber,
-        );
+        // TRD-2026-016 / TRD-001: route milestone-typed seeds to the dedicated
+        // milestone pipeline stub. The standard `spawnAgent()` path is for
+        // leaf tasks; milestones drive a different workflow (acceptance-check
+        // → mutation-test → quality-gate-final → milestone-summary) that is
+        // delivered as `milestone.yaml` in TRD-004.
+        const isMilestone = seed.type === "milestone";
+        const { sessionKey } = isMilestone
+          ? await this.spawnMilestonePipeline(
+              model,
+              worktreePath,
+              seedInfo,
+              run.id,
+              opts?.telemetry,
+              {
+                pipeline: opts?.pipeline,
+                workflowName: resolvedWorkflow,
+              },
+              opts?.notifyUrl,
+              vcsBackend,
+              opts?.runtimeMode,
+              opts?.targetBranch,
+              projectHooks,
+              attemptNumber,
+            )
+          : await this.spawnAgent(
+              model,
+              worktreePath,
+              seedInfo,
+              run.id,
+              opts?.telemetry,
+              {
+                pipeline: opts?.pipeline,
+                workflowName: resolvedWorkflow,
+              },
+              opts?.notifyUrl,
+              vcsBackend,
+              opts?.runtimeMode,
+              opts?.targetBranch,
+              epicTasksForSeed,
+              epicIdForSeed,
+              projectHooks,
+              attemptNumber,
+            );
 
         // Update run with session key
         await this.updateRunRecord(run.id, {
@@ -1066,8 +1251,8 @@ export class Dispatcher {
         });
 
         dispatched.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           runtime,
           model,
           worktreePath,
@@ -1084,8 +1269,8 @@ export class Dispatcher {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         skipped.push({
-          seedId: seed.id,
-          title: seed.title,
+          seedId: seedForDispatch.id,
+          title: seedForDispatch.title,
           reason: `Dispatch failed: ${message}`,
         });
       }
@@ -1114,6 +1299,8 @@ export class Dispatcher {
     /** URL of the notification server (e.g. "http://127.0.0.1:PORT") */
     notifyUrl?: string;
     runtimeMode?: RuntimeMode;
+    /** Workflow override (`--workflow`) to preserve on the resumed worker. */
+    workflow?: string;
   }): Promise<DispatchResult> {
     const maxAgents = opts?.maxAgents ?? 5;
     const projectId = await this.resolveProjectId();
@@ -1202,16 +1389,41 @@ export class Dispatcher {
       // Native-only: use updateNativeTaskStatus which routes through nativeTaskOps
       await this.updateNativeTaskStatus(run.seed_id, "in-progress");
 
+      // Recover the seed's type/labels so the resumed worker resolves the SAME
+      // workflow it was originally dispatched with. Without this the worker
+      // re-resolves by a missing task type and runs the wrong pipeline.
+      let resumeSeed: SeedInfo = { id: run.seed_id, title: run.seed_id };
+      try {
+        const detail = await this.seeds.show(run.seed_id) as Partial<SeedInfo> & { labels?: string[] };
+        resumeSeed = {
+          id: run.seed_id,
+          title: detail.title ?? run.seed_id,
+          type: detail.type,
+          labels: detail.labels,
+          priority: detail.priority,
+        };
+      } catch {
+        // Best-effort: fall back to the id-only stub if the seed is unavailable.
+      }
+      const projectCfg = loadProjectConfig(this.projectPath);
+      const resumeWorkflow = resolveWorkflowName(
+        resumeSeed.type ?? "feature",
+        resumeSeed.labels,
+        projectCfg?.taskTypeWorkflowMap,
+        opts?.workflow,
+      );
+
       // Spawn the resumed agent
       const { sessionKey } = await this.resumeAgent(
         model,
         run.worktree_path,
-        { id: run.seed_id, title: run.seed_id },
+        resumeSeed,
         newRun.id,
         sessionId,
         opts?.telemetry,
         opts?.notifyUrl,
         opts?.runtimeMode,
+        resumeWorkflow,
       );
 
       await this.updateRunRecord(newRun.id, {
@@ -1382,6 +1594,43 @@ export class Dispatcher {
   }
 
   /**
+   * Spawn a milestone pipeline as a detached worker process.
+   *
+   * Milestone-typed tasks (TRD-2026-016 / TRD-001) are routed here instead
+   * of `spawnAgent()` so they can execute milestone-specific phases
+   * (acceptance-check → mutation-test → quality-gate-final → milestone-summary)
+   * defined by `workflows/milestone.yaml` (delivered in TRD-004).
+   *
+   * This method is intentionally a routing stub for TRD-001: it does NOT
+   * spawn a worker. It only logs and returns a synthetic session key so the
+   * dispatch loop can record the run and continue. The full milestone
+   * pipeline implementation lands in TRD-004 alongside `milestone.yaml`.
+   */
+  private async spawnMilestonePipeline(
+    _model: ModelSelection,
+    _worktreePath: string,
+    seed: SeedInfo,
+    runId: string,
+    _telemetry?: boolean,
+    _pipelineOpts?: {
+      pipeline?: boolean;
+      workflowName?: string;
+    },
+    _notifyUrl?: string,
+    _vcsBackend?: VcsBackend,
+    _runtimeMode?: RuntimeMode,
+    _targetBranch?: string,
+    _hooks?: import("../lib/project-config.js").ProjectHooksConfig,
+    _attemptNumber = 1,
+  ): Promise<{ sessionKey: string }> {
+    log(`[dispatch] spawnMilestonePipeline stub invoked for ${seed.id} (run=${runId}) — full implementation lands in TRD-004 (milestone.yaml).`);
+    // Return a synthetic session key so the dispatch loop can record the run.
+    // The shape mirrors `buildSdkSessionKey(model, runId, pid)` but with pid=0
+    // to signal that no real worker process was spawned.
+    return { sessionKey: `foreman:sdk:milestone-stub:${runId}:session-stub` };
+  }
+
+  /**
    * Spawn a coding agent as a detached worker process.
    *
    * Writes a WorkerConfig JSON file and spawns `agent-worker.ts` as a
@@ -1506,6 +1755,7 @@ export class Dispatcher {
     telemetry?: boolean,
     notifyUrl?: string,
     runtimeMode?: RuntimeMode,
+    workflowName?: string,
   ): Promise<{ sessionKey: string }> {
     const resumePrompt = this.buildResumePrompt(seed.id, seed.title);
 
@@ -1525,6 +1775,12 @@ export class Dispatcher {
       resume: sdkSessionId,
       taskId: seed.id,
       dbPath: join(this.projectPath, ".foreman", "foreman.db"),
+      // Preserve workflow + task type so the resumed worker loads the SAME
+      // workflow (not a type-fallback). Without these the override is lost.
+      workflowName,
+      seedType: resolveWorkflowType(seed.type ?? "feature", seed.labels),
+      seedLabels: seed.labels,
+      seedPriority: seed.priority,
     });
 
     const sessionKey = buildSdkSessionKey(model, runId, pid, sdkSessionId);

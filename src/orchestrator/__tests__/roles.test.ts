@@ -22,6 +22,7 @@ import {
   extractIssues,
 } from "../roles.js";
 import type { RoleConfig } from "../roles.js";
+import { getDefaultModel } from "../../lib/config.js";
 
 describe("ROLE_CONFIGS", () => {
   it("has configs for all sub-agent roles", () => {
@@ -32,11 +33,11 @@ describe("ROLE_CONFIGS", () => {
   });
 
   it("explorer uses MiniMax for cost efficiency", () => {
-    expect(ROLE_CONFIGS.explorer.model).toBe("minimax/MiniMax-M2.7");
+    expect(ROLE_CONFIGS.explorer.model).toBe(getDefaultModel());
   });
 
   it("developer uses MiniMax by default", () => {
-    expect(ROLE_CONFIGS.developer.model).toBe("minimax/MiniMax-M2.7");
+    expect(ROLE_CONFIGS.developer.model).toBe(getDefaultModel());
   });
 
   it("explorer produces EXPLORER_REPORT.md", () => {
@@ -424,6 +425,7 @@ describe("buildRoleConfigs — environment variable overrides", () => {
   // Capture the original env vars so we can restore them after each test
   const originalEnv: Record<string, string | undefined> = {};
   const ENV_VARS = [
+    "FOREMAN_DEFAULT_MODEL",
     "FOREMAN_EXPLORER_MODEL",
     "FOREMAN_DEVELOPER_MODEL",
     "FOREMAN_QA_MODEL",
@@ -453,26 +455,27 @@ describe("buildRoleConfigs — environment variable overrides", () => {
 
   it("uses hard-coded defaults when no env vars are set", () => {
     const configs = buildRoleConfigs();
-    expect(configs.explorer.model).toBe("minimax/MiniMax-M2.7");
-    expect(configs.developer.model).toBe("minimax/MiniMax-M2.7");
-    expect(configs.qa.model).toBe("minimax/MiniMax-M2.7");
-    expect(configs.reviewer.model).toBe("minimax/MiniMax-M2.7");
+    const defaultModel = getDefaultModel();
+    expect(configs.explorer.model).toBe(defaultModel);
+    expect(configs.developer.model).toBe(defaultModel);
+    expect(configs.qa.model).toBe(defaultModel);
+    expect(configs.reviewer.model).toBe(defaultModel);
   });
 
   it("overrides explorer model via FOREMAN_EXPLORER_MODEL", () => {
     process.env["FOREMAN_EXPLORER_MODEL"] = "anthropic/claude-sonnet-4-6";
     const configs = buildRoleConfigs();
     expect(configs.explorer.model).toBe("anthropic/claude-sonnet-4-6");
-    // Other phases should still use their defaults (MiniMax now)
-    expect(configs.developer.model).toBe("minimax/MiniMax-M2.7");
+    // Other phases should still use their defaults
+    expect(configs.developer.model).toBe(getDefaultModel());
   });
 
   it("overrides developer model via FOREMAN_DEVELOPER_MODEL", () => {
     process.env["FOREMAN_DEVELOPER_MODEL"] = "anthropic/claude-opus-4-6";
     const configs = buildRoleConfigs();
     expect(configs.developer.model).toBe("anthropic/claude-opus-4-6");
-    // Explorer should still use MiniMax default
-    expect(configs.explorer.model).toBe("minimax/MiniMax-M2.7");
+    // Explorer should still use default
+    expect(configs.explorer.model).toBe(getDefaultModel());
   });
 
   it("overrides qa model via FOREMAN_QA_MODEL", () => {
@@ -502,7 +505,7 @@ describe("buildRoleConfigs — environment variable overrides", () => {
   it("ignores empty string env var and falls back to default", () => {
     process.env["FOREMAN_EXPLORER_MODEL"] = "";
     const configs = buildRoleConfigs();
-    expect(configs.explorer.model).toBe("minimax/MiniMax-M2.7");
+    expect(configs.explorer.model).toBe(getDefaultModel());
   });
 
   it("throws for an invalid model value in an env var", () => {

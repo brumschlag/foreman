@@ -1239,6 +1239,9 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
 
   let completedCount = 0;
   let failedCount = 0;
+  let consecutiveTaskFailures = 0;
+  const epicMaxBudgetUsd = workflowConfig.epicMaxBudgetUsd ?? 50;
+  const maxConsecutiveEpicTaskFailures = workflowConfig.maxConsecutiveEpicTaskFailures ?? 3;
   const completedTaskIds: string[] = [];
 
   // ── Outer task loop ──────────────────────────────────────────────────
@@ -1293,6 +1296,7 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
 
     if (result.success) {
       completedCount++;
+      consecutiveTaskFailures = 0;
       completedTaskIds.push(task.seedId);
 
       // TRD-010: Close bug bead if QA passed after retry
@@ -1329,6 +1333,31 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
       await appendFile(logFile, `\n[EPIC] Task ${task.seedId} PASSED\n`);
     } else {
       failedCount++;
+      consecutiveTaskFailures++;
+
+      if (totalProgress.costUsd >= epicMaxBudgetUsd) {
+        const budgetMsg = `Epic budget exceeded: $${totalProgress.costUsd.toFixed(2)} >= $${epicMaxBudgetUsd.toFixed(2)}`;
+        ctx.log(`[EPIC] ${budgetMsg}`);
+        await appendFile(logFile, `\n[EPIC] ${budgetMsg}\n`);
+        await ctx.markStuck(
+          store, runId, config.projectId, seedId, config.seedTitle,
+          totalProgress, "epic-budget-exceeded", budgetMsg,
+          config.projectPath as string, ctx.notifyClient,
+        );
+        return;
+      }
+
+      if (consecutiveTaskFailures >= maxConsecutiveEpicTaskFailures) {
+        const streakMsg = `Epic halted after ${consecutiveTaskFailures} consecutive task failures`;
+        ctx.log(`[EPIC] ${streakMsg}`);
+        await appendFile(logFile, `\n[EPIC] ${streakMsg}\n`);
+        await ctx.markStuck(
+          store, runId, config.projectId, seedId, config.seedTitle,
+          totalProgress, "epic-consecutive-failures", streakMsg,
+          config.projectPath as string, ctx.notifyClient,
+        );
+        return;
+      }
 
       // TRD-010: Create bug bead on QA failure
       if (result.retriesExhausted && ctx.onTaskQaFailure && config.epicId) {
@@ -1612,8 +1641,13 @@ async function runPhaseSequence(
         phaseMeta,
       );
       const artifactPath = resolveArtifactPath(worktreePath, interpolatedSkip);
-      if (existsSync(artifactPath)) {
-        ctx.log(`[${phaseName.toUpperCase()}] Skipping — ${phase.skipIfArtifact} already exists at ${artifactPath}`);
+      // Also check the worktree root — agents sometimes write artifacts there
+      // instead of the run-specific reports dir (e.g. EXPLORER_REPORT.md).
+      const basename = interpolatedSkip.split("/").pop() ?? interpolatedSkip;
+      const worktreeRootPath = join(worktreePath, basename);
+      if (existsSync(artifactPath) || existsSync(worktreeRootPath)) {
+        const foundAt = existsSync(artifactPath) ? artifactPath : worktreeRootPath;
+        ctx.log(`[${phaseName.toUpperCase()}] Skipping — ${phase.skipIfArtifact} already exists at ${foundAt}`);
         await appendFile(logFile, `\n[PHASE: ${phaseName.toUpperCase()}] SKIPPED (artifact already present: ${artifactPath})\n`);
         phaseRecords.push({ name: phaseName, skipped: true });
         i++;
@@ -1696,7 +1730,10 @@ async function runPhaseSequence(
             }
           }
         }
-        const shouldRunFinalizeValidation = !qaValidatedTargetRef || !currentTargetRef || qaValidatedTargetRef !== currentTargetRef;
+        // Only run target-drift validation when QA actually passed and recorded a ref.
+        // If qaValidatedTargetRef is empty, QA never passed cleanly — skip drift check
+        // to avoid false-positive failures when finalize runs after QA verdict loops.
+        const shouldRunFinalizeValidation = !!qaValidatedTargetRef && !!currentTargetRef && qaValidatedTargetRef !== currentTargetRef;
         progress.currentTargetRef = currentTargetRef || undefined;
         await writeNormalPhaseProgress(store, runId, progress, observabilityWriter);
         vcsPromptVars.qaValidatedTargetRef = qaValidatedTargetRef ?? "";

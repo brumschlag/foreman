@@ -180,6 +180,7 @@ export interface PipelineEventRow {
   event_type: string;
   payload: Record<string, unknown> | null;
   created_at: string;
+  seq: number;
 }
 
 export interface RateLimitEventRow {
@@ -1028,6 +1029,11 @@ export class PostgresAdapter {
    * A task can remain in the native `ready` state while dependency links express
    * that another task must close first. Dispatchers must use this query rather
    * than raw status filtering so dependency-blocked ready tasks are not claimed.
+   *
+   * Milestone-typed tasks are excluded: they are routed to the milestone
+   * pipeline (TRD-2026-016 / TRD-001) and must never appear in the standard
+   * dispatch set. `IS DISTINCT FROM` preserves NULL-safe semantics so rows with
+   * a NULL type remain eligible.
    */
   async listDispatchableReadyTasks(projectId: string, limit = 1000): Promise<TaskRow[]> {
     return query<TaskRow>(
@@ -1035,6 +1041,7 @@ export class PostgresAdapter {
        FROM tasks t
        WHERE t.project_id = $1
          AND t.status = 'ready'
+         AND t.type IS DISTINCT FROM 'milestone'
          AND NOT EXISTS (
            SELECT 1
            FROM task_dependencies td
@@ -1142,6 +1149,45 @@ export class PostgresAdapter {
     } finally {
       releaseClient(client);
     }
+  }
+
+  /** Direct parent via parent-child edge (child.from → parent.to). */
+  async getParentTaskId(projectId: string, taskId: string): Promise<string | null> {
+    const rows = await query<{ to_task_id: string }>(
+      `SELECT td.to_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.from_task_id
+       WHERE t.project_id = $1 AND td.from_task_id = $2 AND td.type = 'parent-child'
+       LIMIT 1`,
+      [projectId, taskId],
+    );
+    return rows[0]?.to_task_id ?? null;
+  }
+
+  /** Direct children via parent-child edges (parent.to ← child.from). */
+  async listChildTaskIds(projectId: string, parentTaskId: string): Promise<string[]> {
+    const rows = await query<{ from_task_id: string }>(
+      `SELECT td.from_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.to_task_id
+       WHERE t.project_id = $1 AND td.to_task_id = $2 AND td.type = 'parent-child'
+       ORDER BY td.from_task_id ASC`,
+      [projectId, parentTaskId],
+    );
+    return rows.map((row) => row.from_task_id);
+  }
+
+  /** Blockers this task depends on (blocks edges: from → to). */
+  async listBlockingDependencyIds(projectId: string, taskId: string): Promise<string[]> {
+    const rows = await query<{ to_task_id: string }>(
+      `SELECT td.to_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.from_task_id
+       WHERE t.project_id = $1 AND td.from_task_id = $2 AND td.type = 'blocks'
+       ORDER BY td.to_task_id ASC`,
+      [projectId, taskId],
+    );
+    return rows.map((row) => row.to_task_id);
   }
 
   async listTaskDependencies(
@@ -2044,13 +2090,16 @@ export class PostgresAdapter {
     return rows[0] ?? null;
   }
 
-  async recordPipelineEvent(data: {
-    projectId: string;
-    runId: string | null;
-    taskId?: string;
-    eventType: string;
-    payload?: Record<string, unknown>;
-  }): Promise<PipelineEventRow> {
+  async recordPipelineEvent(
+    data: {
+      projectId: string;
+      runId: string | null;
+      taskId?: string;
+      eventType: string;
+      payload?: Record<string, unknown>;
+    },
+    broadcaster?: { publish(e: import("../../daemon/broadcast-event.js").BroadcastEvent): void },
+  ): Promise<PipelineEventRow> {
     const rows = await query<PipelineEventRow>(
       `INSERT INTO events (project_id, run_id, task_id, event_type, payload, created_at)
        VALUES ($1, $2, $3, $4, $5, clock_timestamp())
@@ -2063,7 +2112,44 @@ export class PostgresAdapter {
         data.payload ? JSON.stringify(data.payload) : null,
       ]
     );
-    return rows[0];
+    const row = rows[0];
+    broadcaster?.publish({
+      id: row.id,
+      seq: Number(row.seq),
+      projectId: row.project_id,
+      runId: row.run_id ?? null,
+      taskId: row.task_id ?? null,
+      eventType: row.event_type,
+      payload: row.payload,
+      createdAt: row.created_at,
+    });
+    return row;
+  }
+
+  async listEventsSince(
+    afterSeq: number,
+    projectId: string | null,
+    limit = 500,
+  ): Promise<import("../../daemon/broadcast-event.js").BroadcastEvent[]> {
+    const rows = projectId
+      ? await query<PipelineEventRow>(
+          `SELECT * FROM events WHERE seq > $1 AND project_id = $2 ORDER BY seq ASC LIMIT $3`,
+          [afterSeq, projectId, limit],
+        )
+      : await query<PipelineEventRow>(
+          `SELECT * FROM events WHERE seq > $1 ORDER BY seq ASC LIMIT $2`,
+          [afterSeq, limit],
+        );
+    return rows.map((row) => ({
+      id: row.id,
+      seq: Number(row.seq),
+      projectId: row.project_id,
+      runId: row.run_id ?? null,
+      taskId: row.task_id ?? null,
+      eventType: row.event_type,
+      payload: row.payload,
+      createdAt: row.created_at,
+    }));
   }
 
   async recordSentinelEvent(data: {

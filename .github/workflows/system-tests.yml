@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 9 * * 1"
 
+# Least-privilege default; this lane only needs read access to the source.
+permissions:
+  contents: read
+
 jobs:
   system-tests:
     name: System / live test lane
@@ -13,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configure git for tests
         run: |

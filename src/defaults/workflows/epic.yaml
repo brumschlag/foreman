@@ -20,6 +20,8 @@ name: epic
 task_type: epic
 onError: stop
 taskTimeout: 300
+epicMaxBudgetUsd: 50
+maxConsecutiveEpicTaskFailures: 3
 merge: auto
 
 setup:

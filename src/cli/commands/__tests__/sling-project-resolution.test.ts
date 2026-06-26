@@ -14,7 +14,18 @@ async function run(
   cwd: string,
   extraEnv?: Record<string, string>,
 ): Promise<ExecResult> {
-  return runTsxModule(CLI, args, { cwd, timeout: 30_000, env: extraEnv });
+  // These tests cover the legacy Node-backend sling project-resolution path
+  // (--project / --project-path validation, registry lookup, deprecation warnings).
+  // After the Elixir migration (dev commit 9298ccb5), `foreman sling` defaults to
+  // FOREMAN_BACKEND=elixir, which short-circuits the trd action with a deprecation
+  // notice and exit code 1 before any project resolution runs. Force the Node path
+  // so the behavior under test executes. (FOREMAN_BACKEND is applied last so it
+  // wins even though callers spread process.env into extraEnv.)
+  return runTsxModule(CLI, args, {
+    cwd,
+    timeout: 30_000,
+    env: { ...extraEnv, FOREMAN_BACKEND: "node" },
+  });
 }
 
 describe("foreman sling trd --project", () => {

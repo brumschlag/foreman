@@ -92,6 +92,37 @@ These are lightweight implementation checks, not QA test execution:
 4. If the task requires a user-facing command, verify both the command implementation file and CLI registration file are changed, or explicitly explain why registration is not needed.
 5. If the task requires docs/tests, verify those files appear in `git diff --name-only`; otherwise list the gap under Known Limitations instead of claiming completion.
 
+## Validation Ledger
+After running targeted verification (e.g., `npm test -- path/to/changed.test.ts`), write an entry to the validation ledger so downstream phases can skip redundant re-validation:
+
+```bash
+mkdir -p "{{reportDir}}"
+if [ -f "{{reportDir}}/VALIDATION_LEDGER.md" ]; then
+  # Append row to existing ledger
+  printf '\n| developer | %s | targeted | <changed file paths> | <PASS|FAIL> | <notes or empty> |\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "{{reportDir}}/VALIDATION_LEDGER.md"
+else
+  # Create new ledger with header
+  cat > "{{reportDir}}/VALIDATION_LEDGER.md" << 'LEDGER'
+# Validation Ledger
+
+This ledger tracks test validation runs across pipeline phases to prevent redundant test execution.
+
+| Phase | Timestamp | Scope | Files/Modules | Result | Notes |
+|-------|-----------|-------|---------------|--------|-------|
+| developer | TIMESTAMP | targeted | PATHS | RESULT | NOTES |
+LEDGER
+  sed "s/TIMESTAMP/$(date -u +%Y-%m-%dT%H:%M:%SZ)/; s|PATHS|<changed file paths>|; s|RESULT|<PASS|FAIL>|; s|NOTES|<notes or empty>|" "{{reportDir}}/VALIDATION_LEDGER.md" > "{{reportDir}}/VALIDATION_LEDGER.md.tmp" && mv "{{reportDir}}/VALIDATION_LEDGER.md.tmp" "{{reportDir}}/VALIDATION_LEDGER.md"
+fi
+```
+
+**Schema columns:**
+- **Phase**: Always `developer` for this phase
+- **Timestamp**: ISO 8601 format
+- **Scope**: Always `targeted` for developer verification
+- **Files/Modules**: Comma-separated list of files tested
+- **Result**: `PASS` or `FAIL`
+- **Notes**: Any observations or empty
+
 ## Developer Report
 After implementation, write **{{reportDir}}/DEVELOPER_REPORT.md** summarizing your work. Create the directory if it doesn't exist:
 ```bash

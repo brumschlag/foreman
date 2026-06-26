@@ -167,7 +167,7 @@ vcs:
 
 ## Development Rules
 
-- **TypeScript strict mode** — no `any` escape hatches
+- **TypeScript strict mode** — no `any`, no non-null assertions (`!`); use `unknown` + narrowing or fail-safe guards. Type-only imports use `import type`; suppress with `@ts-expect-error` (never `@ts-ignore`). Enforced via eslint — see [ADR-0003](docs/adr/0003-typescript-strictness-enforcement.md).
 - **ESM only** — all imports use `.js` extensions
 - **TDD** — RED-GREEN-REFACTOR cycle
 - **Test coverage** — unit >= 80%, integration >= 70%
@@ -176,6 +176,10 @@ vcs:
 - **Input validation at boundaries only**
 - **TDD** use test driven development for all modifications, when adding features create a test first, prove it fails and then make the tests work, afterwards refine/simplify the tests and code for maintainability.
 - **TDD** use test driven development for all modifications, when fixing bugs write a test first that exposes the bug, prove it fails and then make the tests work, afterwards refine/simplify the tests and code for maintainability.
+- **Code quality gate** — `qlty` is the unified quality gate ([ADR-0001](docs/adr/0001-qlty-as-quality-gate.md)). Run `npm run lint` (qlty/eslint) + `npx tsc --noEmit`. Do **not** run `qlty check --fix` here — it mangles TS source; use `npm run lint:fix` instead.
+- **CI security** — GitHub Actions workflows follow a least-privilege, injection-safe posture ([ADR-0002](docs/adr/0002-ci-supply-chain-hardening.md)): per-job `permissions:`, pass untrusted inputs via `env:` (never `${{ }}` directly in `run:`), pin actions to a commit SHA, `persist-credentials: false` unless reused.
+- **Accepted findings** — any deliberately-unfixed CVE or lint/zizmor finding must carry a written rationale at the suppression site ([ADR-0004](docs/adr/0004-accepted-findings-policy.md)).
+- **Architecture Decision Records** — significant decisions are recorded as ADRs in `docs/adr/` (MADR-style; see `docs/adr/README.md`). Write a new ADR rather than silently reversing an existing one.
 - **Documentation gate** — every fix/feature must consider updates to `CLAUDE.md`, `AGENTS.md`, `README.md`, the Foreman User Guide (`docs/user-guide.md`), and the CLI Reference (`docs/cli-reference.md`) before finalization. Update only docs affected by real behavior, workflow, command, setup, troubleshooting, or operator-expectation changes.
 
 ## Workflow YAML Configuration

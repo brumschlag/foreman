@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 8 * * 3"
 
+# Least-privilege default; this lane only needs read access to the source.
+permissions:
+  contents: read
+
 jobs:
   e2e-full-run:
     name: Detached full-run e2e lane
@@ -13,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configure git for tests
         run: |
