@@ -18,7 +18,10 @@ async function run(
   cwd: string,
   extraEnv?: Record<string, string>,
 ): Promise<ExecResult> {
-  return runTsxModule(CLI, args, { cwd, timeout: 15_000, env: extraEnv });
+  // Pin the legacy Node dispatcher: dev defaults to the Elixir backend, which
+  // auto-starts `mix run` (crashing the subprocess with ENOENT where Elixir is
+  // absent) before reaching the project-flag validation under test (dev 9298ccb5).
+  return runTsxModule(CLI, args, { cwd, timeout: 15_000, env: { ...extraEnv, FOREMAN_BACKEND: "node" } });
 }
 
 describe("foreman retry --project flag", () => {
