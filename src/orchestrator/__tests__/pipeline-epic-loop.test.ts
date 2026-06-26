@@ -110,7 +110,7 @@ describe("epic task loop (TRD-005)", () => {
     // Create stub prompt files
     const promptDir = join(tmpDir, ".foreman", "prompts", "epic");
     mkdirSync(promptDir, { recursive: true });
-    for (const phase of ["developer", "qa", "finalize"]) {
+    for (const phase of ["explorer", "developer", "qa", "finalize"]) {
       writeFileSync(join(promptDir, `${phase}.md`), `# ${phase} stub\n`);
     }
   });
