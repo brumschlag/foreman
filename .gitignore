@@ -60,3 +60,12 @@ docs/reports/queue-entry-*/
 var/
 dist-new-*/
 .foreman-pipeline-cache/
+
+# Local IDE / tooling artifacts
+${workspaceFolder}/
+context_portal/
+
+# Stryker mutation testing output
+reports/mutation/
+.stryker-tmp/
+stryker.log

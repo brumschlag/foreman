@@ -17,7 +17,7 @@ Foreman ships with bundled workflows for common task types:
 - **`default`** — Standard pipeline with implementation, validation, PR creation, PR wait/review, and merge gates
 - **`quick`** — Fast variant of `default` without the explorer and reviewer phases (`developer ⇄ qa → finalize → PR gates → merge`). YAML-first replacement for the retired `--skip-explore`/`--skip-review` flags
 - **`task` / `feature` / `bug`** — Type-specific workflows with post-finalize PR phases (`create-pr → pr-wait → prepare-pr-review → pr-review → merge`); PR wait requires a short stable-ready window, and merge re-waits if a late GitHub check appears
-- **`epic`** — Planning + implementation workflow (`prd → trd → implement → developer → qa → finalize`) followed by the same PR wait/review/merge gates
+- **`epic`** — Planning + implementation workflow (`prd → trd → implement → developer → qa → finalize`) followed by the same PR wait/review/merge gates. In beads epic mode, `taskPhases` includes `explorer`, but the executor runs explorer **only on the first child task** (tasks 2+ share the same worktree and skip redundant exploration).
 - **`smoke`** — Lightweight fast-validation pipeline using cheaper models
 
 ## Workflow Selection
