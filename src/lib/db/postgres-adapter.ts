@@ -1029,6 +1029,11 @@ export class PostgresAdapter {
    * A task can remain in the native `ready` state while dependency links express
    * that another task must close first. Dispatchers must use this query rather
    * than raw status filtering so dependency-blocked ready tasks are not claimed.
+   *
+   * Milestone-typed tasks are excluded: they are routed to the milestone
+   * pipeline (TRD-2026-016 / TRD-001) and must never appear in the standard
+   * dispatch set. `IS DISTINCT FROM` preserves NULL-safe semantics so rows with
+   * a NULL type remain eligible.
    */
   async listDispatchableReadyTasks(projectId: string, limit = 1000): Promise<TaskRow[]> {
     return query<TaskRow>(
@@ -1036,6 +1041,7 @@ export class PostgresAdapter {
        FROM tasks t
        WHERE t.project_id = $1
          AND t.status = 'ready'
+         AND t.type IS DISTINCT FROM 'milestone'
          AND NOT EXISTS (
            SELECT 1
            FROM task_dependencies td

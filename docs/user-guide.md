@@ -37,12 +37,28 @@ The project default branch is the base for newly created task worktrees and fina
 
 Tasks represent units of work. They have a type, priority, status, title, and description. Typical statuses include backlog, ready, in progress, needs attention, and closed. In default Elixir mode, task commands use Elixir task/run projections, including `task list --show-run`, `--run-status`, `--stuck`, and `task show` run activity. When a worker fails, Foreman records an append-only task note with the failed phase and reason so `foreman task show`, `foreman board`, and `foreman watch` can expose actionable context.
 
+**Task Types:**
+
+| Type | Description | Pipeline |
+|------|-------------|----------|
+| `task` | Standard leaf task | explorer → developer → quality-gate → qa → reviewer → finalize |
+| `feature` | Feature development | Same as `task` |
+| `bug` | Bug fix | Same as `task` |
+| `chore` | Maintenance work | Same as `task` |
+| `epic` | Planning task grouping child tasks | epic-specific (TRD-2026-007) |
+| `milestone` | Grouping task for epics (TRD-2026-016) | Milestone pipeline (acceptance-check → mutation-test → quality-gate-final → milestone-summary; TRD-004) |
+| `docs` | Documentation updates | Standard pipeline |
+| `question` | Information gathering | Standard pipeline |
+
 ```bash
 foreman task create --title "Fix flaky retry" --type bug --priority high
+foreman task create --title "Milestone v1.0" --type milestone --priority 0
 foreman task approve <task-id>
 foreman task show <task-id>
 foreman task list
 ```
+
+**Note:** Milestone tasks are excluded from standard dispatch until all child epics are closed/merged. They run their own dedicated pipeline for quality gates and acceptance verification.
 
 ### Workflows
 

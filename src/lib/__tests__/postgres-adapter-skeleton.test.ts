@@ -402,6 +402,30 @@ describe("PostgresAdapter task operations", () => {
     }
   });
 
+  it("listDispatchableReadyTasks excludes milestone-typed tasks (TRD-2026-016 / TRD-001)", async () => {
+    let capturedSql = "";
+    const mockPool = makeMockPool([{ sqlPattern: /FROM tasks t/, rows: [TASK_ROW] }]);
+    (mockPool.query as ReturnType<typeof vi.fn>).mockImplementation(async (text: string, params?: unknown[]) => {
+      capturedSql = text;
+      return { rows: [TASK_ROW], rowCount: 1 } as never;
+    });
+    await initPool({ poolOverride: mockPool as PoolLike });
+    try {
+      const adapter = new PostgresAdapter();
+      const result = await adapter.listDispatchableReadyTasks(PROJECT_ID);
+      expect(result).toHaveLength(1);
+      // The query must filter milestone type out of the dispatchable set.
+      // IS DISTINCT FROM preserves NULL-safe semantics so rows with a NULL
+      // type are not accidentally excluded.
+      expect(capturedSql).toMatch(/t\.type\s+IS\s+DISTINCT\s+FROM\s+'milestone'/);
+      // Smoke-check that the dependent-blocker subquery is still present
+      // (regression guard for AC1).
+      expect(capturedSql).toMatch(/task_dependencies/);
+    } finally {
+      await destroyPool();
+    }
+  });
+
   it("addTaskNote inserts an append-only task note", async () => {
     const note = {
       id: "note-1",

@@ -3,6 +3,18 @@
 
 Every fix or feature must consider documentation before finalization. Update `CLAUDE.md`, `AGENTS.md`, `README.md`, the Foreman User Guide (`docs/user-guide.md`), and the CLI Reference (`docs/cli-reference.md`) when behavior, commands, workflows, prompts, setup, troubleshooting, or operator expectations change. Keep edits surgical; document only real behavior.
 
+### Task Types
+
+Foreman supports multiple task types that map to different workflows:
+
+- **`task`** — Standard leaf tasks with full pipeline (explorer → developer → quality-gate → qa → reviewer → finalize)
+- **`epic`** — Planning tasks that orchestrate child tasks (TRD-2026-007)
+- **`feature`** — Feature development tasks
+- **`bug`** — Bug fix tasks
+- **`chore`** — Maintenance tasks
+- **`docs`** — Documentation tasks
+- **`milestone`** — Grouping task that coordinates epics (TRD-2026-016); excluded from standard dispatch until all child epics are closed/merged
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
