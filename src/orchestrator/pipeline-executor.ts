@@ -1342,7 +1342,7 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
         await ctx.markStuck(
           store, runId, config.projectId, seedId, config.seedTitle,
           totalProgress, "epic-budget-exceeded", budgetMsg,
-          config.projectPath, ctx.notifyClient,
+          config.projectPath as string, ctx.notifyClient,
         );
         return;
       }
@@ -1354,7 +1354,7 @@ async function executeEpicPipeline(ctx: PipelineContext): Promise<void> {
         await ctx.markStuck(
           store, runId, config.projectId, seedId, config.seedTitle,
           totalProgress, "epic-consecutive-failures", streakMsg,
-          config.projectPath, ctx.notifyClient,
+          config.projectPath as string, ctx.notifyClient,
         );
         return;
       }
