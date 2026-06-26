@@ -27,6 +27,9 @@ describe("foreman task import --from-beads", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    // These tests exercise the legacy node-backed tRPC import path (they mock
+    // createTrpcClient). The default backend is now Elixir, so pin to node.
+    vi.stubEnv("FOREMAN_BACKEND", "node");
   });
 
   afterEach(() => {
@@ -35,6 +38,7 @@ describe("foreman task import --from-beads", () => {
     }
     tempDirs.length = 0;
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("imports beads statuses and dependencies through the daemon task API", async () => {

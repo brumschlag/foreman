@@ -45,6 +45,12 @@ describe("sling prd", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // The PRD→TRD sling path is the legacy Node-backend flow. After the Elixir
+    // migration (dev commit 9298ccb5), `foreman sling` defaults to
+    // FOREMAN_BACKEND=elixir and short-circuits with a deprecation notice before
+    // generating a TRD or reading the PRD readiness score. Opt into the Node path
+    // explicitly so the behavior under test runs.
+    vi.stubEnv("FOREMAN_BACKEND", "node");
     tmpDir = mkdtempSync(join(tmpdir(), "foreman-sling-prd-"));
     mkdirSync(join(tmpDir, "docs", "PRD"), { recursive: true });
     mkdirSync(join(tmpDir, "docs", "TRD"), { recursive: true });

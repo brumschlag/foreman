@@ -71,7 +71,10 @@ describe("foreman plan --project", () => {
     const result = await run(
       ["plan", "--dry-run", "--project", "target-project", "test-description"],
       tmpBase,
-      { ...process.env, HOME: tmpBase },
+      // The bare `foreman plan <description>` lifecycle is the legacy Node
+      // planning dispatcher; the Elixir default routes to `plan prd`/`plan trd`.
+      // Pin to the node backend to exercise the legacy pipeline under test.
+      { ...process.env, HOME: tmpBase, FOREMAN_BACKEND: "node" },
     );
 
     const output = result.stdout + result.stderr;
@@ -103,7 +106,10 @@ describe("foreman plan --project", () => {
     const result = await run(
       ["plan", "--dry-run", "--project", "target-project", "--from-prd", "docs/PRD.md", "unused"],
       tmpBase,
-      { ...process.env, HOME: tmpBase },
+      // The bare `foreman plan <description>` lifecycle is the legacy Node
+      // planning dispatcher; the Elixir default routes to `plan prd`/`plan trd`.
+      // Pin to the node backend to exercise the legacy pipeline under test.
+      { ...process.env, HOME: tmpBase, FOREMAN_BACKEND: "node" },
     );
 
     const output = result.stdout + result.stderr;

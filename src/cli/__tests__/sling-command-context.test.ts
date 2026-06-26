@@ -71,7 +71,16 @@ describe("foreman sling command context", () => {
     await slingCommand.parseAsync(args, { from: "user" });
   }
 
+  // These tests cover the legacy Node-backend sling project-resolution path.
+  // After the Elixir migration (dev commit 9298ccb5), `foreman sling` defaults
+  // to FOREMAN_BACKEND=elixir, which short-circuits with a deprecation notice
+  // before any resolution/execution. The Node-backed behavior under test only
+  // runs when FOREMAN_BACKEND=node, so we opt into it explicitly here.
+  let previousBackend: string | undefined;
+
   beforeEach(() => {
+    previousBackend = process.env.FOREMAN_BACKEND;
+    process.env.FOREMAN_BACKEND = "node";
     vi.clearAllMocks();
     mockResolveRepoRootProjectPath.mockReset();
     mockListRegisteredProjects.mockReset();
@@ -109,6 +118,11 @@ describe("foreman sling command context", () => {
   });
 
   afterEach(() => {
+    if (previousBackend === undefined) {
+      delete process.env.FOREMAN_BACKEND;
+    } else {
+      process.env.FOREMAN_BACKEND = previousBackend;
+    }
     vi.restoreAllMocks();
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });

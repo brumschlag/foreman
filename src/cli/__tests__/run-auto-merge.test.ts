@@ -255,6 +255,11 @@ async function invokeRun(args: string[]): Promise<void> {
 
 function resetMocks(): void {
   vi.clearAllMocks();
+  // The dispatch-loop integration tests exercise the legacy Node dispatch path.
+  // On the Elixir-default backend, `foreman run` short-circuits before the loop,
+  // so opt into the legacy node dispatcher explicitly (the behavior under test).
+  // (The autoMerge() unit tests call the function directly and are unaffected.)
+  process.env.FOREMAN_BACKEND = "node";
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -344,7 +349,7 @@ function resetMocks(): void {
 
 describe("autoMerge() unit tests", () => {
   beforeEach(resetMocks);
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { delete process.env.FOREMAN_BACKEND; vi.restoreAllMocks(); });
 
   function makeStore(): ReturnType<typeof MockForemanStore> {
     return new MockForemanStore() as ReturnType<typeof MockForemanStore>;
@@ -522,7 +527,7 @@ describe("autoMerge() unit tests", () => {
 
 describe("dispatch loop: auto-merge after each batch", () => {
   beforeEach(resetMocks);
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { delete process.env.FOREMAN_BACKEND; vi.restoreAllMocks(); });
 
   it("processes merge queue after normal batch watch completes (auto-merge enabled by default)", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
@@ -721,7 +726,7 @@ describe("dispatch loop: auto-merge after each batch", () => {
 
 describe("call ordering: autoMerge fires BEFORE watchRunsInk", () => {
   beforeEach(resetMocks);
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { delete process.env.FOREMAN_BACKEND; vi.restoreAllMocks(); });
 
   it("calls autoMerge before watchRunsInk at callsite 1 (no tasks dispatched, agents active)", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
@@ -795,7 +800,7 @@ describe("call ordering: autoMerge fires BEFORE watchRunsInk", () => {
 
 describe("merge draining no longer runs after the dispatch loop", () => {
   beforeEach(resetMocks);
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { delete process.env.FOREMAN_BACKEND; vi.restoreAllMocks(); });
 
   it("does not process pending merge queue entries after dispatch loop exit", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
@@ -980,7 +985,7 @@ describe("merge draining no longer runs after the dispatch loop", () => {
 
 describe.skip("autoMerge() — immediate bead status sync", () => {
   beforeEach(resetMocks);
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { delete process.env.FOREMAN_BACKEND; vi.restoreAllMocks(); });
 
   function makeStore(): ReturnType<typeof MockForemanStore> {
     return new MockForemanStore() as ReturnType<typeof MockForemanStore>;

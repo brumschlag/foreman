@@ -128,6 +128,10 @@ async function invokeRun(args: string[]): Promise<void> {
 describe("auto-dispatch: passes callback to watchRunsInk", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // These tests exercise the legacy Node dispatch path / auto-dispatch callback.
+    // On the Elixir-default backend, `foreman run` short-circuits before dispatch,
+    // so opt into the legacy node dispatcher explicitly (the behavior under test).
+    process.env.FOREMAN_BACKEND = "node";
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -158,6 +162,7 @@ describe("auto-dispatch: passes callback to watchRunsInk", () => {
   });
 
   afterEach(() => {
+    delete process.env.FOREMAN_BACKEND;
     vi.restoreAllMocks();
   });
 

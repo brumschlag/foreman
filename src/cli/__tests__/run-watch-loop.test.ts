@@ -156,6 +156,10 @@ async function invokeRun(args: string[]): Promise<void> {
 describe("dispatch loop: watch-and-continue when nothing dispatched but agents active", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // These tests exercise the legacy Node dispatch loop. On the Elixir-default
+    // backend, `foreman run` short-circuits with an error before dispatching, so
+    // opt into the legacy node dispatcher explicitly (the behavior under test).
+    process.env.FOREMAN_BACKEND = "node";
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -184,6 +188,7 @@ describe("dispatch loop: watch-and-continue when nothing dispatched but agents a
   });
 
   afterEach(() => {
+    delete process.env.FOREMAN_BACKEND;
     vi.restoreAllMocks();
   });
 
