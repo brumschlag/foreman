@@ -15,6 +15,7 @@
 import {
   createAgentSession,
   DefaultResourceLoader,
+  ModelRegistry,
   SessionManager,
   SettingsManager,
   AuthStorage,
@@ -32,7 +33,7 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { createDirectoryGuardrail, wrapToolWithGuardrail, type GuardrailConfig } from "./guardrails.js";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel, type Api, type Model } from "@mariozechner/pi-ai";
 import { existsSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -391,10 +392,34 @@ export function extractStructuredOutput(
 }
 
 export async function runWithPiSdk(opts: PiRunOptions): Promise<PiRunResult> {
-  // Resolve model — getModel is strictly typed for known providers/IDs;
-  // use type assertions for dynamic values from workflow YAML.
+  // Resolve model — getModel covers built-in providers (anthropic, minimax, …).
+  // Custom OpenAI-compatible providers (e.g. a LiteLLM/Bedrock gateway) are defined in
+  // ~/.pi/agent/models.json and are NOT known to getModel; resolve those via ModelRegistry,
+  // which loads models.json and registers the provider's API + key. Without this, an
+  // unresolved model is passed as undefined and createAgentSession silently falls back to
+  // its built-in default model.
   const { provider, modelId } = parseModelString(opts.model);
-  const model = getModel(provider as never, modelId as never);
+  const modelAgentDir = getAgentDir();
+  let model: Model<Api> | undefined = getModel(provider as never, modelId as never);
+  let isCustomProvider = false;
+  if (!model) {
+    const registry = ModelRegistry.create(
+      AuthStorage.create(join(modelAgentDir, "auth.json")),
+      join(modelAgentDir, "models.json"),
+    );
+    registry.refresh?.();
+    const custom = registry.find(provider, modelId);
+    if (custom) {
+      model = custom;
+      isCustomProvider = true;
+    }
+  }
+  if (!model) {
+    throw new Error(
+      `Unknown model "${opts.model}": not a built-in provider/model and not defined in ` +
+      `${join(modelAgentDir, "models.json")}.`,
+    );
+  }
 
   const emitPhaseControlEvent = (event: { kind: "warning" | "update"; message: string; toolName?: string; argsPreview?: string }) => {
     if (!opts.phaseControl) return;
@@ -440,6 +465,15 @@ export async function runWithPiSdk(opts: PiRunOptions): Promise<PiRunResult> {
     // Explicitly set agentDir and auth so detached worker processes find credentials.
     const agentDir = getAgentDir();
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+    // Custom OpenAI-compatible gateway providers (e.g. a LiteLLM/Bedrock proxy) are often
+    // keyless, but the OpenAI-completions stream still needs a non-empty API key to send an
+    // Authorization header. Inject a runtime key for the provider (overridable via env).
+    if (isCustomProvider) {
+      const setKey = (authStorage as { setRuntimeApiKey?: (p: string, k: string) => void }).setRuntimeApiKey;
+      if (typeof setKey === "function") {
+        setKey.call(authStorage, provider, process.env.FOREMAN_GATEWAY_API_KEY ?? "litellm-no-auth");
+      }
+    }
     const sandboxPiExtensions = shouldSandboxPiExtensions();
     const sandboxResources = sandboxPiExtensions ? getSandboxedPiResourcePaths() : undefined;
     const extensionFactories = [
