@@ -600,17 +600,32 @@ export function preservePhaseArtifactAttempt(args: {
   }
 }
 
+/**
+ * True when an untracked/changed path must be excluded from change detection.
+ *
+ * Foreman symlinks `node_modules` into the worktree from its shared setup-cache. The common
+ * `.gitignore` rule is `node_modules/` (trailing slash = directories only), which does NOT
+ * match a symlink — so `git ls-files --others --exclude-standard` reports `node_modules` and
+ * the developer-completion gate mistakes foreman's own cache symlink for real work ("Changed
+ * files: node_modules / Claimed files: none"). Exclude any `node_modules` path segment.
+ */
+export function isIgnoredChangePath(path: string): boolean {
+  return /(^|\/)node_modules(\/|$)/.test(path);
+}
+
 function gitChangedFiles(worktreePath: string): string[] | null {
   try {
     execSync("git rev-parse --is-inside-work-tree", { cwd: worktreePath, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const uncommitted = execSync("git diff --name-only HEAD", { cwd: worktreePath, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
       .split("\n")
       .map((line) => line.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((file) => !isIgnoredChangePath(file));
     const untracked = execSync("git ls-files --others --exclude-standard", { cwd: worktreePath, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
       .split("\n")
       .map((line) => line.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((file) => !isIgnoredChangePath(file));
     if (uncommitted.length > 0) return [...new Set([...uncommitted, ...untracked])];
 
     for (const baseRef of ["origin/dev", "dev", "origin/main", "main"]) {
@@ -619,7 +634,8 @@ function gitChangedFiles(worktreePath: string): string[] | null {
         const committed = execSync(`git diff --name-only ${baseRef}...HEAD`, { cwd: worktreePath, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
           .split("\n")
           .map((line) => line.trim())
-          .filter(Boolean);
+          .filter(Boolean)
+          .filter((file) => !isIgnoredChangePath(file));
         if (committed.length > 0) return [...new Set([...committed, ...untracked])];
       } catch {
         // Try the next common base ref.
