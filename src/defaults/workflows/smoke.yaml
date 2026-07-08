@@ -7,7 +7,7 @@
 name: smoke
 task_type: smoke
 setup:
-  - command: npm install --prefer-offline --no-audit
+  - command: npm ci --no-audit
     description: Install Node.js dependencies
     failFatal: true
 setupCache:
@@ -29,7 +29,7 @@ phases:
     tools:
       allowed: [Glob, Grep, Read, Write]
     models:
-      default: haiku
+      default: bedrock-gateway/claude-haiku
     maxTurns: 5
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
@@ -48,7 +48,7 @@ phases:
     tools:
       allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
     models:
-      default: haiku
+      default: bedrock-gateway/claude-haiku
     maxTurns: 5
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
@@ -67,8 +67,8 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax-highspeed
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
     maxTurns: 40
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
@@ -83,7 +83,7 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
     models:
-      default: haiku
+      default: bedrock-gateway/claude-haiku
     maxTurns: 5
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/QA_REPORT.md"
@@ -108,7 +108,7 @@ phases:
     tools:
       allowed: [Glob, Grep, Read, Write]
     models:
-      default: sonnet
+      default: bedrock-gateway/claude-sonnet-46
     maxTurns: 5
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/REVIEW.md"

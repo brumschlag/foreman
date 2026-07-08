@@ -30,9 +30,9 @@ phases:
     tools:
       allowed: [Glob, Grep, Read, Write]
     models:
-      default: sonnet
-      P0: opus
-      P4: haiku
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-opus
+      P4: bedrock-gateway/claude-haiku
     maxTurns: 30
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
@@ -48,8 +48,8 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax-highspeed
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
     maxTurns: 40
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
