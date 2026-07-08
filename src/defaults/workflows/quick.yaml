@@ -13,7 +13,7 @@ name: quick
 task_type: quick
 onError: stop
 setup:
-  - command: npm install --prefer-offline --no-audit
+  - command: npm ci --no-audit
     description: Install Node.js dependencies
     failFatal: true
 setupCache:
@@ -36,8 +36,8 @@ phases:
     tools:
       allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
     models:
-      default: MiniMax
-      P0: MiniMax-highspeed
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
     maxTurns: 80
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
@@ -59,8 +59,8 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax-highspeed
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
     maxTurns: 40
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
@@ -75,8 +75,8 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
     models:
-      default: MiniMax
-      P0: MiniMax-highspeed
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
     maxTurns: 60
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/QA_REPORT.md"
@@ -181,7 +181,7 @@ phases:
     tools:
       allowed: [Bash, Glob, Grep, Read, TodoWrite, Write]
     models:
-      default: MiniMax
+      default: bedrock-gateway/claude-sonnet-46
     maxTurns: 40
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/PR_REVIEW_REPORT.md"
@@ -209,8 +209,8 @@ onFailure:
   name: troubleshooter
   prompt: troubleshooter.md
   models:
-    default: MiniMax
-    P0: MiniMax-highspeed
+    default: bedrock-gateway/claude-sonnet-46
+    P0: bedrock-gateway/claude-sonnet-46
   maxTurns: 20
   retryAfterCooldown: true
   artifact: "{task.projectReportsDir}/TROUBLESHOOT_REPORT.md"

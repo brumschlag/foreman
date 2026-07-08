@@ -13,7 +13,7 @@ name: bug
 task_type: bug
 merge: auto
 setup:
-  - command: npm install --prefer-offline --no-audit
+  - command: npm ci --no-audit
     description: Install Node.js dependencies
     failFatal: true
 setupCache:
@@ -40,9 +40,9 @@ phases:
     tools:
       allowed: [Bash, Edit, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax
-      P4: MiniMax
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
+      P4: bedrock-gateway/claude-sonnet-46
     maxTurns: 80
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
@@ -82,9 +82,9 @@ phases:
     tools:
       allowed: [Bash, Edit, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax
-      P4: MiniMax
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
+      P4: bedrock-gateway/claude-sonnet-46
     maxTurns: 120
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
@@ -124,9 +124,9 @@ phases:
     tools:
       allowed: [Bash, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax
-      P4: MiniMax
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
+      P4: bedrock-gateway/claude-sonnet-46
     maxTurns: 60
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/QA_REPORT.md"
@@ -216,8 +216,8 @@ phases:
     tools:
       allowed: [Bash, Edit, Glob, Grep, Read, Write]
     models:
-      default: MiniMax
-      P0: MiniMax-highspeed
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-sonnet-46
     maxTurns: 40
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
@@ -269,7 +269,7 @@ phases:
     tools:
       allowed: [Bash, Glob, Grep, Read, TodoWrite, Write]
     models:
-      default: MiniMax
+      default: bedrock-gateway/claude-sonnet-46
     maxTurns: 40
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/PR_REVIEW_REPORT.md"

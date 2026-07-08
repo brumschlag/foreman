@@ -1,16 +1,25 @@
-# Docs workflow: develop → finalize → auto-merge
+# Docs / lightweight-fix workflow: develop → finalize → create-pr
 #
-# Minimal pipeline for documentation changes — README, API docs, inline comments,
-# examples, and guides. No testing phase (docs don't need CI) and no reviewer
-# (docs are low-risk). Auto-merges on finalize validation.
+# Minimal end-to-end loop that installs workspace deps, makes a self-contained
+# change, commits it on a foreman/<task> branch, and opens a PR for review.
+# Deliberately omits the test/qlty/cli-review/pr-review gates so it can complete
+# for low-risk, self-contained fixes (docs, lint, comments) that don't require
+# building or testing the whole app.
 #
+# setup uses `npm ci` (lockfile-exact) so ALL workspaces install — including the
+# frontend workspace, whose .npmrc (legacy-peer-deps) `npm install` ignores from
+# the repo root, leaving frontend deps unresolved.
+#
+# merge: manual — foreman opens the PR and stops; a human reviews/merges.
 # Auto-selected when bead type is "docs".
 
 name: docs
 task_type: docs
-merge: auto
-setup: []
-# No dependencies needed for docs-only changes
+merge: pr
+setup:
+  - command: npm ci --no-audit
+    description: Install all workspace dependencies (lockfile-exact)
+    failFatal: true
 
 phases:
   - name: prepare-worktree
@@ -23,17 +32,17 @@ phases:
     action: write-task-context
 
   # ── Phase 1: develop ────────────────────────────────────────────────────
-  # The agent writes or updates documentation based on the task title/description.
+  # The agent makes the change based on the task title/description.
   - name: develop
     action: prompt-agent
     prompt: developer.md
     tools:
       allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
     models:
-      default: sonnet
-      P0: opus
-      P4: haiku
-    maxTurns: 40
+      default: bedrock-gateway/claude-sonnet-46
+      P0: bedrock-gateway/claude-opus
+      P4: bedrock-gateway/claude-haiku
+    maxTurns: 80
     retryAfterCooldown: true
     artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
     mail:
@@ -43,41 +52,8 @@ phases:
       reserve: true
       leaseSecs: 300
 
-  # ── Phase 2: cli-review ──────────────────────────────────────────────────
-  - name: documentation
-    action: prompt-agent
-    prompt: documentation.md
-    tools:
-      allowed: [Bash, Edit, Glob, Grep, Read, Write]
-    models:
-      default: MiniMax
-      P0: MiniMax-highspeed
-    maxTurns: 40
-    retryAfterCooldown: true
-    artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
-    mail:
-      onStart: true
-      onComplete: true
-      forwardArtifactTo: foreman
-
-  - name: cli-review
-    action: cli-review
-    builtin: true
-    artifact: "{task.projectReportsDir}/CR_CLI_REPORT.md"
-    timeoutSecs: 600
-    contract:
-      policy:
-        terminalOnFailExhausted: true
-    verdict: true
-    retryWith: develop
-    retryOnFail: 2
-    mail:
-      onStart: true
-      onComplete: true
-      onFail: develop
-
-  # ── Phase 3: finalize ───────────────────────────────────────────────────
-  # Quick validation: verify docs build or lint, then auto-merge.
+  # ── Phase 2: finalize ───────────────────────────────────────────────────
+  # Commits the change on a foreman/<task> branch and validates the diff.
   - name: finalize
     action: finalize
     builtin: true
@@ -90,65 +66,18 @@ phases:
         terminalOnFailExhausted: true
     verdict: true
     retryWith: develop
-    retryOnFail: 6
-    mail:
-      onStart: true
-      onComplete: true
-      onFail: develop
-  - name: create-pr
-    action: create-pr
-    builtin: true
-    artifact: "{task.projectReportsDir}/PR_METADATA.json"
-    mail:
-      onStart: true
-      onComplete: true
-
-  - name: pr-wait
-    action: pr-wait
-    builtin: true
-    artifact: "{task.projectReportsDir}/PR_WAIT_REPORT.md"
-    timeoutSecs: 1200
-    retryWith: develop
     retryOnFail: 2
     mail:
       onStart: true
       onComplete: true
       onFail: develop
 
-  - name: prepare-pr-review
-    action: prepare-pr-review
+  # ── Phase 3: create-pr ──────────────────────────────────────────────────
+  # Opens the PR and stops (merge: manual). Human reviews and merges.
+  - name: create-pr
+    action: create-pr
     builtin: true
-    artifact: "{task.projectReportsDir}/PR_REVIEW_FINDINGS.md"
-    mail:
-      onStart: true
-      onComplete: true
-
-  - name: pr-review
-    action: prompt-agent
-    prompt: pr-review.md
-    tools:
-      allowed: [Bash, Glob, Grep, Read, TodoWrite, Write]
-    models:
-      default: MiniMax
-    maxTurns: 40
-    retryAfterCooldown: true
-    artifact: "{task.projectReportsDir}/PR_REVIEW_REPORT.md"
-    contract:
-      policy:
-        terminalOnFailExhausted: true
-    verdict: true
-    retryWith: develop
-    retryOnFail: 3
-    mail:
-      onStart: true
-      onComplete: true
-      onFail: develop
-      forwardArtifactTo: foreman
-
-  - name: merge
-    action: merge
-    builtin: true
-    artifact: "{task.projectReportsDir}/MERGE_REPORT.md"
+    artifact: "{task.projectReportsDir}/PR_METADATA.json"
     mail:
       onStart: true
       onComplete: true

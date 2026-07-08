@@ -34,4 +34,14 @@ describe("workspace path helpers", () => {
     expect(command).toContain("docs/reports");
     expect(command).toContain("git rm -r --cached --ignore-unmatch");
   });
+
+  it("unstages generated workflow artifacts (TASK.md etc.) so they never leak into the PR", () => {
+    const command = buildTrackedStateRestoreCommand("/tmp/.foreman-worktrees/repo/foreman-123", "/tmp/repo");
+
+    // write-task-context writes TASK.md at the worktree root; `git add -A` in finalize
+    // sweeps it in, so it must be un-staged here alongside the other generated artifacts.
+    for (const artifact of ["TASK.md", "AGENT.md", "AGENTS.md", "BLOCKED.md", "EXPLORER_REPORT.md", "PR_METADATA.json"]) {
+      expect(command).toContain(artifact);
+    }
+  });
 });
