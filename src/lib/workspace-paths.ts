@@ -82,7 +82,7 @@ export function buildTrackedStateRestoreCommand(
   const beadsPath = getBeadsIssuesPathForWorkspace(workspacePath, mainRepoRoot);
   return [
     `git restore --source=HEAD --staged --worktree -- ${beadsPath} 2>/dev/null || git restore --source=HEAD --worktree -- ${beadsPath} 2>/dev/null || true`,
-    `git restore --source=HEAD --staged --worktree -- node_modules SESSION_LOG.md RUN_LOG.md DOCUMENTATION_REPORT.md DEVELOPER_REPORT.md QA_REPORT.md REVIEW.md FINALIZE_REPORT.md FINALIZE_VALIDATION.md 2>/dev/null || true`,
-    `git rm -r --cached --ignore-unmatch node_modules docs/reports SESSION_LOG.md RUN_LOG.md DOCUMENTATION_REPORT.md DEVELOPER_REPORT.md QA_REPORT.md REVIEW.md FINALIZE_REPORT.md FINALIZE_VALIDATION.md 2>/dev/null || true`,
+    `git restore --source=HEAD --staged --worktree -- node_modules SESSION_LOG.md RUN_LOG.md DOCUMENTATION_REPORT.md DEVELOPER_REPORT.md QA_REPORT.md REVIEW.md FINALIZE_REPORT.md FINALIZE_VALIDATION.md TASK.md AGENT.md AGENTS.md BLOCKED.md EXPLORER_REPORT.md PR_METADATA.json 2>/dev/null || true`,
+    `git rm -r --cached --ignore-unmatch node_modules docs/reports SESSION_LOG.md RUN_LOG.md DOCUMENTATION_REPORT.md DEVELOPER_REPORT.md QA_REPORT.md REVIEW.md FINALIZE_REPORT.md FINALIZE_VALIDATION.md TASK.md AGENT.md AGENTS.md BLOCKED.md EXPLORER_REPORT.md PR_METADATA.json 2>/dev/null || true`,
   ].join("\n");
 }
