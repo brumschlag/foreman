@@ -21,7 +21,12 @@ export interface KelosApi {
  */
 export interface KelosCredentials {
   type: string;
-  secretRef: { name: string };
+  /**
+   * Required by the CRD for the api-key and oauth types, and must be non-empty
+   * when present — an empty name is rejected by the API server. Omit it for
+   * type=none, where the credential comes from the pod or pool.
+   */
+  secretRef?: { name: string };
 }
 
 export interface KelosCrdClientOptions {

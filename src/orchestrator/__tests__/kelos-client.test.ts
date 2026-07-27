@@ -334,4 +334,26 @@ describe("kelos CRD client", () => {
       expect(result.transport).toBe("volume");
     });
   });
+
+  // The CRD requires secretRef.name to be non-empty when present, and forbids a
+  // secretRef entirely for credentials.type=none. Emitting an empty name is
+  // rejected by the API server (verified live on EKS).
+  test("omits secretRef when credentials need none", async () => {
+    let created: { spec?: { credentials?: Record<string, unknown> } } | undefined;
+    const client = createKelosCrdClient(
+      clientOptions({
+        credentials: { type: "none" },
+        api: api({
+          createTask: async (task) => {
+            created = task as { spec?: { credentials?: Record<string, unknown> } };
+            return "n";
+          },
+        }),
+      }),
+    );
+
+    await client.runTask(request);
+
+    expect(created?.spec?.credentials).toEqual({ type: "none" });
+  });
 });
