@@ -63,17 +63,40 @@ export interface KelosCrdClientOptions {
 
 const TERMINAL_PHASES = new Set(["Succeeded", "Failed"]);
 
+/** Where the pre-phase baseline ref is recorded inside the pod. */
+const BASELINE_FILE = "/tmp/foreman-baseline";
+
 /**
- * Captures the phase's work as a patch and uploads it. Untracked files are added
- * to the index first so `git diff --cached` includes new files, which a plain
- * `git diff` would miss — a phase whose only output is a new report file would
- * otherwise upload an empty patch.
+ * Records the workspace state before the agent runs. A pooled worker's workspace
+ * persists across every task it serves, so diffing against HEAD afterwards would
+ * attribute other tasks' leftovers to this phase.
+ *
+ * `git stash create` writes a commit object for the current dirty state without
+ * touching the worktree or the stash list. It prints nothing when the worktree is
+ * clean, hence the fallback to HEAD.
+ */
+function baselineCaptureCommand(): string[] {
+  return [
+    "sh",
+    "-c",
+    `set -e; B=$(git stash create 2>/dev/null || true); ` +
+      `[ -n "$B" ] || B=$(git rev-parse HEAD); printf '%s' "$B" > ${BASELINE_FILE}`,
+  ];
+}
+
+/**
+ * Captures the phase's work as a patch and uploads it. Untracked files are staged
+ * first so the diff includes new files, which a plain `git diff` would miss — a
+ * phase whose only output is a new report would otherwise upload an empty patch.
+ * The diff is taken against the recorded baseline so it holds only this phase's
+ * changes.
  */
 function patchUploadCommand(envVar: string): string[] {
   return [
     "sh",
     "-c",
-    `set -e; git add -A; git diff --cached --binary > /tmp/foreman.patch; ` +
+    `set -e; FOREMAN_BASELINE=$(cat ${BASELINE_FILE}); git add -A; ` +
+      `git diff --cached --binary "$FOREMAN_BASELINE" > /tmp/foreman.patch; ` +
       `curl -sSf -X PUT --upload-file /tmp/foreman.patch "$${envVar}"`,
   ];
 }
@@ -141,7 +164,12 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             }
             return env.length ? { envOverrides: env } : {};
           })(),
-          ...(patchUpload ? { postCommands: [patchUploadCommand(patchUpload.envVar)] } : {}),
+          ...(patchUpload
+            ? {
+                preCommands: [baselineCaptureCommand()],
+                postCommands: [patchUploadCommand(patchUpload.envVar)],
+              }
+            : {}),
         },
       });
 

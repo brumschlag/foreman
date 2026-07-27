@@ -393,6 +393,35 @@ describe("kelos CRD client", () => {
       expect(cmd).toContain("$FOREMAN_PATCH_URL");
     });
 
+    // A pooled worker's workspace carries changes from every task it has already
+    // served, so diffing against HEAD would attribute those to this phase. The
+    // baseline is captured by a preCommand before the agent runs, and the upload
+    // diffs against it.
+    test("captures a baseline before the agent and diffs against it", async () => {
+      let created: { spec?: { preCommands?: string[][]; postCommands?: string[][] } } | undefined;
+      const client = createKelosCrdClient(
+        clientOptions({
+          workerPool: "pool",
+          patchUpload: { url: "https://s3.example/put", envVar: "FOREMAN_PATCH_URL" },
+          api: api({
+            createTask: async (task) => {
+              created = task as { spec?: { preCommands?: string[][]; postCommands?: string[][] } };
+              return "n";
+            },
+          }),
+        }),
+      );
+
+      await client.runTask(request);
+
+      const pre = (created?.spec?.preCommands as string[][])[0].join(" ");
+      const post = (created?.spec?.postCommands as string[][])[0].join(" ");
+      expect(pre).toContain("stash create");
+      // Falls back to HEAD: stash create prints nothing on a clean worktree.
+      expect(pre).toContain("rev-parse HEAD");
+      expect(post).toContain("FOREMAN_BASELINE");
+    });
+
     test("reports patch transport with the key so the runner fetches it", async () => {
       const client = createKelosCrdClient(
         clientOptions({
