@@ -13,6 +13,7 @@ const VARS = [
   "KELOS_WORKTREE_MOUNT",
   "KELOS_AGENT_ENV",
   "KELOS_AGENT_ENV_FROM_SECRET",
+  "KELOS_LOCAL_WORKTREE",
 ];
 
 afterEach(() => {
@@ -155,5 +156,21 @@ describe("kelos backend config", () => {
 
       expect(() => kelosBackendConfigFromEnv()).toThrow(/KELOS_AGENT_ENV|pooled/i);
     });
+  });
+
+  // With a shared worktree, the agent's cwd is a pod mount path that does not
+  // exist on Foreman's machine, so git must run against Foreman's own path.
+  test("reads Foreman's local worktree path for the volume transport", () => {
+    process.env.KELOS_NAMESPACE = "kelos-pilot";
+    process.env.KELOS_WORKTREE_PVC = "pvc";
+    process.env.KELOS_LOCAL_WORKTREE = "/home/me/worktrees/task-1";
+
+    expect(kelosBackendConfigFromEnv().localWorktreePath).toBe("/home/me/worktrees/task-1");
+  });
+
+  test("has no local worktree override when unset", () => {
+    process.env.KELOS_NAMESPACE = "kelos-pilot";
+
+    expect(kelosBackendConfigFromEnv().localWorktreePath).toBeUndefined();
   });
 });

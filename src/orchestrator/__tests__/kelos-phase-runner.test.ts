@@ -171,7 +171,137 @@ describe("kelos phase runner", () => {
     });
   });
 
+  describe("patch transport", () => {
+    // The agent uploads a git patch; Foreman applies it to its own worktree. The
+    // pod's filesystem is never read, so the pod can be reclaimed immediately.
+    test("applies the patch the agent uploaded and reports its files", async () => {
+      const applied: string[] = [];
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "patch", patchKey: "foreman/run-1/developer.patch" }),
+        {
+          patchStore: {
+            presignPut: async () => "https://example.invalid/put",
+            get: async (key) => (key === "foreman/run-1/developer.patch" ? "PATCH BODY" : null),
+          },
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => ["src/greeting.ts"],
+            applyPatchToIndex: async (_repo, file) => {
+              applied.push(readFileSync(file, "utf-8"));
+            },
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(true);
+      expect(applied).toEqual(["PATCH BODY"]);
+      expect(result.filesChanged).toEqual(["src/greeting.ts"]);
+    });
+
+    // A read-only phase legitimately produces no patch; that must not fail it.
+    test("succeeds with no files when the phase uploaded no patch", async () => {
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "patch", patchKey: "foreman/run-1/qa.patch" }),
+        {
+          patchStore: {
+            presignPut: async () => "https://example.invalid/put",
+            get: async () => null,
+          },
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => [],
+            applyPatchToIndex: async () => {
+              throw new Error("must not apply when there is no patch");
+            },
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(true);
+      expect(result.filesChanged).toEqual([]);
+    });
+
+    // A patch that will not apply is a conflict, and must surface in the form
+    // Foreman's retryWithByReason routes to the merge-resolver phase.
+    test("fails the phase when the patch does not apply", async () => {
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "patch", patchKey: "k" }),
+        {
+          patchStore: {
+            presignPut: async () => "https://example.invalid/put",
+            get: async () => "BAD PATCH",
+          },
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => [],
+            applyPatchToIndex: async () => {
+              throw new Error("patch does not apply");
+            },
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(false);
+      expect(result.errorMessage).toMatch(/^merge_conflict:/);
+    });
+  });
+
   describe("shared volume transport", () => {
+    // opts.cwd is the path the AGENT sees inside the pod; Foreman runs git on its
+    // own machine, where that path does not exist. Reading changes from opts.cwd
+    // fails with ENOENT, so the local worktree path has to be supplied separately.
+    test("reads changes from Foreman's local worktree, not the pod path", async () => {
+      const inspected: string[] = [];
+      const runner = createKelosPhaseRunner(stubClient({ transport: "volume" }), {
+        localWorktreePath: "/home/me/worktrees/task-1",
+        vcs: {
+          fetch: async () => {},
+          merge: async () => ({ success: true }),
+          getChangedFiles: async () => [],
+          getModifiedFiles: async (p) => {
+            inspected.push(p);
+            return ["DEVELOPER_REPORT.md"];
+          },
+        },
+      });
+
+      const result = await runner(options(worktree, { cwd: "/workspace" }));
+
+      expect(inspected).toEqual(["/home/me/worktrees/task-1"]);
+      expect(result.filesChanged).toEqual(["DEVELOPER_REPORT.md"]);
+    });
+
+    test("falls back to cwd when no separate local path is configured", async () => {
+      const inspected: string[] = [];
+      const runner = createKelosPhaseRunner(stubClient({ transport: "volume" }), {
+        vcs: {
+          fetch: async () => {},
+          merge: async () => ({ success: true }),
+          getChangedFiles: async () => [],
+          getModifiedFiles: async (p) => {
+            inspected.push(p);
+            return [];
+          },
+        },
+      });
+
+      await runner(options(worktree));
+
+      expect(inspected).toEqual([worktree]);
+    });
+
     test("reports files the agent wrote into the shared worktree, without touching the remote", async () => {
       const touched: string[] = [];
       const runner = createKelosPhaseRunner(stubClient({ transport: "volume" }), {

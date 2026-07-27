@@ -1,7 +1,10 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { PiRunResult } from "./pi-sdk-runner.js";
 import type { ConfiguredPhaseRunner, PhaseRunnerOptions } from "./phase-runner.js";
+import type { PatchStore } from "./kelos-patch-store.js";
 
 export interface KelosTaskFile {
   path: string;
@@ -21,7 +24,9 @@ export interface KelosTaskResult {
    * keeps sole ownership of git. Defaults to branch transport when a branch is
    * reported.
    */
-  transport?: "branch" | "volume";
+  transport?: "branch" | "volume" | "patch";
+  /** Object key the agent uploaded its patch to, for patch transport. */
+  patchKey?: string;
   /** Branch the kelos agent pushed, from TaskStatus.Results["branch"]. */
   branch?: string;
   /** Head commit on that branch, from TaskStatus.Results["commit"]. */
@@ -54,12 +59,23 @@ export interface KelosVcs {
   getChangedFiles(repoPath: string, from: string, to: string): Promise<string[]>;
   /** Uncommitted changes in the worktree — the signal for volume transport. */
   getModifiedFiles?(workspacePath: string): Promise<string[]>;
+  /** Applies a patch file to the worktree and index. */
+  applyPatchToIndex?(workspacePath: string, patchFilePath: string): Promise<void>;
 }
 
 export interface KelosPhaseRunnerDeps {
   vcs?: KelosVcs;
   /** Remote the kelos agent pushes to. Defaults to `origin`. */
   remote?: string;
+  /** Object storage the agent uploads its patch to, for patch transport. */
+  patchStore?: PatchStore;
+  /**
+   * Foreman's own path to the worktree, when it differs from the path the agent
+   * sees inside the pod. Volume transport shares one filesystem across two
+   * machines, so `opts.cwd` (the pod's mount path) is not resolvable locally;
+   * git has to run against this path instead. Defaults to `opts.cwd`.
+   */
+  localWorktreePath?: string;
 }
 
 function accounting(result: KelosTaskResult) {
@@ -86,8 +102,12 @@ export function createKelosPhaseRunner(
       taskId: opts.context.taskId,
     });
 
+    if (result.transport === "patch") {
+      return syncPatch(result, opts, deps, deps.localWorktreePath ?? opts.cwd);
+    }
+
     if (result.transport === "volume") {
-      return syncVolume(result, opts, deps.vcs);
+      return syncVolume(result, opts, deps.vcs, deps.localWorktreePath ?? opts.cwd);
     }
 
     if (result.branch && deps.vcs) {
@@ -95,6 +115,53 @@ export function createKelosPhaseRunner(
     }
 
     return syncFiles(result, opts);
+  };
+}
+
+/**
+ * Patch transport: the agent uploaded a git patch to object storage, which Foreman
+ * applies to its own worktree. Nothing is read from the pod, so the pod can be
+ * reclaimed as soon as it exits.
+ */
+async function syncPatch(
+  result: KelosTaskResult,
+  opts: PhaseRunnerOptions,
+  deps: KelosPhaseRunnerDeps,
+  localWorktreePath: string,
+): Promise<PiRunResult> {
+  const patch = result.patchKey && deps.patchStore
+    ? await deps.patchStore.get(result.patchKey)
+    : null;
+
+  // A read-only phase legitimately uploads nothing.
+  if (patch) {
+    const patchFile = join(tmpdir(), `kelos-${randomUUID()}.patch`);
+    writeFileSync(patchFile, patch, "utf-8");
+    try {
+      await deps.vcs?.applyPatchToIndex?.(localWorktreePath, patchFile);
+    } catch (err) {
+      return {
+        ...accounting(result),
+        success: false,
+        errorMessage: `merge_conflict: kelos patch ${result.patchKey} did not apply: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        filesChanged: [],
+      };
+    } finally {
+      rmSync(patchFile, { force: true });
+    }
+  }
+
+  const filesChanged = deps.vcs?.getModifiedFiles
+    ? await deps.vcs.getModifiedFiles(localWorktreePath)
+    : [];
+
+  return {
+    ...accounting(result),
+    success: result.succeeded,
+    errorMessage: result.errorMessage,
+    filesChanged,
   };
 }
 
@@ -107,9 +174,10 @@ async function syncVolume(
   result: KelosTaskResult,
   opts: PhaseRunnerOptions,
   vcs: KelosVcs | undefined,
+  localWorktreePath: string,
 ): Promise<PiRunResult> {
   const filesChanged = vcs?.getModifiedFiles
-    ? await vcs.getModifiedFiles(opts.cwd)
+    ? await vcs.getModifiedFiles(localWorktreePath)
     : [];
 
   return {

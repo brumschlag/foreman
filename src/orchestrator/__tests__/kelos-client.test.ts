@@ -356,4 +356,58 @@ describe("kelos CRD client", () => {
 
     expect(created?.spec?.credentials).toEqual({ type: "none" });
   });
+
+  describe("patch transport", () => {
+    // The agent uploads its diff with a presigned URL, so the pod needs no AWS
+    // credentials or SDK. postCommands runs the upload in the runtime after the
+    // agent exits rather than asking the model to do it.
+    test("passes the upload URL as env and the upload command as postCommands", async () => {
+      let created: { spec?: Record<string, unknown> } | undefined;
+      const client = createKelosCrdClient(
+        clientOptions({
+          workerPool: "pool",
+          patchUpload: { url: "https://s3.example/put?sig=abc", envVar: "FOREMAN_PATCH_URL" },
+          api: api({
+            createTask: async (task) => {
+              created = task as { spec?: Record<string, unknown> };
+              return "n";
+            },
+          }),
+        }),
+      );
+
+      await client.runTask(request);
+
+      const spec = created?.spec as {
+        envOverrides?: { name: string; value: string }[];
+        postCommands?: string[][];
+      };
+      expect(spec.envOverrides).toEqual(
+        expect.arrayContaining([
+          { name: "FOREMAN_PATCH_URL", value: "https://s3.example/put?sig=abc" },
+        ]),
+      );
+      expect(spec.postCommands?.length).toBe(1);
+      const cmd = (spec.postCommands as string[][])[0].join(" ");
+      expect(cmd).toContain("git");
+      expect(cmd).toContain("$FOREMAN_PATCH_URL");
+    });
+
+    test("reports patch transport with the key so the runner fetches it", async () => {
+      const client = createKelosCrdClient(
+        clientOptions({
+          patchUpload: {
+            url: "https://s3.example/put",
+            envVar: "FOREMAN_PATCH_URL",
+            key: "foreman/run-1/developer.patch",
+          },
+        }),
+      );
+
+      const result = await client.runTask(request);
+
+      expect(result.transport).toBe("patch");
+      expect(result.patchKey).toBe("foreman/run-1/developer.patch");
+    });
+  });
 });

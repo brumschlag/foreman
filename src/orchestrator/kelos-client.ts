@@ -51,11 +51,32 @@ export interface KelosCrdClientOptions {
   workerPool?: string;
   /** Per-Task agent env, the only env channel available to a pooled Task. */
   envOverrides?: { name: string; value: string }[];
+  /**
+   * Presigned upload for the phase's git patch. The URL travels as env and the
+   * upload runs as a postCommand after the agent exits, so the pod needs no AWS
+   * credentials and the model is not asked to run the transfer itself.
+   */
+  patchUpload?: { url: string; envVar: string; key?: string };
   pollIntervalMs?: number;
   maxPolls?: number;
 }
 
 const TERMINAL_PHASES = new Set(["Succeeded", "Failed"]);
+
+/**
+ * Captures the phase's work as a patch and uploads it. Untracked files are added
+ * to the index first so `git diff --cached` includes new files, which a plain
+ * `git diff` would miss — a phase whose only output is a new report file would
+ * otherwise upload an empty patch.
+ */
+function patchUploadCommand(envVar: string): string[] {
+  return [
+    "sh",
+    "-c",
+    `set -e; git add -A; git diff --cached --binary > /tmp/foreman.patch; ` +
+      `curl -sSf -X PUT --upload-file /tmp/foreman.patch "$${envVar}"`,
+  ];
+}
 
 /** Must not collide with kelos-reserved volume names (workspace, kelos-*). */
 const WORKTREE_VOLUME = "foreman-worktree";
@@ -75,6 +96,7 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
   const pollIntervalMs = options.pollIntervalMs ?? 5000;
   const maxPolls = options.maxPolls ?? 720;
   const shared = options.sharedWorktree;
+  const patchUpload = options.patchUpload;
   const pool = options.workerPool;
   // Either way the work is already on disk when the agent finishes — a pool's
   // worker owns a persistent workspace — so nothing is pushed or fetched.
@@ -112,7 +134,14 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
                 ...(shared ? {} : { workspaceRef: { name: options.workspace } }),
                 ...(podOverrides ? { podOverrides } : {}),
               }),
-          ...(options.envOverrides?.length ? { envOverrides: options.envOverrides } : {}),
+          ...(() => {
+            const env = [...(options.envOverrides ?? [])];
+            if (patchUpload) {
+              env.push({ name: patchUpload.envVar, value: patchUpload.url });
+            }
+            return env.length ? { envOverrides: env } : {};
+          })(),
+          ...(patchUpload ? { postCommands: [patchUploadCommand(patchUpload.envVar)] } : {}),
         },
       });
 
@@ -127,9 +156,11 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             inputTokens: numeric(results, "input-tokens"),
             outputTokens: numeric(results, "output-tokens"),
             files: [],
-            ...(usesVolume
-              ? { transport: "volume" as const }
-              : { branch: results?.branch, commit: results?.commit }),
+            ...(patchUpload
+              ? { transport: "patch" as const, patchKey: patchUpload.key }
+              : usesVolume
+                ? { transport: "volume" as const }
+                : { branch: results?.branch, commit: results?.commit }),
             errorMessage: phase === "Failed" ? task.status?.message : undefined,
           };
         }
