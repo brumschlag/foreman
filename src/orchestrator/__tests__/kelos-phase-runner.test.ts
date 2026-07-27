@@ -135,7 +135,7 @@ describe("kelos phase runner", () => {
             },
             merge: async (repoPath, sourceBranch) => {
               calls.push(`merge:${sourceBranch}`);
-              return { success: true, conflictingFiles: [] };
+              return { success: true, conflicts: [] };
             },
             getChangedFiles: async () => ["src/greeting.ts"],
           },
@@ -145,7 +145,9 @@ describe("kelos phase runner", () => {
       const result = await runner(options(worktree));
 
       expect(result.success).toBe(true);
-      expect(calls).toEqual([`fetch:${worktree}`, "merge:kelos/task-1-developer"]);
+      // Merges the remote-tracking ref, not the bare branch name: the kelos agent
+      // pushed to the remote, so the local repo has no such branch.
+      expect(calls).toEqual([`fetch:${worktree}`, "merge:origin/kelos/task-1-developer"]);
       expect(result.filesChanged).toEqual(["src/greeting.ts"]);
     });
 
@@ -155,7 +157,7 @@ describe("kelos phase runner", () => {
         {
           vcs: {
             fetch: async () => {},
-            merge: async () => ({ success: false, conflictingFiles: ["src/a.ts"] }),
+            merge: async () => ({ success: false, conflicts: ["src/a.ts"] }),
             getChangedFiles: async () => [],
           },
         },
@@ -166,6 +168,54 @@ describe("kelos phase runner", () => {
       expect(result.success).toBe(false);
       expect(result.errorMessage).toMatch(/conflict/i);
       expect(result.errorMessage).toContain("src/a.ts");
+    });
+  });
+
+  describe("shared volume transport", () => {
+    test("reports files the agent wrote into the shared worktree, without touching the remote", async () => {
+      const touched: string[] = [];
+      const runner = createKelosPhaseRunner(stubClient({ transport: "volume" }), {
+        vcs: {
+          fetch: async () => {
+            touched.push("fetch");
+          },
+          merge: async () => {
+            touched.push("merge");
+            return { success: true };
+          },
+          getChangedFiles: async () => {
+            touched.push("getChangedFiles");
+            return [];
+          },
+          getModifiedFiles: async () => ["src/greeting.ts", "docs/notes.md"],
+        },
+      });
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(true);
+      expect(result.filesChanged).toEqual(["src/greeting.ts", "docs/notes.md"]);
+      // Nothing is pushed or fetched: Foreman keeps sole ownership of git.
+      expect(touched).toEqual([]);
+    });
+
+    test("still fails the phase when a volume-transport task fails", async () => {
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "volume", succeeded: false, errorMessage: "agent crashed" }),
+        {
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => [],
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(false);
+      expect(result.errorMessage).toBe("agent crashed");
     });
   });
 });

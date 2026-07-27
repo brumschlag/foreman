@@ -15,6 +15,13 @@ export interface KelosTaskResult {
   outputTokens: number;
   files: KelosTaskFile[];
   errorMessage?: string;
+  /**
+   * How the agent's work reaches Foreman's worktree. `volume` means the agent
+   * wrote directly into a shared worktree, so nothing is pushed and Foreman
+   * keeps sole ownership of git. Defaults to branch transport when a branch is
+   * reported.
+   */
+  transport?: "branch" | "volume";
   /** Branch the kelos agent pushed, from TaskStatus.Results["branch"]. */
   branch?: string;
   /** Head commit on that branch, from TaskStatus.Results["commit"]. */
@@ -43,12 +50,16 @@ export interface KelosVcs {
     repoPath: string,
     sourceBranch: string,
     targetBranch?: string,
-  ): Promise<{ success: boolean; conflictingFiles?: string[] }>;
+  ): Promise<{ success: boolean; conflicts?: string[] }>;
   getChangedFiles(repoPath: string, from: string, to: string): Promise<string[]>;
+  /** Uncommitted changes in the worktree — the signal for volume transport. */
+  getModifiedFiles?(workspacePath: string): Promise<string[]>;
 }
 
 export interface KelosPhaseRunnerDeps {
   vcs?: KelosVcs;
+  /** Remote the kelos agent pushes to. Defaults to `origin`. */
+  remote?: string;
 }
 
 function accounting(result: KelosTaskResult) {
@@ -75,11 +86,37 @@ export function createKelosPhaseRunner(
       taskId: opts.context.taskId,
     });
 
+    if (result.transport === "volume") {
+      return syncVolume(result, opts, deps.vcs);
+    }
+
     if (result.branch && deps.vcs) {
-      return syncBranch(result, opts, deps.vcs);
+      return syncBranch(result, opts, deps.vcs, deps.remote ?? "origin");
     }
 
     return syncFiles(result, opts);
+  };
+}
+
+/**
+ * Volume transport: the agent shared Foreman's worktree over a PVC, so the work
+ * is already on disk. Nothing is fetched, merged, or pushed — Foreman's own
+ * finalize/merge-queue keeps sole ownership of git.
+ */
+async function syncVolume(
+  result: KelosTaskResult,
+  opts: PhaseRunnerOptions,
+  vcs: KelosVcs | undefined,
+): Promise<PiRunResult> {
+  const filesChanged = vcs?.getModifiedFiles
+    ? await vcs.getModifiedFiles(opts.cwd)
+    : [];
+
+  return {
+    ...accounting(result),
+    success: result.succeeded,
+    errorMessage: result.errorMessage,
+    filesChanged,
   };
 }
 
@@ -87,12 +124,23 @@ async function syncBranch(
   result: KelosTaskResult,
   opts: PhaseRunnerOptions,
   vcs: KelosVcs,
+  remote: string,
 ): Promise<PiRunResult> {
   const branch = result.branch as string;
   await vcs.fetch(opts.cwd);
-  const merged = await vcs.merge(opts.cwd, branch, opts.context.targetBranch);
+  // The kelos agent pushed to the remote, so after fetch the work exists only as
+  // a remote-tracking ref — merging the bare branch name fails with
+  // "not something we can merge".
+  const ref = `${remote}/${branch}`;
+  // Capture the changed files BEFORE merging: getChangedFiles is a three-dot
+  // diff, so once the branch is merged its merge-base is the branch tip and the
+  // diff comes back empty.
+  const base = opts.context.targetBranch ?? "HEAD";
+  const filesChanged = await vcs.getChangedFiles(opts.cwd, base, ref);
+
+  const merged = await vcs.merge(opts.cwd, ref, opts.context.targetBranch);
   if (!merged.success) {
-    const conflicts = merged.conflictingFiles ?? [];
+    const conflicts = merged.conflicts ?? [];
     return {
       ...accounting(result),
       success: false,
@@ -101,12 +149,11 @@ async function syncBranch(
     };
   }
 
-  const base = opts.context.targetBranch ?? "HEAD~1";
   return {
     ...accounting(result),
     success: result.succeeded,
     errorMessage: result.errorMessage,
-    filesChanged: await vcs.getChangedFiles(opts.cwd, base, branch),
+    filesChanged,
   };
 }
 
