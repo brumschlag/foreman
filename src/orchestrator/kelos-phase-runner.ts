@@ -94,6 +94,27 @@ export function createKelosPhaseRunner(
   deps: KelosPhaseRunnerDeps = {},
 ): ConfiguredPhaseRunner {
   return async (opts: PhaseRunnerOptions): Promise<PiRunResult> => {
+    // The tool policy is enforced by wrapping Pi SDK tool objects in-process, so a
+    // kelos agent — a separate program in a separate pod — cannot be gated by it.
+    // Refuse the phase rather than run it unguarded: dropping the gate silently
+    // would leave the phase looking protected while every tool call went
+    // unchecked.
+    if (opts.toolPolicy) {
+      return {
+        success: false,
+        costUsd: 0,
+        turns: 0,
+        toolCalls: 0,
+        toolBreakdown: {},
+        tokensIn: 0,
+        tokensOut: 0,
+        errorMessage:
+          "agent-error: tool policy cannot be enforced on the kelos backend; " +
+          "the policy gate wraps in-process Pi SDK tools and a kelos agent runs in a separate pod",
+        filesChanged: [],
+      };
+    }
+
     const result = await client.runTask({
       prompt: opts.prompt,
       systemPrompt: opts.systemPrompt,

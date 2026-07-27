@@ -171,6 +171,43 @@ describe("kelos phase runner", () => {
     });
   });
 
+  // Foreman's tool policy is enforced by wrapping Pi SDK tool objects in-process
+  // (pi-sdk-runner wrapToolWithPolicy). A kelos agent is a separate program in a
+  // separate pod, so there is nothing to wrap and the gate cannot run. Silently
+  // dropping it would leave a phase looking guarded while every tool call went
+  // unchecked, so the phase is refused instead.
+  test("refuses to run a phase whose tool policy cannot be enforced", async () => {
+    let dispatched = false;
+    const runner = createKelosPhaseRunner({
+      runTask: async () => {
+        dispatched = true;
+        return { succeeded: true, costUsd: 0, inputTokens: 0, outputTokens: 0, files: [] };
+      },
+    });
+
+    const result = await runner(
+      options(worktree, {
+        toolPolicy: {
+          context: { runId: "r", phaseId: "developer" },
+          check: async () => ({ allowed: true, action: "allow", reason: "ok" }),
+        },
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorMessage).toMatch(/tool policy/i);
+    // Fail closed: the agent must not run at all.
+    expect(dispatched).toBe(false);
+  });
+
+  test("runs normally when no tool policy is configured", async () => {
+    const runner = createKelosPhaseRunner(stubClient());
+
+    const result = await runner(options(worktree));
+
+    expect(result.success).toBe(true);
+  });
+
   describe("patch transport", () => {
     // The agent uploads a git patch; Foreman applies it to its own worktree. The
     // pod's filesystem is never read, so the pod can be reclaimed immediately.

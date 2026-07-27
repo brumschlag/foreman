@@ -6,6 +6,13 @@
  *   FOREMAN_PHASE_RUNNER_MODULE=<dist>/orchestrator/kelos-backend.js
  *   FOREMAN_PHASE_RUNNER_EXPORT=runKelosPhase
  *
+ * Not supported on this backend: the tool policy gate. It is enforced by wrapping
+ * in-process Pi SDK tool objects, and a kelos agent is a separate program in a
+ * separate pod, so a phase configuring `toolPolicy` is refused rather than run
+ * unguarded. Enforcing it here would need a PreToolUse hook in the agent image
+ * calling the server's /worker/v1/tool-policy endpoint, which in turn requires the
+ * Foreman server to be reachable from the cluster.
+ *
  * @module kelos-backend
  */
 
