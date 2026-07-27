@@ -29,11 +29,31 @@ export interface KelosCrdClientOptions {
   workspace: string;
   agentType: string;
   credentials: KelosCredentials;
+  /** Passed through to Task.spec.podOverrides, e.g. Bedrock env wiring. */
+  podOverrides?: unknown;
+  /**
+   * Mount an existing PVC holding Foreman's worktree instead of letting kelos
+   * clone the repo. Phases hand off files on the volume, so nothing is pushed
+   * and Foreman keeps sole ownership of git.
+   */
+  sharedWorktree?: { claimName: string; mountPath: string };
+  /**
+   * Dispatch onto a pre-warmed WorkerPool instead of creating a Job. The pool
+   * owns the persistent workspace, so the repo is not re-cloned per phase. The
+   * CRD forbids type/credentials/workspaceRef/podOverrides on a pooled Task, so
+   * per-phase environment must travel via envOverrides.
+   */
+  workerPool?: string;
+  /** Per-Task agent env, the only env channel available to a pooled Task. */
+  envOverrides?: { name: string; value: string }[];
   pollIntervalMs?: number;
   maxPolls?: number;
 }
 
 const TERMINAL_PHASES = new Set(["Succeeded", "Failed"]);
+
+/** Must not collide with kelos-reserved volume names (workspace, kelos-*). */
+const WORKTREE_VOLUME = "foreman-worktree";
 
 function numeric(results: Record<string, string> | undefined, key: string): number {
   const raw = results?.[key];
@@ -49,6 +69,23 @@ function taskName(request: KelosTaskRequest): string {
 export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClient {
   const pollIntervalMs = options.pollIntervalMs ?? 5000;
   const maxPolls = options.maxPolls ?? 720;
+  const shared = options.sharedWorktree;
+  const pool = options.workerPool;
+  // Either way the work is already on disk when the agent finishes — a pool's
+  // worker owns a persistent workspace — so nothing is pushed or fetched.
+  const usesVolume = Boolean(shared || pool);
+
+  // Volumes must be nested under podOverrides — the CRD rejects spec.volumes /
+  // spec.volumeMounts as unknown fields.
+  const podOverrides = shared
+    ? {
+        ...(options.podOverrides as Record<string, unknown> | undefined),
+        volumes: [
+          { name: WORKTREE_VOLUME, persistentVolumeClaim: { claimName: shared.claimName } },
+        ],
+        volumeMounts: [{ name: WORKTREE_VOLUME, mountPath: shared.mountPath }],
+      }
+    : options.podOverrides;
 
   return {
     async runTask(request: KelosTaskRequest): Promise<KelosTaskResult> {
@@ -57,11 +94,20 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
         kind: "Task",
         metadata: { name: taskName(request) },
         spec: {
-          type: options.agentType,
           model: request.model,
           prompt: `${request.systemPrompt}\n\n${request.prompt}`,
-          credentials: options.credentials,
-          workspaceRef: { name: options.workspace },
+          // A pooled Task carries only the pool reference: the CRD rejects
+          // type, credentials, workspaceRef, and podOverrides alongside
+          // workerPoolRef, so per-phase env must travel via envOverrides.
+          ...(pool
+            ? { workerPoolRef: { name: pool } }
+            : {
+                type: options.agentType,
+                credentials: options.credentials,
+                ...(shared ? {} : { workspaceRef: { name: options.workspace } }),
+                ...(podOverrides ? { podOverrides } : {}),
+              }),
+          ...(options.envOverrides?.length ? { envOverrides: options.envOverrides } : {}),
         },
       });
 
@@ -76,8 +122,9 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             inputTokens: numeric(results, "input-tokens"),
             outputTokens: numeric(results, "output-tokens"),
             files: [],
-            branch: results?.branch,
-            commit: results?.commit,
+            ...(usesVolume
+              ? { transport: "volume" as const }
+              : { branch: results?.branch, commit: results?.commit }),
             errorMessage: phase === "Failed" ? task.status?.message : undefined,
           };
         }

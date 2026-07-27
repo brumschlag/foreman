@@ -88,6 +88,33 @@ describe("kelos CRD client", () => {
     });
   });
 
+  // Bedrock-routed agents take credentials: {type: none} plus AWS env in
+  // podOverrides (kelos examples/09-bedrock-credentials).
+  test("passes podOverrides through so the agent can be routed via Bedrock", async () => {
+    let created: { spec?: Record<string, unknown> } | undefined;
+    const podOverrides = {
+      env: [
+        { name: "CLAUDE_CODE_USE_BEDROCK", value: "1" },
+        { name: "AWS_REGION", value: "us-east-1" },
+      ],
+    };
+    const client = createKelosCrdClient(
+      clientOptions({
+        api: api({
+          createTask: async (task) => {
+            created = task as { spec?: Record<string, unknown> };
+            return "kelos-task-1";
+          },
+        }),
+        podOverrides,
+      }),
+    );
+
+    await client.runTask(request);
+
+    expect(created?.spec).toMatchObject({ podOverrides });
+  });
+
   test("polls until the Task reaches a terminal phase, then maps its results", async () => {
     const phases = ["Pending", "Running", "Succeeded"];
     let calls = 0;
@@ -153,5 +180,158 @@ describe("kelos CRD client", () => {
 
     expect(result.succeeded).toBe(false);
     expect(result.errorMessage).toMatch(/did not reach a terminal phase/i);
+  });
+
+  describe("shared volume transport", () => {
+    test("mounts the shared worktree PVC and runs the agent in it", async () => {
+      let created: { spec?: Record<string, unknown> } | undefined;
+      const client = createKelosCrdClient(
+        clientOptions({
+          api: api({
+            createTask: async (task) => {
+              created = task as { spec?: Record<string, unknown> };
+              return "kelos-task-1";
+            },
+          }),
+          sharedWorktree: { claimName: "foreman-task-1-worktree", mountPath: "/workspace/repo" },
+        }),
+      );
+
+      await client.runTask(request);
+
+      // Volumes live under podOverrides, NOT spec.volumes: the CRD rejects
+      // spec.volumes/spec.volumeMounts as unknown fields (verified by server
+      // dry-run against tasks.kelos.dev v1alpha2).
+      expect(created?.spec).toMatchObject({
+        podOverrides: {
+          volumes: [
+            {
+              name: "foreman-worktree",
+              persistentVolumeClaim: { claimName: "foreman-task-1-worktree" },
+            },
+          ],
+          volumeMounts: [{ name: "foreman-worktree", mountPath: "/workspace/repo" }],
+        },
+      });
+    });
+
+    test("reports volume transport so the runner does not look for a branch", async () => {
+      const client = createKelosCrdClient(
+        clientOptions({
+          sharedWorktree: { claimName: "pvc", mountPath: "/workspace/repo" },
+          api: api({
+            getTask: async () =>
+              ({
+                status: { phase: "Succeeded", results: { "cost-usd": "0.10" } },
+              }) as KelosTaskObject,
+          }),
+        }),
+      );
+
+      const result = await client.runTask(request);
+
+      expect(result.transport).toBe("volume");
+      expect(result.branch).toBeUndefined();
+    });
+
+    test("omits workspaceRef when a shared worktree is used", async () => {
+      let created: { spec?: Record<string, unknown> } | undefined;
+      const client = createKelosCrdClient(
+        clientOptions({
+          sharedWorktree: { claimName: "pvc", mountPath: "/workspace/repo" },
+          api: api({
+            createTask: async (task) => {
+              created = task as { spec?: Record<string, unknown> };
+              return "n";
+            },
+          }),
+        }),
+      );
+
+      await client.runTask(request);
+
+      // The repo arrives on the volume, so kelos must not clone it.
+      expect(created?.spec).not.toHaveProperty("workspaceRef");
+    });
+  });
+
+  describe("worker pool dispatch", () => {
+    // A pooled Task must carry ONLY workerPoolRef + prompt (+ model/effort/
+    // envOverrides). The CRD rejects type, credentials, workspaceRef, image,
+    // agentConfigRefs, dependsOn, branch, and podOverrides alongside
+    // workerPoolRef (verified by server dry-run against tasks.kelos.dev).
+    test("dispatches to a pool without the fields the CRD forbids", async () => {
+      let created: { spec?: Record<string, unknown> } | undefined;
+      const client = createKelosCrdClient(
+        clientOptions({
+          api: api({
+            createTask: async (task) => {
+              created = task as { spec?: Record<string, unknown> };
+              return "n";
+            },
+          }),
+          workerPool: "foreman-pool",
+          podOverrides: { env: [{ name: "IGNORED", value: "1" }] },
+        }),
+      );
+
+      await client.runTask(request);
+
+      expect(created?.spec).toMatchObject({
+        workerPoolRef: { name: "foreman-pool" },
+        model: "anthropic/claude-sonnet-4-6",
+      });
+      for (const forbidden of [
+        "type",
+        "credentials",
+        "workspaceRef",
+        "podOverrides",
+        "volumes",
+        "volumeMounts",
+      ]) {
+        expect(created?.spec).not.toHaveProperty(forbidden);
+      }
+    });
+
+    // envOverrides is the per-Task env channel for pooled Tasks (our kelos fork,
+    // upstream #1566): podOverrides is unavailable, so per-phase provider routing
+    // has to travel this way.
+    test("routes per-phase env through envOverrides on a pooled task", async () => {
+      let created: { spec?: Record<string, unknown> } | undefined;
+      const client = createKelosCrdClient(
+        clientOptions({
+          api: api({
+            createTask: async (task) => {
+              created = task as { spec?: Record<string, unknown> };
+              return "n";
+            },
+          }),
+          workerPool: "foreman-pool",
+          envOverrides: [
+            { name: "CLAUDE_CODE_USE_BEDROCK", value: "1" },
+            { name: "AWS_REGION", value: "us-east-1" },
+          ],
+        }),
+      );
+
+      await client.runTask(request);
+
+      expect(created?.spec).toMatchObject({
+        envOverrides: [
+          { name: "CLAUDE_CODE_USE_BEDROCK", value: "1" },
+          { name: "AWS_REGION", value: "us-east-1" },
+        ],
+      });
+    });
+
+    // The pool's worker owns the persistent workspace, so the work is already on
+    // disk when the agent finishes: nothing is pushed.
+    test("reports volume transport for pooled tasks", async () => {
+      const client = createKelosCrdClient(clientOptions({ workerPool: "foreman-pool" }));
+
+      const result = await client.runTask(request);
+
+      expect(result.transport).toBe("volume");
+    });
   });
 });
