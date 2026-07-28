@@ -72,9 +72,10 @@ RUN find dist/lib/db/migrations -type f -not -name '*.js' -delete
 FROM node:22-slim AS runtime
 
 # libncurses/openssl are the release's ERTS runtime dependencies; git is required
-# for worktree operations.
+# for worktree operations. curl is needed to fetch gh below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     git \
     libncurses6 \
     openssh-client \
@@ -83,6 +84,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git config --global user.email "foreman@container" \
     && git config --global user.name "Foreman Agent" \
     && git config --global safe.directory '*'
+
+# The GitHub CLI drives every PR and merge path (create-pr, pr-wait, merge,
+# refinery, conflict resolution), so a pipeline reaching those phases fails
+# without it. Installed from the pinned upstream release rather than Debian's
+# gh 2.23, which is years behind.
+ARG GH_VERSION=2.67.0
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    curl -fsSL -o /tmp/gh.tar.gz \
+      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz"; \
+    tar -xzf /tmp/gh.tar.gz -C /tmp; \
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh; \
+    rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${arch}"; \
+    gh --version
 
 WORKDIR /app
 

@@ -6,6 +6,22 @@
 #   secret/foreman-postgres — see postgres.yaml
 #
 # Image is amd64-only (see the TRD Phase 2 correction), hence the nodeSelector.
+# Pi SDK phases invoke Bedrock directly. Pi does NOT honour ANTHROPIC_BASE_URL,
+# so it cannot be pointed at the LiteLLM gateway with an API key — that silently
+# sends requests to api.anthropic.com and 401s. Bedrock is a first-class Pi
+# provider and picks up EKS Pod Identity credentials automatically, so no model
+# key is stored anywhere.
+#
+# Bound to arn:aws:iam::565715328522:role/eks-kelos-pilot-foreman-server via:
+#   aws eks create-pod-identity-association --cluster-name software-engineering \
+#     --namespace kelos-pilot --service-account foreman-server \
+#     --role-arn arn:aws:iam::565715328522:role/eks-kelos-pilot-foreman-server
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: foreman-server
+  namespace: kelos-pilot
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -37,14 +53,23 @@ spec:
       labels:
         app: foreman-server
     spec:
+      serviceAccountName: foreman-server
       nodeSelector:
         kubernetes.io/arch: amd64
+      # A freshly provisioned PVC mounts as root:root, which MASKS the image's
+      # chown of $HOME/.foreman — the container runs as uid 10001 and cannot
+      # create worktrees or the project store. fsGroup makes the kubelet chown
+      # the volume to the pod's group on mount.
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       # Migrations run here rather than in the app container so a restart or a
       # future second replica cannot race the schema. Idempotent — a
       # already-migrated database reports "Migrations already up" and exits 0.
       initContainers:
         - name: migrate
-          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.5
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.6
           args: [migrate]
           env:
             - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
@@ -63,7 +88,7 @@ spec:
               memory: 512Mi
       containers:
         - name: server
-          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.5
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.6
           ports:
             - name: http
               containerPort: 4766
@@ -92,6 +117,18 @@ spec:
             # DNS rather than 127.0.0.1.
             - name: FOREMAN_SERVER_URL
               value: http://foreman-server.kelos-pilot.svc.cluster.local:4766
+            # Every PR and merge path shells out to the gh CLI, which reads this.
+            # git push over HTTPS uses it too, via the credential helper below.
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token-write
+                  key: GITHUB_TOKEN
+            # Pi resolves Bedrock credentials from Pod Identity; only the region
+            # is needed. Do NOT set ANTHROPIC_API_KEY here — Pi would prefer the
+            # Anthropic provider and ignore Bedrock.
+            - name: AWS_REGION
+              value: us-east-1
           # /api/v1/health answers unauthenticated (a token only adds the runtime
           # detail block), so no probe credential is needed.
           readinessProbe:

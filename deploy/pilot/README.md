@@ -44,6 +44,49 @@ kubectl create secret generic foreman-server -n kelos-pilot \
   --from-literal=auth-token="$(openssl rand -hex 32)"
 ```
 
+The server also reads `github-token-write` (key `GITHUB_TOKEN`) from this
+namespace for the `gh` CLI and git push.
+
+### Bedrock access (Pod Identity)
+
+Pi SDK phases invoke Bedrock directly. Pi does **not** honour
+`ANTHROPIC_BASE_URL`, so it cannot be pointed at the LiteLLM gateway with an API
+key — doing so silently sends requests to `api.anthropic.com` and 401s on every
+turn. Bedrock is a first-class Pi provider that resolves EKS Pod Identity
+credentials automatically, so no model key is stored anywhere:
+
+```bash
+aws iam create-role --role-name eks-kelos-pilot-foreman-server \
+  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"pods.eks.amazonaws.com"},"Action":["sts:AssumeRole","sts:TagSession"]}]}'
+
+aws iam put-role-policy --role-name eks-kelos-pilot-foreman-server \
+  --policy-name bedrock-invoke --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream","bedrock:Converse","bedrock:ConverseStream"],"Resource":"*"}]}'
+
+aws eks create-pod-identity-association --cluster-name software-engineering \
+  --namespace kelos-pilot --service-account foreman-server \
+  --role-arn arn:aws:iam::565715328522:role/eks-kelos-pilot-foreman-server
+```
+
+Do **not** set `ANTHROPIC_API_KEY` on the Deployment — Pi would prefer the
+Anthropic provider and ignore Bedrock. Workflow models must be native Bedrock
+ids, e.g. `amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0`; the
+gateway's names (`claude-haiku`) are not valid here.
+
+Note this gives up the LiteLLM gateway's per-user cost attribution (see
+`gateway-models.md` in the kelos fork) — Foreman's spend appears under the shared
+role.
+
+### Runtime assets
+
+A fresh `foreman-home` PVC is empty, so prompts and workflows are missing and
+every dispatch fails preflight with "Foreman runtime assets are out of date".
+Install them once per deployment:
+
+```bash
+kubectl exec -n kelos-pilot deploy/foreman-server -c server -- \
+  sh -c 'cd /home/foreman/.foreman/projects/<project> && foreman init --force'
+```
+
 `FOREMAN_SERVER_AUTH_TOKEN` is mandatory, not optional: the server refuses to
 start (exit 1) when bound beyond loopback without it.
 
