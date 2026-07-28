@@ -87,7 +87,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # "Author identity unknown". System scope survives both.
     && git config --system user.email "foreman@container" \
     && git config --system user.name "Foreman Agent" \
-    && git config --system safe.directory '*'
+    && git config --system safe.directory '*' \
+    # Foreman assumes the host already has git push credentials, which is true on
+    # a laptop and false in a container: finalize otherwise pushes anonymously and
+    # fails with "No anonymous write access". Reuse the GH_TOKEN that gh already
+    # needs, via a helper reading it at push time so no token is baked into the
+    # image or written to disk.
+    && printf '%s\n' '#!/bin/sh' 'echo username=x-access-token' 'echo "password=${GH_TOKEN:-${GITHUB_TOKEN}}"' \
+       > /usr/local/bin/foreman-git-credential \
+    && chmod 0755 /usr/local/bin/foreman-git-credential \
+    && git config --system credential.https://github.com.helper /usr/local/bin/foreman-git-credential
 
 # The GitHub CLI drives every PR and merge path (create-pr, pr-wait, merge,
 # refinery, conflict resolution), so a pipeline reaching those phases fails
