@@ -152,6 +152,57 @@ describe("kelos CRD client", () => {
     expect(result.outputTokens).toBe(150);
   });
 
+  // Turn counts come from the agent's own result line via kelos-capture; without
+  // them a phase reports zero turns and per-turn cost metrics read as blank.
+  test("maps the reported turn count onto the phase result", async () => {
+    const client = createKelosCrdClient(
+      clientOptions({
+        api: api({
+          getTask: async () =>
+            ({
+              status: { phase: "Succeeded", results: { "num-turns": "7", "cost-usd": "0.02" } },
+            }) as KelosTaskObject,
+        }),
+      }),
+    );
+
+    const result = await client.runTask(request);
+
+    expect(result.turns).toBe(7);
+  });
+
+  // kelos-capture derives these from tool_use blocks in the agent stream, since
+  // the result line carries no tool counts.
+  test("maps tool call counts and their breakdown", async () => {
+    const client = createKelosCrdClient(
+      clientOptions({
+        api: api({
+          getTask: async () =>
+            ({
+              status: {
+                phase: "Succeeded",
+                results: { "tool-calls": "3", "tool-breakdown": "Bash=1,Write=2" },
+              },
+            }) as KelosTaskObject,
+        }),
+      }),
+    );
+
+    const result = await client.runTask(request);
+
+    expect(result.toolCalls).toBe(3);
+    expect(result.toolBreakdown).toEqual({ Bash: 1, Write: 2 });
+  });
+
+  test("tolerates a missing tool breakdown", async () => {
+    const client = createKelosCrdClient(clientOptions());
+
+    const result = await client.runTask(request);
+
+    expect(result.toolCalls).toBe(0);
+    expect(result.toolBreakdown).toEqual({});
+  });
+
   test("reports a failed Task as unsuccessful with the status message", async () => {
     const client = createKelosCrdClient(
       clientOptions({

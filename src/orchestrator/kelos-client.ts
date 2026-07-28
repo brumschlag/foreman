@@ -111,6 +111,18 @@ function numeric(results: Record<string, string> | undefined, key: string): numb
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Parses kelos-capture's `Name=count,Name2=count` tool breakdown. */
+function parseToolBreakdown(raw: string | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const entry of (raw ?? "").split(",").map((e) => e.trim()).filter(Boolean)) {
+    const eq = entry.lastIndexOf("=");
+    if (eq < 1) continue;
+    const count = Number(entry.slice(eq + 1));
+    if (Number.isFinite(count)) out[entry.slice(0, eq)] = count;
+  }
+  return out;
+}
+
 function taskName(request: KelosTaskRequest): string {
   return `foreman-${request.taskId}-${request.phaseName}`.toLowerCase();
 }
@@ -183,6 +195,9 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             costUsd: numeric(results, "cost-usd"),
             inputTokens: numeric(results, "input-tokens"),
             outputTokens: numeric(results, "output-tokens"),
+            turns: numeric(results, "num-turns"),
+            toolCalls: numeric(results, "tool-calls"),
+            toolBreakdown: parseToolBreakdown(results?.["tool-breakdown"]),
             files: [],
             ...(patchUpload
               ? { transport: "patch" as const, patchKey: patchUpload.key }

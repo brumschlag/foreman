@@ -67,6 +67,22 @@ function parseSecretEnv(spec: string): KelosEnvVar[] {
     });
 }
 
+/**
+ * Parses `resolvedModel=gatewayName,...`. Workflow YAML shorthands resolve to
+ * provider-qualified ids, which a gateway does not serve under those names.
+ */
+function parseModelMap(spec: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const entry of spec.split(",").map((e) => e.trim()).filter(Boolean)) {
+    const eq = entry.indexOf("=");
+    if (eq < 1) {
+      throw new Error(`KELOS_MODEL_MAP entry must be resolvedModel=gatewayName, got ${entry}`);
+    }
+    map.set(entry.slice(0, eq).trim(), entry.slice(eq + 1).trim());
+  }
+  return map;
+}
+
 export interface KelosBackendConfig {
   namespace: string;
   context?: string;
@@ -100,6 +116,12 @@ export interface KelosBackendConfig {
   patchStore?: PatchStore;
   /** Key prefix and the env var carrying the presigned upload URL. */
   patch?: { prefix: string; envVar: string };
+  /**
+   * Translates a resolved model id to the gateway's own name. kelos turns
+   * spec.model into the agent CLI's --model flag, which wins over any env var, so
+   * the Task's model must be mapped too — not just the env.
+   */
+  gatewayModel(model: string): string;
   /** Per-phase env for a pooled task; empty when no model env var is configured. */
   envOverridesFor(model: string): { name: string; value: string }[];
 }
@@ -113,6 +135,7 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
   // A pooled task cannot carry podOverrides, so the phase's model reaches the
   // agent through envOverrides under whichever variable the image reads.
   const modelEnv = process.env.KELOS_MODEL_ENV?.trim();
+  const modelMap = parseModelMap(process.env.KELOS_MODEL_MAP ?? "");
   const pollIntervalMs = Number(process.env.KELOS_POLL_INTERVAL_MS);
 
   const workerPool = process.env.KELOS_WORKER_POOL?.trim() || undefined;
@@ -136,6 +159,17 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
       "KELOS_AGENT_ENV/KELOS_AGENT_ENV_FROM_SECRET are not supported on the pooled path; configure the env on the WorkerPool instead",
     );
   }
+
+  // An unmapped model is refused rather than substituted: running a phase on a
+  // model the workflow did not ask for changes cost and quality silently.
+  const gatewayModel = (model: string): string => {
+    if (modelMap.size > 0 && !modelMap.has(model)) {
+      throw new Error(
+        `model ${model} is not mapped to a gateway model; add it to KELOS_MODEL_MAP`,
+      );
+    }
+    return modelMap.get(model) ?? model;
+  };
 
   return {
     namespace,
@@ -168,7 +202,9 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
     workspace: process.env.KELOS_WORKSPACE?.trim() || "",
     agentType: process.env.KELOS_AGENT_TYPE?.trim() || "claude-code",
     pollIntervalMs: Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : undefined,
-    envOverridesFor: (model) => (modelEnv ? [{ name: modelEnv, value: model }] : []),
+    gatewayModel,
+    envOverridesFor: (model) =>
+      modelEnv ? [{ name: modelEnv, value: gatewayModel(model) }] : [],
   };
 }
 
@@ -218,7 +254,9 @@ export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseR
       localWorktreePath: localWorktree,
       patchStore: config.patchStore,
     });
-    return runner(opts);
+    // The Task's model becomes the agent CLI's --model flag, which wins over the
+    // env var, so it has to carry the gateway's name rather than the resolved id.
+    return runner({ ...opts, model: config.gatewayModel(opts.model) });
   };
 }
 

@@ -14,6 +14,7 @@ const VARS = [
   "KELOS_AGENT_ENV",
   "KELOS_AGENT_ENV_FROM_SECRET",
   "KELOS_LOCAL_WORKTREE",
+  "KELOS_MODEL_MAP",
 ];
 
 afterEach(() => {
@@ -172,5 +173,71 @@ describe("kelos backend config", () => {
     process.env.KELOS_NAMESPACE = "kelos-pilot";
 
     expect(kelosBackendConfigFromEnv().localWorktreePath).toBeUndefined();
+  });
+
+  // Workflow YAML uses shorthands that resolve to provider-qualified ids
+  // ("anthropic/claude-haiku-4-5"), but a gateway serves its own names. The map
+  // translates at the boundary rather than baking one gateway's naming into the
+  // workflows.
+  describe("model mapping", () => {
+    test("translates the resolved model to the gateway's name", () => {
+      process.env.KELOS_NAMESPACE = "kelos-pilot";
+      process.env.KELOS_MODEL_ENV = "ANTHROPIC_MODEL";
+      process.env.KELOS_MODEL_MAP =
+        "anthropic/claude-haiku-4-5=claude-haiku,minimax/MiniMax-M2.7=minimax";
+
+      const cfg = kelosBackendConfigFromEnv();
+
+      expect(cfg.envOverridesFor("anthropic/claude-haiku-4-5")).toEqual([
+        { name: "ANTHROPIC_MODEL", value: "claude-haiku" },
+      ]);
+      expect(cfg.envOverridesFor("minimax/MiniMax-M2.7")).toEqual([
+        { name: "ANTHROPIC_MODEL", value: "minimax" },
+      ]);
+    });
+
+    // Substituting a different model silently would run the phase on something the
+    // workflow did not ask for, diverging cost and quality with no signal.
+    test("refuses a model the map does not cover", () => {
+      process.env.KELOS_NAMESPACE = "kelos-pilot";
+      process.env.KELOS_MODEL_ENV = "ANTHROPIC_MODEL";
+      process.env.KELOS_MODEL_MAP = "anthropic/claude-haiku-4-5=claude-haiku";
+
+      const cfg = kelosBackendConfigFromEnv();
+
+      expect(() => cfg.envOverridesFor("openai/gpt-5.2-chat-latest")).toThrow(
+        /openai\/gpt-5\.2-chat-latest.*KELOS_MODEL_MAP|not mapped/i,
+      );
+    });
+
+    // kelos turns spec.model into KELOS_MODEL and then the agent CLI's --model
+    // flag, which wins over any env var. Mapping only the env var left the agent
+    // asking the gateway for a provider-qualified id it does not serve.
+    test("exposes the gateway model so spec.model can be mapped too", () => {
+      process.env.KELOS_NAMESPACE = "kelos-pilot";
+      process.env.KELOS_MODEL_MAP = "anthropic/claude-haiku-4-5=claude-haiku";
+
+      const cfg = kelosBackendConfigFromEnv();
+
+      expect(cfg.gatewayModel("anthropic/claude-haiku-4-5")).toBe("claude-haiku");
+    });
+
+    test("refuses an unmapped model when resolving the gateway model", () => {
+      process.env.KELOS_NAMESPACE = "kelos-pilot";
+      process.env.KELOS_MODEL_MAP = "anthropic/claude-haiku-4-5=claude-haiku";
+
+      const cfg = kelosBackendConfigFromEnv();
+
+      expect(() => cfg.gatewayModel("openai/gpt-5.2-chat-latest")).toThrow(/not mapped/i);
+    });
+
+    test("passes the model through unchanged when no map is configured", () => {
+      process.env.KELOS_NAMESPACE = "kelos-pilot";
+      process.env.KELOS_MODEL_ENV = "ANTHROPIC_MODEL";
+
+      expect(kelosBackendConfigFromEnv().envOverridesFor("claude-haiku")).toEqual([
+        { name: "ANTHROPIC_MODEL", value: "claude-haiku" },
+      ]);
+    });
   });
 });

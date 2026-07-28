@@ -16,6 +16,12 @@ export interface KelosTaskResult {
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
+  /** Agent turns, from TaskStatus.Results["num-turns"] when reported. */
+  turns?: number;
+  /** Tool calls, from TaskStatus.Results["tool-calls"] when reported. */
+  toolCalls?: number;
+  /** Per-tool counts, parsed from TaskStatus.Results["tool-breakdown"]. */
+  toolBreakdown?: Record<string, number>;
   files: KelosTaskFile[];
   errorMessage?: string;
   /**
@@ -81,9 +87,9 @@ export interface KelosPhaseRunnerDeps {
 function accounting(result: KelosTaskResult) {
   return {
     costUsd: result.costUsd,
-    turns: 0,
-    toolCalls: 0,
-    toolBreakdown: {},
+    turns: result.turns ?? 0,
+    toolCalls: result.toolCalls ?? 0,
+    toolBreakdown: result.toolBreakdown ?? {},
     tokensIn: result.inputTokens,
     tokensOut: result.outputTokens,
   };
