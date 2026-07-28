@@ -1,4 +1,5 @@
 import type { KelosClient, KelosTaskRequest, KelosTaskResult } from "./kelos-phase-runner.js";
+import { toolPolicyHookEnv, toolPolicyInstallCommands } from "./kelos-tool-policy-hook.js";
 
 export interface KelosTaskObject {
   metadata?: { name?: string };
@@ -57,6 +58,19 @@ export interface KelosCrdClientOptions {
    * credentials and the model is not asked to run the transfer itself.
    */
   patchUpload?: { url: string; envVar: string; key?: string };
+  /**
+   * Enforce Foreman's tool policy inside the agent pod via a PreToolUse hook.
+   * The gate itself stays server-side (`/worker/v1/tool-policy`); only the
+   * interception point moves, because an in-process tool wrapper cannot reach a
+   * separate program in a separate pod.
+   */
+  toolPolicy?: {
+    serverUrl: string;
+    authToken?: string;
+    runId: string;
+    taskId: string;
+    phaseId: string;
+  };
   pollIntervalMs?: number;
   maxPolls?: number;
 }
@@ -150,6 +164,9 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
     : options.podOverrides;
 
   return {
+    // Declared before dispatch so the phase runner can refuse a policy-gated
+    // phase rather than discover the gap after the agent has already run.
+    enforcesToolPolicy: Boolean(options.toolPolicy),
     async runTask(request: KelosTaskRequest): Promise<KelosTaskResult> {
       const name = await options.api.createTask({
         apiVersion: "kelos.dev/v1alpha2",
@@ -174,14 +191,25 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             if (patchUpload) {
               env.push({ name: patchUpload.envVar, value: patchUpload.url });
             }
+            if (options.toolPolicy) {
+              env.push(...toolPolicyHookEnv(options.toolPolicy));
+            }
             return env.length ? { envOverrides: env } : {};
           })(),
-          ...(patchUpload
-            ? {
-                preCommands: [baselineCaptureCommand()],
-                postCommands: [patchUploadCommand(patchUpload.envVar)],
-              }
-            : {}),
+          ...(() => {
+            // The hook must be on disk before the agent starts, so its install
+            // leads the preCommands.
+            const preCommands = [
+              ...(options.toolPolicy ? toolPolicyInstallCommands() : []),
+              ...(patchUpload ? [baselineCaptureCommand()] : []),
+            ];
+            return {
+              ...(preCommands.length ? { preCommands } : {}),
+              ...(patchUpload
+                ? { postCommands: [patchUploadCommand(patchUpload.envVar)] }
+                : {}),
+            };
+          })(),
         },
       });
 

@@ -25,6 +25,12 @@ export interface KelosTaskResult {
   files: KelosTaskFile[];
   errorMessage?: string;
   /**
+   * Set by a client that installed the tool-policy PreToolUse hook into the
+   * agent pod. Absent means the phase ran unguarded, so a policy-gated phase
+   * must be refused rather than silently trusted.
+   */
+  enforcesToolPolicy?: boolean;
+  /**
    * How the agent's work reaches Foreman's worktree. `volume` means the agent
    * wrote directly into a shared worktree, so nothing is pushed and Foreman
    * keeps sole ownership of git. Defaults to branch transport when a branch is
@@ -49,6 +55,12 @@ export interface KelosTaskRequest {
 
 export interface KelosClient {
   runTask(request: KelosTaskRequest): Promise<KelosTaskResult>;
+  /**
+   * True when this client installs the tool-policy hook into the agent pod.
+   * Checked BEFORE dispatch: discovering it afterwards would mean the agent
+   * already ran unguarded.
+   */
+  enforcesToolPolicy?: boolean;
 }
 
 /**
@@ -100,12 +112,12 @@ export function createKelosPhaseRunner(
   deps: KelosPhaseRunnerDeps = {},
 ): ConfiguredPhaseRunner {
   return async (opts: PhaseRunnerOptions): Promise<PiRunResult> => {
-    // The tool policy is enforced by wrapping Pi SDK tool objects in-process, so a
-    // kelos agent — a separate program in a separate pod — cannot be gated by it.
-    // Refuse the phase rather than run it unguarded: dropping the gate silently
-    // would leave the phase looking protected while every tool call went
-    // unchecked.
-    if (opts.toolPolicy) {
+    // In-process the policy wraps Pi SDK tool objects, which cannot reach a kelos
+    // agent running as a separate program in a separate pod. A client configured
+    // with a tool policy installs a PreToolUse hook instead; one that is not
+    // leaves every tool call unchecked, so refuse rather than run the phase
+    // looking protected while it is not.
+    if (opts.toolPolicy && !client.enforcesToolPolicy) {
       return {
         success: false,
         costUsd: 0,
