@@ -1,11 +1,12 @@
 version: '1'
 domains:
-  - epic-execution
-  - pipeline-executor
-  - orchestrator
-  - cli
-  - dispatcher
-  - planning
+  epic-execution: {}
+  pipeline-executor: {}
+  orchestrator: {}
+  cli: {}
+  dispatcher: {}
+  planning: {}
+  deployment: {}
 governance:
   max_entries: 100
   warn_entries: 150
