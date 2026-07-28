@@ -762,7 +762,7 @@ export function qaReportHasTestEvidence(reportContent: string): boolean {
   // already offers "Test suite: ... | SKIPPED"; honour it. An explicit skip is
   // still a deliberate statement, unlike a bare claim that things look fine,
   // which this continues to reject.
-  if (/^\s*-?\s*Test suite:\s*(?:\*\*)?SKIPPED/im.test(reportContent)) return true;
+  if (/^\s*-?\s*Test suite:\s*(?:\*\*)?(?:SKIPPED|N\/A|NONE)\b/im.test(reportContent)) return true;
 
   const commandPatterns: RegExp[] = [
     /npm\s+test/i,

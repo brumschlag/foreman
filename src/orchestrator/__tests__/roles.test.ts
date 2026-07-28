@@ -371,6 +371,20 @@ describe("qaReportHasTestEvidence", () => {
     expect(qaReportHasTestEvidence(report)).toBe(true);
   });
 
+  // Live run: the agent wrote "Test suite: N/A (this is a file creation task, no
+  // tests to run)" rather than the literal SKIPPED, and the verdict was still
+  // overridden to fail. The marker has to cover how agents actually phrase it.
+  it("accepts N/A as an explicit no-test-suite statement", () => {
+    const report = [
+      "## Verdict: PASS",
+      "## Test Results",
+      "- Targeted command(s) run: `wc -l CLUSTER_SMOKE.md`",
+      "- Test suite: N/A (this is a file creation task, no tests to run)",
+    ].join("\n");
+
+    expect(qaReportHasTestEvidence(report)).toBe(true);
+  });
+
   it("does not accept a bare claim of success with no command and no skip marker", () => {
     // Still rejects the case the check exists for: an agent asserting things are
     // fine without running or explicitly skipping anything.

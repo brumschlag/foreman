@@ -22,6 +22,25 @@ describe("finalize guards", () => {
   // with `scope_guard_failed: DOCUMENTATION_SESSION_LOG.md, QA_SESSION_LOG.md,
   // REVIEWER_SESSION_LOG.md, TASK.md` — none of which the developer chose to
   // touch, so no ## Scope Expansions entry could ever justify them.
+  // Live run: the explorer wrote an ABSOLUTE worktree path under "### Edit First"
+  // ("**Create:** `/home/foreman/.../cluster-smoke-9/CLUSTER_SMOKE.md`"), so the
+  // relative changed-file "CLUSTER_SMOKE.md" never matched and finalize failed
+  // with scope_guard_failed on the task's OWN target file.
+  it("matches an Edit First entry written as an absolute worktree path", () => {
+    const worktreePath = join(tmpdir(), `foreman-finalize-abs-${process.pid}-${Date.now()}`);
+    tmpDirs.push(worktreePath);
+    const reportDir = ".foreman/reports/task-abs/run-abs";
+    mkdirSync(join(worktreePath, reportDir), { recursive: true });
+    writeFileSync(
+      join(worktreePath, reportDir, "EXPLORER_REPORT.md"),
+      `### Edit First\n- **Create:** \`${worktreePath}/CLUSTER_SMOKE.md\`\n`,
+      "utf8",
+    );
+    writeFileSync(join(worktreePath, reportDir, "DEVELOPER_REPORT.md"), `# Developer Report\n`, "utf8");
+
+    expect(findFinalizeScopeViolations({ worktreePath, reportDir }, ["CLUSTER_SMOKE.md"])).toEqual([]);
+  });
+
   it("does not flag worker-generated audit files as out-of-scope", () => {
     const worktreePath = join(tmpdir(), `foreman-finalize-audit-${process.pid}-${Date.now()}`);
     tmpDirs.push(worktreePath);

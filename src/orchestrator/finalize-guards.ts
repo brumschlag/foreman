@@ -138,6 +138,25 @@ export function reportJustifiesOutOfScope(report: string, file: string): boolean
   return isValidJustification(justification);
 }
 
+/**
+ * Explorer-scoped paths re-expressed relative to the worktree.
+ *
+ * The explorer is asked for repo-relative paths but sometimes writes the
+ * absolute worktree path instead. Changed files are always repo-relative, so
+ * without this the task's OWN target file reads as out-of-scope.
+ */
+function relativeAllowedPaths(
+  config: FinalizeGuardConfig,
+  allowedPaths: Set<string>,
+): Set<string> {
+  const prefix = config.worktreePath.replace(/\/+$/, "") + "/";
+  const relative = new Set<string>();
+  for (const candidate of allowedPaths) {
+    if (candidate.startsWith(prefix)) relative.add(candidate.slice(prefix.length));
+  }
+  return relative;
+}
+
 export function findFinalizeScopeViolations(config: FinalizeGuardConfig, changedFiles: string[]): string[] {
   const explorerReport = readFinalizeReportFile(config, "EXPLORER_REPORT.md");
   const developerReport = readFinalizeReportFile(config, "DEVELOPER_REPORT.md");
@@ -147,6 +166,10 @@ export function findFinalizeScopeViolations(config: FinalizeGuardConfig, changed
   return changedFiles.filter((file) => {
     const normalized = file.replace(/^\.\//, "");
     if (allowedPaths.has(normalized)) return false;
+    // The explorer sometimes writes an absolute worktree path in Edit First, so
+    // compare the scoped paths repo-relative too rather than flagging the task's
+    // own target file.
+    if (relativeAllowedPaths(config, allowedPaths).has(normalized)) return false;
     if (normalized.startsWith(config.reportDir)) return false;
     if (isWorkerGeneratedAuditFile(normalized)) return false;
     if (reportJustifiesOutOfScope(developerReport, normalized)) return false;
