@@ -2,7 +2,8 @@
 
 **Document ID:** TRD-2026-026
 **Version:** 1.0
-**Status:** In progress — Phases 1–3 complete; Phase 4 next
+**Status:** Complete — Phases 1–5 done. Tool policy is enforced in-cluster;
+volume transport was measured and declined (patch transport stays the default).
 **Date:** 2026-07-28
 **Author:** AI-assisted
 
@@ -224,7 +225,7 @@ port-forward; all 7 `/api/v1/doctor` checks green; runtime reports
 unauthenticated `/api/v1/doctor` → **401**; both PVCs Bound, both pods Running
 with 0 restarts.
 
-### Phase 4 — Non-interactive project registration
+### Phase 4 — Non-interactive project registration — **DONE (no code change)**
 
 `foreman init` prompts, so provide a path that does not: either a flag, or seed
 projects through `POST /api/v1/projects`.
@@ -234,7 +235,152 @@ interaction.
 
 *Risk:* low, but it is the thing most likely to block Phase 3 from being useful.
 
-### Phase 5 — Prove the two blocked capabilities
+**Outcome.** The premise was wrong twice, and no code was needed.
+
+1. **`foreman init` does not prompt.** Prompting lives behind an opt-in
+   `--wizard` flag (`src/cli/commands/init.ts:281`); the default path calls
+   `initBackend` + `maybeRegisterInitializedProjectInElixir` with no readline at
+   all. `--name` covers the only value worth passing.
+2. **`POST /api/v1/projects` does not exist.** Projects are seeded through the
+   single command boundary, `POST /api/v1/commands`, with
+   `command_type: "project.register"` — the same call the CLI makes
+   (`src/cli/commands/project-task-support.ts:60`). `GET /api/v1/projects` is
+   read-only.
+
+So the non-interactive path is a plain authenticated HTTP call:
+
+```bash
+curl -X POST "$FOREMAN_SERVER_URL/api/v1/commands" \
+  -H "Authorization: Bearer $FOREMAN_SERVER_AUTH_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"command_id":"project-register-<unique>",
+       "command_type":"project.register",
+       "payload":{"project_id":"<id>","path":"<abs-path>","status":"active",
+                  "default_branch":"main","config":{"name":"<name>"},
+                  "health":{"ok":true}}}'
+```
+
+*Verified against the live cluster deployment:* the command returned `ok: true`
+and appeared in `GET /api/v1/projects`; re-registering the same `project_id`
+returns `{:already_exists, :project, …}` (which
+`maybeRegisterInitializedProjectInElixir` already tolerates, so a re-run is
+safe); and after `kubectl rollout restart` the project was **still present**,
+rebuilt from the single `ProjectRegistered` row in Postgres — confirming
+registration survives a pod restart rather than living only in memory.
+
+The probe project was archived afterwards via `project.update`.
+
+### Phase 5 — Prove the two blocked capabilities — **DONE (tool policy enforced; volume transport declined)**
+
+**Tool policy outcome.** The latency risk this plan flagged as the deciding
+factor does not materialise. Measured in-cluster over 30 calls to
+`/worker/v1/tool-policy`:
+
+| min | median | p95 | max |
+| --- | --- | --- | --- |
+| 10.5ms | 11.2ms | 13.7ms | 17.6ms |
+
+Against the hook's 5s timeout that is ~350x headroom, so the synchronous
+round-trip per tool call is affordable.
+
+Fail-closed behaviour was verified empirically rather than by reading the
+script — unreachable endpoint, missing `FOREMAN_SERVER_URL`, and a wrong token
+(401) all exit 2 (deny). Correct verdicts confirmed against the live server:
+`explorer` + `Bash` denied with the real policy reason, `Grep` allowed.
+
+**The gap was the install, not the gate.** The hook script and its Claude Code
+settings already existed, but nothing put them in the pod — so the refusal in
+`kelos-phase-runner.ts` was correct, not stale. A kelos agent's only
+pre-agent seam is `Task.spec.preCommands`. Added:
+
+- `toolPolicyInstallCommands()` — embeds the script *contents* via a quoted
+  heredoc. A path reference would resolve on the orchestrator, not in the pod,
+  where `src/defaults/` does not exist.
+- `toolPolicyHookEnv()` — omits the token entirely when absent; an
+  empty-but-present variable looks configured and 401s every call.
+- `KelosCrdClientOptions.toolPolicy` threads both into the Task spec.
+
+**The refusal is now conditional, and checked before dispatch.**
+`KelosClient.enforcesToolPolicy` is read *before* `runTask`, so a client that
+cannot enforce the policy never launches the agent — discovering it from the
+result would mean an unguarded agent had already run.
+
+**A live phase caught a bug the unit tests could not.** The first real dispatch
+onto the `envoverrides-pool` "succeeded" — and the agent's `Bash` call ran
+`echo hello` with `permission_denials: []`. The hook never fired. Cause: the
+settings were written to `/tmp/foreman/claude-settings.json`, but Claude Code
+only loads `$CLAUDE_CONFIG_DIR/settings.json` (default `$HOME/.claude`). Every
+unit test passed because they asserted the file was *written*, not that anyone
+*reads* that path.
+
+This is the failure mode the gate exists to prevent — a phase that looks
+protected while every tool call goes unchecked — and it was invisible to
+container-level and endpoint-level testing. The install now writes to
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`, resolved by the pod's shell.
+
+*Verified:* **a real phase is blocked by policy** — on re-dispatch the agent's
+`Bash` call returned `PreToolUse:Bash hook error: … explorer must use
+Grep/Glob/Read discovery, not shell commands`, `permission_denials` recorded the
+call, and the agent reported "The `echo hello` command never executed."
+
+Also: 75 kelos tests green, `tsc --noEmit` clean; the pooled Task spec carries
+`workerPoolRef` + `envOverrides` + `preCommands` with none of the CRD-forbidden
+combinations, and `Running preCommand 1/2, 2/2` confirmed in the pool log; gate
+teeth confirmed by injecting a regression (stubbing the check to `false` fails 2
+tests).
+
+**Gateway model names are not workflow model ids.** The first dispatch also
+failed with `Invalid model name passed in model=anthropic/claude-sonnet-4-6`.
+The LiteLLM gateway serves its own names (`claude-sonnet-46`, `claude-haiku`,
+`minimax`, …); Foreman maps onto them with `KELOS_MODEL_MAP`.
+
+---
+
+**Volume transport: the constraint is worse than this plan assumed — AZ, not
+just node.**
+
+The plan says volume transport "needs Foreman and the agent pod on the same
+node, given RWO storage," and that node affinity would fix it. Measured on the
+live cluster, that understates it. Mounting `foreman-worktree` from two pods on
+different nodes was attempted directly; **both** pods stayed `Pending`, and
+neither error was about RWO:
+
+```
+AttachVolume.Attach failed ... api error InvalidVolume.ZoneMismatch:
+The volume 'vol-08b40ce87cfbb7d25' is not in the same availability zone
+as instance 'i-016383ea341c7e945'
+```
+
+An EBS volume is pinned to one **availability zone**, and this cluster spans two:
+
+| AZ | amd64 nodes | arm64 nodes |
+| --- | --- | --- |
+| us-east-1a | 4 | 1 |
+| us-east-1b | 1 (`i-0f5c…`) | 1 |
+
+The `foreman-worktree` PV is bound to `us-east-1b`, where exactly **one** amd64
+node exists. So sharing that volume requires pinning the Foreman server *and*
+every phase pod onto that single node — not merely co-locating them. That means:
+
+- a single point of failure with no failover (if `i-0f5c…` goes away, the volume
+  and everything using it are stranded until a node returns in `1b`);
+- the `WorkerPool` cannot exceed one replica, as the plan already noted;
+- Karpenter consolidation or a spot reclaim of that node breaks the arrangement
+  silently.
+
+Patch transport has none of these constraints: the agent uploads a patch to
+object storage and Foreman applies it, so pods need no shared filesystem, no
+shared AZ, and no shared node.
+
+**Conclusion: patch transport stays the default; volume transport is not worth
+the constraint** — which is the outcome this plan's Phase 5 explicitly allowed
+for ("It may conclude that patch transport should remain the default"). Revisit
+only with ReadWriteMany storage (EFS), which was considered and declined; EFS is
+AZ-independent and would remove the pinning entirely.
+
+*Verified:* cross-node mount fails with `InvalidVolume.ZoneMismatch` (not an RWO
+error); node/AZ topology and the PV's `nodeAffinity` zone binding read from the
+live cluster.
 
 The point of the exercise.
 
@@ -272,9 +418,11 @@ over a shared volume.
 - ~~**Managed or in-cluster Postgres?**~~ **Decided in Phase 3:** in-cluster and
   dedicated (`foreman-postgres` in `kelos-pilot`), rather than RDS or sharing an
   existing instance. See the Phase 3 outcome.
-- **Does the scheduler tolerate a pod restart mid-run?** Workers checkpoint to
-  the server over HTTP, so in principle yes, but this is unverified and worth a
-  deliberate test before trusting it.
+- **Does the scheduler tolerate a pod restart mid-run?** Still unverified for an
+  *in-flight run*. Phase 4 did confirm the weaker property: a `rollout restart`
+  loses no committed state — the projection rebuilds from the Postgres event log
+  and a registered project survives. Mid-run restart remains worth a deliberate
+  test.
 - **Does the cockpit need ingress**, or is port-forward sufficient? Ingress means
   exposing the orchestrator's control plane, which deserves its own decision.
 - **Single pod or split?** One pod with both runtimes is simplest and is what
