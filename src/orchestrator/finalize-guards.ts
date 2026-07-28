@@ -1,6 +1,30 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { resolveArtifactPath } from "../lib/report-paths.js";
+
+/**
+ * Files the pipeline itself writes into the worktree — TASK.md from the worker,
+ * per-phase session logs and reports from each agent.
+ *
+ * The scope guard must never flag these: the developer did not choose to touch
+ * them, so no `## Scope Expansions` entry can justify them, and finalize would
+ * fail with no action the pipeline could take.
+ */
+function isWorkerGeneratedAuditFile(filePath: string): boolean {
+  const name = basename(filePath.replace(/^\.\//, ""));
+  // Root-level markdown only: a repo's own docs/ or src/ markdown is still in
+  // scope. Agents name their logs freely (SESSION_LOG.md, QA_SESSION_LOG.md,
+  // SESSION_LOG_DOCS.md all appeared in live runs), so match the family rather
+  // than enumerating exact names — an enumeration is one invented suffix behind.
+  if (filePath.replace(/^\.\//, "").includes("/")) return false;
+  return (
+    /^(SESSION_LOG|RUN_LOG)[A-Z0-9_-]*\.md$/i.test(name) ||
+    /_(SESSION_LOG|SESSION_SUMMARY|REPORT)\.md$/i.test(name) ||
+    name === "FINALIZE_VALIDATION.md" ||
+    name === "TASK.md" ||
+    name === "BLOCKED.md"
+  );
+}
 
 export interface FinalizeGuardConfig {
   worktreePath: string;
@@ -124,6 +148,7 @@ export function findFinalizeScopeViolations(config: FinalizeGuardConfig, changed
     const normalized = file.replace(/^\.\//, "");
     if (allowedPaths.has(normalized)) return false;
     if (normalized.startsWith(config.reportDir)) return false;
+    if (isWorkerGeneratedAuditFile(normalized)) return false;
     if (reportJustifiesOutOfScope(developerReport, normalized)) return false;
     return true;
   });
