@@ -1,0 +1,137 @@
+# Foreman server in-cluster (TRD-2026-026 Phase 3).
+#
+# Prerequisites (not created here, since they hold credentials):
+#   kubectl create secret generic foreman-server -n kelos-pilot \
+#     --from-literal=auth-token="$(openssl rand -hex 32)"
+#   secret/foreman-postgres — see postgres.yaml
+#
+# Image is amd64-only (see the TRD Phase 2 correction), hence the nodeSelector.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: foreman-home
+  namespace: kelos-pilot
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: auto-ebs-gp3
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foreman-server
+  namespace: kelos-pilot
+spec:
+  # One replica only: the home PVC is RWO and the scheduler is not known to be
+  # safe to run concurrently.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: foreman-server
+  template:
+    metadata:
+      labels:
+        app: foreman-server
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      # Migrations run here rather than in the app container so a restart or a
+      # future second replica cannot race the schema. Idempotent — a
+      # already-migrated database reports "Migrations already up" and exits 0.
+      initContainers:
+        - name: migrate
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.5
+          args: [migrate]
+          env:
+            - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
+              value: postgres
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-database-url
+                  key: url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      containers:
+        - name: server
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.5
+          ports:
+            - name: http
+              containerPort: 4766
+          env:
+            # The image defaults this to 0.0.0.0; stated explicitly because
+            # without it the server binds loopback and the Service cannot reach it.
+            - name: FOREMAN_SERVER_HTTP_BIND
+              value: 0.0.0.0
+            - name: FOREMAN_SERVER_HTTP_PORT
+              value: "4766"
+            - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
+              value: postgres
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-database-url
+                  key: url
+            # Required: binding beyond loopback without a token is refused at
+            # startup (exit 1), by design.
+            - name: FOREMAN_SERVER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-server
+                  key: auth-token
+            # Workers launched by worker_launcher.ex reach the server by Service
+            # DNS rather than 127.0.0.1.
+            - name: FOREMAN_SERVER_URL
+              value: http://foreman-server.kelos-pilot.svc.cluster.local:4766
+          # /api/v1/health answers unauthenticated (a token only adds the runtime
+          # detail block), so no probe credential is needed.
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            # Worktrees and the term-backed project store both live under
+            # $HOME/.foreman and must survive a restart.
+            - name: home
+              mountPath: /home/foreman/.foreman
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: foreman-home
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foreman-server
+  namespace: kelos-pilot
+spec:
+  selector:
+    app: foreman-server
+  ports:
+    - name: http
+      port: 4766
+      targetPort: http
