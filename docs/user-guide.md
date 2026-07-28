@@ -414,6 +414,21 @@ manifest in the repo (`npm` without `package.json`, `mix` without `mix.exs`, and
 so on) is skipped instead of aborting the run. Commands Foreman does not
 recognise always run.
 
+### QA evidence on projects without tests
+
+QA's `PASS` verdict is only honoured when its report shows real evidence — a test
+command plus pass/fail counts — so an agent cannot simply assert that things look
+fine. On a project with no automated test suite, state the skip explicitly:
+
+```markdown
+- Test suite: SKIPPED
+- Raw summary: N/A (repository has no automated test suite)
+```
+
+An explicit `Test suite: SKIPPED` satisfies the evidence check. Without either
+real counts or that marker, the verdict is overridden to FAIL and the pipeline
+loops back to the developer.
+
 ## Documentation Expectations
 
 Every user-visible change should update docs in the same task. Examples:

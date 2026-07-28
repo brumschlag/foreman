@@ -756,6 +756,14 @@ export function parseFinalizeIntegrationStatus(reportContent: string): FinalizeI
 }
 
 export function qaReportHasTestEvidence(reportContent: string): boolean {
+  // A project with no automated test suite cannot produce a runner command or
+  // pass/fail counts, so requiring both made QA unsatisfiable there — its PASS
+  // verdict was overridden to fail on every attempt. The QA prompt's own format
+  // already offers "Test suite: ... | SKIPPED"; honour it. An explicit skip is
+  // still a deliberate statement, unlike a bare claim that things look fine,
+  // which this continues to reject.
+  if (/^\s*-?\s*Test suite:\s*(?:\*\*)?SKIPPED/im.test(reportContent)) return true;
+
   const commandPatterns: RegExp[] = [
     /npm\s+test/i,
     /npx\s+vitest(?:\s+run)?/i,
