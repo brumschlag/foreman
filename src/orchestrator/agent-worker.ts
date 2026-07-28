@@ -81,7 +81,7 @@ import { runWorkspaceHook } from "../lib/setup.js";
 import { loadProjectConfig, type ProjectHooksConfig } from "../lib/project-config.js";
 import { foremanBackendMode } from "../lib/backend-mode.js";
 import { nativeTaskStatusForPhase } from "./task-phase-status.js";
-import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands } from "./finalize-guards.js";
+import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands, resolveProjectTestCommand } from "./finalize-guards.js";
 import { rotateReport } from "./agent-worker-finalize.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { collectRuntimeAssetIssues, runtimeAssetIssueMessage } from "../lib/runtime-assets.js";
@@ -2065,7 +2065,19 @@ async function runFinalizeBuiltinPhase(args: {
       return { success: false, costUsd: 0, turns: 0, tokensIn: 0, tokensOut: 0, error: `rebase_conflict: ${details}`, outputText: readFileSync(resolveArtifactPath(config.worktreePath, join(reportDir, "FINALIZE_VALIDATION.md")), "utf8") };
     }
     integrationStatus = "SUCCESS";
-    const validationCommands = ["npm test -- --reporter=dot", ...domainValidationCommands];
+    // Detected per project rather than hardcoded to npm: a repo with no
+    // recognisable test setup skips validation instead of failing it.
+    const projectTestCommand = resolveProjectTestCommand(
+      config.worktreePath,
+      loadProjectConfig(config.worktreePath)?.testCommand,
+    );
+    const validationCommands = [
+      ...(projectTestCommand ? [projectTestCommand] : []),
+      ...domainValidationCommands,
+    ];
+    if (validationCommands.length === 0) {
+      log(`[FINALIZE] no test command for this project — skipping test validation`);
+    }
     const test = await runFinalizeValidationCommands(validationCommands, config.worktreePath);
     if (!test.ok) {
       const classification = classifyFinalizeTestFailure(test.output, changedAgainstBase);

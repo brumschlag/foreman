@@ -154,6 +154,54 @@ export function findFinalizeScopeViolations(config: FinalizeGuardConfig, changed
   });
 }
 
+/**
+ * The test command finalize should run for a project, or undefined to skip
+ * validation entirely.
+ *
+ * Finalize used to hardcode `npm test`, so any non-Node project failed
+ * validation with ENOENT no matter what the task changed. A project with no
+ * recognisable test setup is skipped rather than failed — the same choice
+ * `installDependencies()` already makes for missing dependencies, and the only
+ * safe one, since failing gives the pipeline nothing it can act on.
+ *
+ * @param configured explicit override; an empty string opts out deliberately.
+ */
+export function resolveProjectTestCommand(
+  worktreePath: string,
+  configured?: string,
+): string | undefined {
+  if (configured !== undefined) {
+    const trimmed = configured.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }
+
+  const has = (file: string): boolean => existsSync(join(worktreePath, file));
+
+  if (has("package.json")) {
+    // `npm test` without a test script exits non-zero, which would fail finalize
+    // for a reason no task change can fix.
+    return packageHasTestScript(worktreePath) ? "npm test -- --reporter=dot" : undefined;
+  }
+  if (has("mix.exs")) return "mix test";
+  if (has("go.mod")) return "go test ./...";
+  if (has("Cargo.toml")) return "cargo test";
+  return undefined;
+}
+
+function packageHasTestScript(worktreePath: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(join(worktreePath, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const test = parsed.scripts?.test;
+    return typeof test === "string" && test.trim() !== "";
+  } catch {
+    // A malformed package.json is the project's problem, not something finalize
+    // can validate around.
+    return false;
+  }
+}
+
 export function finalizeValidationCommands(changedFiles: string[]): string[] {
   const commands = new Set<string>();
   if (changedFiles.some((file) => file.startsWith("packages/foreman_server/") && /\.(ex|exs)$/.test(file))) {

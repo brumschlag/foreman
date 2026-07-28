@@ -123,6 +123,25 @@ describe("loadProjectConfig", () => {
     expect(cfg!.defaultBranch).toBe("dev");
   });
 
+  // Finalize used to hardcode `npm test`, so a non-Node project could never pass
+  // validation. The command is now detected per project, with this as the override.
+  it("loads top-level testCommand from config.yaml", () => {
+    writeForemanConfig(tmpDir, "testCommand: make check");
+    const cfg = loadProjectConfig(tmpDir);
+    expect(cfg!.testCommand).toBe("make check");
+  });
+
+  it("preserves an empty testCommand as a deliberate opt-out", () => {
+    writeForemanConfig(tmpDir, "testCommand: ''");
+    const cfg = loadProjectConfig(tmpDir);
+    expect(cfg!.testCommand).toBe("");
+  });
+
+  it("throws ProjectConfigError for invalid testCommand type", () => {
+    writeForemanConfig(tmpDir, "testCommand: 42");
+    expect(() => loadProjectConfig(tmpDir)).toThrow(/testCommand.*string/);
+  });
+
   it("loads positive concurrency limits", () => {
     writeForemanConfig(
       tmpDir,
