@@ -81,9 +81,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     openssl \
     && rm -rf /var/lib/apt/lists/* \
-    && git config --global user.email "foreman@container" \
-    && git config --global user.name "Foreman Agent" \
-    && git config --global safe.directory '*'
+    # /etc/gitconfig, NOT `git config --global`: global writes $HOME/.gitconfig,
+    # which for root is /root/.gitconfig — unreadable by uid 10001, whose own
+    # $HOME is the PVC mount and starts empty. Finalize then fails to commit with
+    # "Author identity unknown". System scope survives both.
+    && git config --system user.email "foreman@container" \
+    && git config --system user.name "Foreman Agent" \
+    && git config --system safe.directory '*'
 
 # The GitHub CLI drives every PR and merge path (create-pr, pr-wait, merge,
 # refinery, conflict resolution), so a pipeline reaching those phases fails

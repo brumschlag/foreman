@@ -69,7 +69,7 @@ spec:
       # already-migrated database reports "Migrations already up" and exits 0.
       initContainers:
         - name: migrate
-          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.6
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.7
           args: [migrate]
           env:
             - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
@@ -88,7 +88,7 @@ spec:
               memory: 512Mi
       containers:
         - name: server
-          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.6
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.7
           ports:
             - name: http
               containerPort: 4766

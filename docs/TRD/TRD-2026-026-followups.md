@@ -47,34 +47,45 @@ as a hard error, since that combination cannot occur on a real call.
 
 ---
 
-## BUG 2 — Missing DEVELOPER_REPORT.md causes an unbounded retry loop
+## BUG 2 — git has no identity in the container, so finalize cannot commit
 
-**Severity:** medium (correctness + cost).
+**Severity:** high. Blocks every run from completing, on any repo.
 
-**Observed.** On a successful Bedrock run, the pipeline looped
-`developer → documentation → qa → developer → …`, burning ~$0.05 per phase, with
-QA's own verdict **PASS** each time. The reports directory held
-`EXPLORER_REPORT.md`, `DOCUMENTATION_REPORT.md`, `QA_REPORT.md`,
-`DOCUMENTATION_HANDOFF.json`, `SESSION_LOG.md` — but **no
-`DEVELOPER_REPORT.md`**, so the developer phase's artifact gate never satisfied
-and it was re-run indefinitely.
+**Corrects an earlier draft of this document,** which claimed the retry loop was
+unbounded and blamed a missing `DEVELOPER_REPORT.md`. Reading the pipeline
+decision lines disproved both:
 
-Notably the documentation agent's own session log claims it read
-`DEVELOPER_REPORT.md`, so the developer phase believed it wrote one.
+```
+[PIPELINE] qa failed, retrying developer (retry 1/2)
+[PIPELINE] qa failed, retrying developer (retry 2/2)
+[PIPELINE] qa failed after 2 retries, continuing
+[PIPELINE] finalize FAIL: nothing_to_commit: git commit failed: Author identity unknown
+[PIPELINE] finalize failed, retrying developer (retry 1/1)
+```
 
-**Why it matters.** The loop is unbounded and costs money per iteration. The
-retry is also mis-attributed: QA passed, developer is what re-ran.
+Retries are correctly bounded by `retryOnFail` (qa 2, reviewer 1, finalize 1) and
+the pipeline *continued* after exhausting them, exactly as designed. The repeated
+`developer` phases I saw were those bounded retries, not a loop.
 
-**Where.** The developer prompt (`src/defaults/prompts/developer.md`) plus the
-artifact gate in the pipeline executor. Either the agent is not calling
-`artifact_write` for its report, or it writes to the worktree root instead of
-`{task.projectReportsDir}` (the documentation prompt warns against exactly that
-mistake, which suggests it is a known failure mode).
+**Actual root cause.** `docker/server.Dockerfile` ran `git config --global`
+during the build **as root**, which writes `/root/.gitconfig`. The container runs
+as uid 10001 whose `$HOME` is `/home/foreman` — and that path is the
+`foreman-home` **PVC mount**, which starts empty and shadows anything the image
+put there. So git had no `user.email`/`user.name` and finalize failed with
+`Author identity unknown`.
 
-**Fix sketch.** Reproduce first, then: (a) cap consecutive retries of the same
-phase for the same reason so a missing artifact cannot loop forever, and (b) fix
-the underlying write-path/prompt so the report lands where the gate looks. (a) is
-the safety net and should land regardless of (b).
+Confirmed in the live pod: `/root/.gitconfig` is unreadable to uid 10001, and the
+identity only appeared later because `foreman init` happened to write
+`/home/foreman/.gitconfig` after the fact.
+
+**Fix.** Use `git config --system` (writes `/etc/gitconfig`) in the image, which
+is readable by any uid and cannot be shadowed by a volume mount over `$HOME`.
+
+**Still open, lower priority.** `DEVELOPER_REPORT.md` was genuinely absent from
+the reports directory while every other report was present, so QA's `fail`
+verdict may be legitimate rather than a gate bug. Worth a separate look at
+whether the developer phase actually wrote it — but it is not what stopped the
+run.
 
 ---
 
@@ -88,7 +99,9 @@ the safety net and should land regardless of (b).
   store`). Terminal run state is supposed to be event-sourced, so this silently
   degrades the audit trail.
 - **No backoff on repeated dispatch failure.** A failing task was re-dispatched
-  ~44 times in ~7 minutes by the 5s auto-tick.
+  ~44 times in ~7 minutes by the 5s auto-tick. This is at the SCHEDULER level and
+  is distinct from the per-phase `retryOnFail` bound, which works correctly — a
+  task that fails fast is re-claimed immediately, forever.
 - **The bundled `smoke` workflow hardcodes `npm install` with `failFatal: true`**,
   so it cannot run against a non-Node repo. `installDependencies()` in
   `src/lib/setup.ts` already guards on a missing `package.json`; the workflow's
