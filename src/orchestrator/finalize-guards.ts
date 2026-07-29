@@ -230,6 +230,59 @@ function packageHasTestScript(worktreePath: string): boolean {
   }
 }
 
+/**
+ * The dependency-install command for a project, or undefined to skip.
+ *
+ * Finalize hardcoded `npm ci`, which fails twice over on a non-Node repo: with
+ * no `package.json` there is nothing to install, and `npm ci` additionally
+ * REQUIRES a lockfile (`EUSAGE`) so it fails even on a Node project that has
+ * only a manifest. Both were recorded as `Dependency Install: FAILED` in the
+ * finalize report of a run that otherwise succeeded.
+ *
+ * @param configured explicit override; an empty string opts out deliberately.
+ */
+export function resolveProjectInstallCommand(
+  worktreePath: string,
+  configured?: string,
+): string | undefined {
+  const override = explicitCommand(configured);
+  if (override !== NO_OVERRIDE) return override;
+
+  if (!existsSync(join(worktreePath, "package.json"))) return undefined;
+  const hasLockfile = ["package-lock.json", "npm-shrinkwrap.json"]
+    .some((file) => existsSync(join(worktreePath, file)));
+  return hasLockfile ? "npm ci" : "npm install";
+}
+
+/**
+ * The typecheck command for a project, or undefined to skip.
+ *
+ * Requires a `tsconfig.json`, not merely a `package.json`: without one there is
+ * no tsc to run, and `npx tsc` tries to FETCH a package instead — the source of
+ * "This is not the tsc command you are looking for" in a real finalize report.
+ *
+ * @param configured explicit override; an empty string opts out deliberately.
+ */
+export function resolveProjectTypecheckCommand(
+  worktreePath: string,
+  configured?: string,
+): string | undefined {
+  const override = explicitCommand(configured);
+  if (override !== NO_OVERRIDE) return override;
+
+  if (!existsSync(join(worktreePath, "package.json"))) return undefined;
+  return existsSync(join(worktreePath, "tsconfig.json")) ? "npx tsc --noEmit" : undefined;
+}
+
+/** Sentinel distinguishing "no override given" from "override says skip". */
+const NO_OVERRIDE = Symbol("no-override");
+
+function explicitCommand(configured?: string): string | undefined | typeof NO_OVERRIDE {
+  if (configured === undefined) return NO_OVERRIDE;
+  const trimmed = configured.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 export function finalizeValidationCommands(changedFiles: string[]): string[] {
   const commands = new Set<string>();
   if (changedFiles.some((file) => file.startsWith("packages/foreman_server/") && /\.(ex|exs)$/.test(file))) {

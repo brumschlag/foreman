@@ -81,7 +81,7 @@ import { runWorkspaceHook } from "../lib/setup.js";
 import { loadProjectConfig, type ProjectHooksConfig } from "../lib/project-config.js";
 import { foremanBackendMode } from "../lib/backend-mode.js";
 import { nativeTaskStatusForPhase } from "./task-phase-status.js";
-import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands, resolveProjectTestCommand } from "./finalize-guards.js";
+import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands, resolveProjectInstallCommand, resolveProjectTestCommand, resolveProjectTypecheckCommand } from "./finalize-guards.js";
 import { rotateReport } from "./agent-worker-finalize.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { collectRuntimeAssetIssues, runtimeAssetIssueMessage } from "../lib/runtime-assets.js";
@@ -1872,6 +1872,26 @@ function truncateFinalizeOutput(output: string): string {
   return output.length > 3000 ? `${output.slice(0, 3000)}\n...<truncated>` : output;
 }
 
+/**
+ * Runs an optional finalize step, reporting a skip as success.
+ *
+ * `ok: true` is correct for a skip: the step did not fail, it did not apply. The
+ * output line says so explicitly so the report distinguishes "nothing to do"
+ * from "passed", which a bare SUCCESS would not.
+ */
+async function runFinalizeStep(
+  command: string | undefined,
+  cwd: string,
+  log: (msg: string) => void,
+  label: string,
+): Promise<{ ok: boolean; output: string }> {
+  if (!command) {
+    log(`[FINALIZE] ${label} skipped — no matching toolchain in this project`);
+    return { ok: true, output: `SKIPPED — no ${label} toolchain detected for this project` };
+  }
+  return runShellForFinalize(command, cwd, 5 * 60_000);
+}
+
 function isVerificationTask(config: WorkerConfig): boolean {
   const type = (config.taskType ?? "").toLowerCase();
   const title = config.taskTitle.toLowerCase();
@@ -1988,8 +2008,21 @@ async function runFinalizeBuiltinPhase(args: {
   const reportDir = workerReportDir(config);
 
   log(`[FINALIZE] deterministic builtin starting for ${branchName}`);
-  const install = await runShellForFinalize("npm ci", config.worktreePath, 5 * 60_000);
-  const typecheck = await runShellForFinalize("npx tsc --noEmit", config.worktreePath, 5 * 60_000);
+  // Both are skipped when the project has no matching toolchain. Running them
+  // anyway recorded two false FAILEDs in every non-Node finalize report, which a
+  // reader cannot distinguish from real failures.
+  const install = await runFinalizeStep(
+    resolveProjectInstallCommand(config.worktreePath),
+    config.worktreePath,
+    log,
+    "dependency install",
+  );
+  const typecheck = await runFinalizeStep(
+    resolveProjectTypecheckCommand(config.worktreePath),
+    config.worktreePath,
+    log,
+    "type check",
+  );
 
   const commands = vcsBackend.getFinalizeCommands({
     taskId: config.taskId,
