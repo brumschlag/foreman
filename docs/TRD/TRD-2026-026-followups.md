@@ -232,3 +232,69 @@ conflict rather than a bug to patch quickly:
 Until one of these lands, a policy-gated phase on the kelos backend runs
 **unguarded** — the pod accepts the Task, ignores the hook install, and the agent
 proceeds. Foreman cannot detect this from the Task status, which reports Succeeded.
+
+---
+
+## Agent Mail now reaches a kelos agent — DONE (pooled path)
+
+**The gap.** All six `src/orchestrator/kelos-*.ts` files contained zero mail
+references, and `KelosTaskRequest` carried only prompt/systemPrompt/model/
+phaseName/taskId. Mail on the Pi path is three in-process tool closures over a
+live `AgentMailClient` (`agent-worker.ts:898-900`), which cannot reach a separate
+program in a separate pod. So a kelos phase had no mail channel at all:
+
+- `foreman inbox send` stored the message and no agent ever read it;
+- Overwatch steering landed at `delivery_status: "unsupported"` — the flag
+  `Inbox.send_operator_message` already had for a worker that cannot receive;
+- the explorer prompt's `/send-mail` error path was silently dead, so an agent
+  hitting a blocker reported nothing.
+
+**The fix mirrors the tool policy exactly.** The mail store does not move; only
+the interception point does. Server-side authority is three new endpoints —
+`GET /worker/v1/mail`, `POST /worker/v1/mail/send`, `POST /worker/v1/mail/ack` —
+and the pod-side point is `src/defaults/hooks/mail-shim.sh` plus `/mail-read`
+and `/mail-send` slash commands, installed by `preCommands` and advertised in the
+phase prompt.
+
+Three things are all required, and each was a separate way to ship nothing:
+without the install there is no shim; without `envOverrides` it cannot reach the
+server; without the prompt guidance the commands exist and are never invoked
+(the Pi path's tool descriptions, where an agent normally learns a channel
+exists, do not travel to a pod).
+
+**Fails open, deliberately.** The policy hook must deny when it cannot reach the
+server. Mail must not: losing steering is bad, wedging the phase because steering
+is unavailable is worse. The shim reports the failure and exits non-zero, and a
+test asserts `exit 2` never appears in it.
+
+**Scoped to the pooled path by the constraint above.** Because non-pooled Tasks
+silently ignore `preCommands`, `KelosClient.deliversMail` is
+`Boolean(mail) && preCommandsRun(options)` — requested AND actually installable.
+A configured-but-uninstallable channel must not report itself as working; that is
+the same "looks equipped and is not" failure the tool-policy work hit. Unlike the
+policy this does not refuse the phase — mail is a capability, not a guard — so
+callers warn and skip mail-dependent hooks rather than aborting. **The pilot's
+non-pooled path therefore still has no mail channel**; it unblocks with the same
+options listed for tool policy above.
+
+**Verified against a real server, not just unit tests.** The tool-policy lesson
+was that 75 green tests missed a hook that never fired, because they asserted the
+settings file was *written* rather than *read*. So: a real Elixir server was run
+locally, an operator message seeded through `inbox.send` (landing as
+`unsupported`, reproducing the diagnosis), then the install commands were executed
+in a clean `env -i` sandbox and **the pod-installed copy** — not the `src/` one —
+was run against it. Results: the agent saw the steering, `unsupported` →
+`delivered`, a second read correctly returned "No new mail", and a
+`/mail-send foreman agent-error` round-tripped back to the operator inbox.
+
+**Two bugs the live run caught that the tests would not have.**
+
+1. *Only the first message was ever acknowledged.* The ack loop was
+   `while read id ... done < "$IDFILE"`, and `curl` inside the body inherits the
+   loop's stdin and consumes the remaining ids. Fixed by reading into a variable
+   first; a regression test pins the shape.
+2. *No `.sh` file was ever packaged into `dist/`.* The `build-atomic.js` asset
+   filter allowed only extensionless/`.md`/`.yaml`. Both the mail shim and the
+   **pre-existing tool-policy hook** were resolving through their `src/` fallback,
+   invisible locally because `package.json` also ships `src/defaults/`. Filter
+   fixed; both now resolve from `dist/`.

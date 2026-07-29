@@ -80,6 +80,40 @@ defmodule ForemanServer.Inbox do
     end
   end
 
+  @doc """
+  Appends a message sent BY a worker that has no in-process mail client.
+
+  A kelos agent runs in its own pod and reaches this over HTTP
+  (`POST /worker/v1/mail/send`) instead of through the Pi path's in-process
+  `mail_send` tool. The direction is the mirror of `send_operator_message/1`, and
+  there is no `worker_supports_receiving` question to answer: the worker is the
+  sender, and its ability to send is proven by the request arriving.
+  """
+  @spec send_worker_message(map()) :: {:ok, map()} | {:error, term()}
+  def send_worker_message(input) when is_map(input) do
+    with {:ok, run_id} <- required_binary(fetch(input, :run_id), :run_id),
+         {:ok, body} <- required_binary(fetch(input, :body), :body),
+         :ok <- active_run(run_id) do
+      from = fetch(input, :from, fetch(input, :sender_agent_type, "worker"))
+      to = fetch(input, :to, fetch(input, :recipient_agent_type, "foreman"))
+
+      append_message(%{
+        message_id: fetch(input, :message_id, "msg-#{System.unique_integer([:positive])}"),
+        run_id: run_id,
+        phase_id: fetch(input, :phase_id),
+        from: from,
+        to: to,
+        sender_agent_type: from,
+        recipient_agent_type: to,
+        subject: fetch(input, :subject, "message"),
+        body: body,
+        direction: "worker_to_operator",
+        delivery_status: "delivered",
+        delivery: %{supported: true}
+      })
+    end
+  end
+
   @spec update_delivery(map()) :: {:ok, map()} | {:error, term()}
   def update_delivery(input) when is_map(input) do
     with {:ok, message_id} <- required_binary(fetch(input, :message_id), :message_id),
