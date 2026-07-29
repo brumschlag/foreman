@@ -17,10 +17,15 @@ function isWorkerGeneratedAuditFile(filePath: string): boolean {
   // SESSION_LOG_DOCS.md all appeared in live runs), so match the family rather
   // than enumerating exact names — an enumeration is one invented suffix behind.
   if (filePath.replace(/^\.\//, "").includes("/")) return false;
+  // Keyword-based, not suffix-based. Five distinct names appeared across live
+  // runs — SESSION_LOG.md, QA_SESSION_LOG.md, SESSION_LOG_DOCS.md,
+  // QA_DETAILED_SESSION_LOG.md, QA_VERIFICATION_SESSION.md — each defeating a
+  // more literal predecessor of this check. Any SHOUTY_CASE root file whose name
+  // contains an audit keyword is pipeline output, since repo content at the root
+  // is conventionally README/LICENSE/CHANGELOG rather than QA_*/SESSION_*.
+  if (!/^[A-Z0-9_]+\.(md|json|txt)$/.test(name)) return false;
   return (
-    /^(SESSION_LOG|RUN_LOG)[A-Z0-9_-]*\.md$/i.test(name) ||
-    /_(SESSION_LOG|SESSION_SUMMARY|REPORT)\.md$/i.test(name) ||
-    name === "FINALIZE_VALIDATION.md" ||
+    /(SESSION|HANDOFF|REPORT|RUN_LOG|VALIDATION)/.test(name) ||
     name === "TASK.md" ||
     name === "BLOCKED.md"
   );

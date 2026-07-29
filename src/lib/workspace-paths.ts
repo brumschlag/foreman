@@ -86,13 +86,16 @@ const WORKER_ARTIFACT_PATHSPECS = [
   "node_modules",
   "TASK.md",
   "BLOCKED.md",
-  "SESSION_LOG*.md",
-  "RUN_LOG*.md",
-  "*_SESSION_LOG.md",
-  "*_SESSION_SUMMARY.md",
-  "*_REPORT.md",
+  // Broad enough to survive agent naming invention: QA_DETAILED_SESSION_LOG.md
+  // and QA_VERIFICATION_SESSION.md each defeated a narrower predecessor. Kept
+  // SHOUTY_CASE and root-anchored so README.md / docs/SESSION_LOG.md are safe.
+  "*SESSION*.md",
+  "*RUN_LOG*.md",
+  "*REPORT*.md",
+  "*HANDOFF*.json",
   "REVIEW.md",
   "FINALIZE_VALIDATION.md",
+  "FINALIZE_TEST_OUTPUT.txt",
 ];
 
 /**

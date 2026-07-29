@@ -59,6 +59,11 @@ describe("finalize guards", () => {
       "QA_SESSION_LOG.md",
       "REVIEWER_SESSION_LOG.md",
       "SESSION_LOG_DOCS.md",
+      // Every one of these appeared in a real run. Agents invent a new session-log
+      // name almost every time, so the pattern must match the FAMILY.
+      "QA_DETAILED_SESSION_LOG.md",
+      "QA_VERIFICATION_SESSION.md",
+      "EXPLORER_HANDOFF.json",
       "BLOCKED.md",
     ])).toEqual([]);
   });
@@ -79,7 +84,13 @@ describe("finalize guards", () => {
       // A nested doc is real content, not a worker audit file, even though its
       // name resembles one.
       "docs/SESSION_LOG.md",
-    ])).toEqual(["src/sneaky.ts", "docs/SESSION_LOG.md"]);
+      // Root files that are genuine repo content must still be flagged: the
+      // keyword pattern must not become a blanket root-level exemption.
+      "README.md",
+      "Makefile.md",
+      "CHANGELOG.md",
+      "report.md",
+    ])).toEqual(["src/sneaky.ts", "docs/SESSION_LOG.md", "README.md", "Makefile.md", "CHANGELOG.md", "report.md"]);
   });
 
   it("flags files outside Explorer scope that lack a structured ## Scope Expansions entry", () => {

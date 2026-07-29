@@ -58,12 +58,21 @@ describe("workspace path helpers", () => {
       "SESSION_LOG_DOCS.md",
       "REVIEW_SESSION_LOG.md",
       "QA_SESSION_LOG.md",
+      "QA_DETAILED_SESSION_LOG.md",
+      "QA_VERIFICATION_SESSION.md",
+      "EXPLORER_HANDOFF.json",
       "QA_REPORT.md",
       "DEVELOPER_REPORT.md",
       "REVIEW.md",
       "FINALIZE_VALIDATION.md",
     ];
-    const keep = ["CLUSTER_SMOKE.md", "src_real.ts", join("docs", "SESSION_LOG.md")];
+    const keep = [
+      "CLUSTER_SMOKE.md",
+      "src_real.ts",
+      "README.md",
+      "CHANGELOG.md",
+      join("docs", "SESSION_LOG.md"),
+    ];
     for (const f of [...artifacts, ...keep]) writeFileSync(join(repo, f), "x", "utf8");
     git("add -A");
 
