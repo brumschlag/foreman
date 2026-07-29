@@ -69,7 +69,7 @@ spec:
       # already-migrated database reports "Migrations already up" and exits 0.
       initContainers:
         - name: migrate
-          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.13
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.16
           args: [migrate]
           env:
             - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
@@ -88,7 +88,7 @@ spec:
               memory: 512Mi
       containers:
         - name: server
-          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.13
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.16
           ports:
             - name: http
               containerPort: 4766
@@ -128,6 +128,46 @@ spec:
             # is needed. Do NOT set ANTHROPIC_API_KEY here — Pi would prefer the
             # Anthropic provider and ignore Bedrock.
             - name: AWS_REGION
+              value: us-east-1
+            # ── kelos phase backend ──────────────────────────────────────────
+            # Dispatches each phase as a kelos Task in its own pod instead of
+            # running the Pi SDK in this process. Requires kubectl in the image
+            # and the RBAC in kelos-rbac.yaml.
+            #
+            # The NON-POOLED path is used deliberately: envoverrides-pool owns a
+            # workspace pointing at octocat/Hello-World, and the CRD forbids
+            # podOverrides (how agents get gateway credentials) alongside
+            # workerPoolRef. So no KELOS_WORKER_POOL here.
+            - name: FOREMAN_PHASE_BACKEND
+              value: module
+            - name: FOREMAN_PHASE_RUNNER_MODULE
+              value: /app/dist/orchestrator/kelos-backend.js
+            - name: FOREMAN_PHASE_RUNNER_EXPORT
+              value: runKelosPhase
+            - name: KELOS_NAMESPACE
+              value: kelos-pilot
+            - name: KELOS_WORKSPACE
+              value: packer-pipeline-test
+            - name: KELOS_AGENT_TYPE
+              value: claude-code
+            # Agent pods hold no AWS credentials; they reach Bedrock through the
+            # shared LiteLLM gateway. This is a DIFFERENT credential path from the
+            # in-process runner, which uses Pod Identity directly.
+            - name: KELOS_AGENT_ENV
+              value: ANTHROPIC_BASE_URL=http://bedrock-gateway.honcho.svc.cluster.local,MAX_THINKING_TOKENS=0
+            - name: KELOS_AGENT_ENV_FROM_SECRET
+              value: ANTHROPIC_AUTH_TOKEN=honcho-gateway-key:gateway-api-key
+            # The gateway serves its own model names, so workflow models must be
+            # mapped. An unmapped model is refused rather than silently
+            # substituted, which would change cost and quality without saying so.
+            - name: KELOS_MODEL_MAP
+              value: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0=claude-haiku
+            # Phase work returns as a git patch through S3 rather than a shared
+            # volume: an EBS volume is AZ-pinned, which would force the server and
+            # every agent pod onto one node (see the TRD Phase 5 outcome).
+            - name: KELOS_PATCH_BUCKET
+              value: foreman-patches-565715328522-us-east-1
+            - name: KELOS_PATCH_REGION
               value: us-east-1
           # /api/v1/health answers unauthenticated (a token only adds the runtime
           # detail block), so no probe credential is needed.

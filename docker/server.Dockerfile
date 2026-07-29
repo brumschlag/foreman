@@ -102,6 +102,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # refinery, conflict resolution), so a pipeline reaching those phases fails
 # without it. Installed from the pinned upstream release rather than Debian's
 # gh 2.23, which is years behind.
+# The kelos phase backend dispatches each phase as a Task through the kubectl CLI
+# (kelos-kubectl-api.ts), so kubectl must be on PATH. In-cluster credentials come
+# from the pod's ServiceAccount token; RBAC is in deploy/pilot/kelos-rbac.yaml.
+ARG KUBECTL_VERSION=v1.31.4
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    curl -fsSL -o /usr/local/bin/kubectl \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl"; \
+    chmod 0755 /usr/local/bin/kubectl; \
+    kubectl version --client=true 2>/dev/null | head -1
+
 ARG GH_VERSION=2.67.0
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \

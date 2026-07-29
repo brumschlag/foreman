@@ -106,3 +106,66 @@ run.
   so it cannot run against a non-Node repo. `installDependencies()` in
   `src/lib/setup.ts` already guards on a missing `package.json`; the workflow's
   raw `setup:` command does not.
+
+---
+
+## BLOCKER (kelos-side) — a multi-line `preCommand` wedges the Task controller
+
+**Found:** 2026-07-29, first end-to-end dispatch on the kelos phase backend.
+**Not a Foreman bug** — it is in the kelos fork, and it blocks the kelos path
+entirely.
+
+**Symptom.** Foreman creates the Task successfully, then it sits with empty
+`status` and no finalizer forever. No agent pod is ever scheduled. The controller
+logs, every ~40s:
+
+```
+unable to add finalizer ... Task.kelos.dev "foreman-kelos-e2e-1-explorer" is
+invalid: spec: Invalid value: Task spec is immutable after creation
+```
+
+`internal/controller/task_controller.go:118` adds `kelos.dev/finalizer` and calls
+`r.Update(ctx, &task)`. That update carries the spec back, and the CRD's
+`self == oldSelf` immutability rule (`api/v1alpha2/task_types.go:514`) rejects it
+— so the controller can never take ownership of its own Task.
+
+**Isolated by bisection.** Applying Tasks by hand, the finalizer is added fine
+with: plain `podOverrides`, `podOverrides` containing a `secretKeyRef` env, and a
+single-line `preCommands` entry. It fails as soon as a `preCommands` argument
+contains **literal newlines** — which Foreman's tool-policy hook install does,
+since it writes the hook script via a heredoc.
+
+The stored value round-trips with real `\n` characters intact (verified), so this
+looks like a CEL `self == oldSelf` comparison that is not stable for multi-line
+strings rather than anything Foreman is doing wrong.
+
+**Consequence.** The tool-policy hook cannot be installed via `preCommands` on
+this controller build, so the kelos backend cannot run a policy-gated phase — the
+capability TRD-2026-026 Phase 5 was written to unblock.
+
+**Options, none of them Foreman-side:**
+1. Fix kelos: skip the immutability rule for controller-originated updates, or add
+   the finalizer with a JSON-patch on `metadata` only rather than a full-object
+   `Update`. Cleanest, needs a controller rebuild and redeploy.
+2. Avoid newlines in `preCommands` — e.g. base64 the hook script and decode in a
+   single-line command. A workaround in Foreman for a kelos defect; feasible, and
+   would let the path be proven before (1) lands.
+3. Bake the hook into the agent image instead of installing per Task.
+
+Reproduce with the probe used above:
+
+```bash
+kubectl apply -f - <<'YAML'
+apiVersion: kelos.dev/v1alpha2
+kind: Task
+metadata: {name: probe-heredoc, namespace: kelos-pilot}
+spec:
+  model: claude-haiku
+  prompt: echo hi
+  type: claude-code
+  credentials: {type: none}
+  workspaceRef: {name: packer-pipeline-test}
+  preCommands: [["sh","-c","set -e\necho two"]]
+YAML
+# → no finalizer, empty status, controller logs the immutability error
+```

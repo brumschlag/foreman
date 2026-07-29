@@ -6,12 +6,12 @@
  *   FOREMAN_PHASE_RUNNER_MODULE=<dist>/orchestrator/kelos-backend.js
  *   FOREMAN_PHASE_RUNNER_EXPORT=runKelosPhase
  *
- * Not supported on this backend: the tool policy gate. It is enforced by wrapping
- * in-process Pi SDK tool objects, and a kelos agent is a separate program in a
- * separate pod, so a phase configuring `toolPolicy` is refused rather than run
- * unguarded. Enforcing it here would need a PreToolUse hook in the agent image
- * calling the server's /worker/v1/tool-policy endpoint, which in turn requires the
- * Foreman server to be reachable from the cluster.
+ * The tool policy gate IS supported here. In-process it wraps Pi SDK tool objects,
+ * which cannot reach an agent running as a separate program in a separate pod; on
+ * this backend it travels as a Claude Code PreToolUse hook installed by
+ * `Task.spec.preCommands`, calling the server's /worker/v1/tool-policy endpoint.
+ * A client not configured with `toolPolicy` still refuses a policy-gated phase
+ * rather than running it unguarded — see `kelos-phase-runner.ts`.
  *
  * @module kelos-backend
  */
@@ -124,6 +124,15 @@ export interface KelosBackendConfig {
   gatewayModel(model: string): string;
   /** Per-phase env for a pooled task; empty when no model env var is configured. */
   envOverridesFor(model: string): { name: string; value: string }[];
+  /**
+   * Server base URL the PreToolUse hook calls for tool-policy decisions.
+   *
+   * Undefined when unset, which keeps a policy-gated phase refused: the hook
+   * fails closed, so pointing it at nothing would deny every tool call instead.
+   */
+  toolPolicyServerUrl?: string;
+  /** Bearer token for that endpoint; the hook accepts either token name. */
+  toolPolicyAuthToken?: string;
 }
 
 export function kelosBackendConfigFromEnv(): KelosBackendConfig {
@@ -187,6 +196,11 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
       : undefined,
     podOverrides: agentEnv.length > 0 ? { env: agentEnv } : undefined,
     localWorktreePath: process.env.KELOS_LOCAL_WORKTREE?.trim() || undefined,
+    toolPolicyServerUrl: process.env.FOREMAN_SERVER_URL?.trim() || undefined,
+    toolPolicyAuthToken:
+      process.env.FOREMAN_WORKER_EVENT_TOKEN?.trim() ||
+      process.env.FOREMAN_SERVER_AUTH_TOKEN?.trim() ||
+      undefined,
     ...(patchBucket
       ? {
           patchStore: createS3PatchStore({
@@ -244,6 +258,20 @@ export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseR
       envOverrides: config.envOverridesFor(opts.model),
       patchUpload,
       pollIntervalMs: config.pollIntervalMs,
+      // Only when a policy is actually requested AND we have an endpoint for it.
+      // Without a reachable server the hook denies every tool call, so leaving
+      // this undefined keeps the phase refused instead of silently unguarded.
+      ...(opts.toolPolicy && config.toolPolicyServerUrl
+        ? {
+            toolPolicy: {
+              serverUrl: config.toolPolicyServerUrl,
+              authToken: config.toolPolicyAuthToken,
+              runId: opts.toolPolicy.context.runId,
+              taskId: opts.toolPolicy.context.taskId ?? opts.context.taskId,
+              phaseId: opts.toolPolicy.context.phaseId,
+            },
+          }
+        : {}),
     });
 
     // GitBackend runs on Foreman's machine, so it is rooted at Foreman's path —
