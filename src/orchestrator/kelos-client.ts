@@ -206,8 +206,25 @@ function parseToolBreakdown(raw: string | undefined): Record<string, number> {
   return out;
 }
 
+/**
+ * A phase's Task name must be unique per ATTEMPT, not per phase.
+ *
+ * `Task.spec` carries the CRD validation `self == oldSelf`, so applying a name
+ * that already exists is rejected with "Task spec is immutable after creation".
+ * A name of task + phase alone therefore breaks every retry: the pipeline
+ * re-applies the completed object and the phase dies before an agent starts.
+ * The run id disambiguates attempts; it is optional so a caller that omits it
+ * keeps the previous behaviour rather than producing a name ending in `-`.
+ *
+ * The stem is bounded because a Task name feeds pod names, which cap at 63
+ * characters, and the whole object name caps at 253.
+ */
 function taskName(request: KelosTaskRequest): string {
-  return `foreman-${request.taskId}-${request.phaseName}`.toLowerCase();
+  const attempt = String(request.runId ?? "")
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 8);
+  const stem = `foreman-${request.taskId}-${request.phaseName}`.slice(0, 200);
+  return (attempt ? `${stem}-${attempt}` : stem).toLowerCase();
 }
 
 /**

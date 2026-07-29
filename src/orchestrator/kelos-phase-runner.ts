@@ -51,6 +51,13 @@ export interface KelosTaskRequest {
   model: string;
   phaseName: string;
   taskId: string;
+  /**
+   * Distinguishes one attempt at a phase from the next. `Task.spec` is immutable
+   * (CRD CEL rule `self == oldSelf`), so a name derived from task and phase alone
+   * makes a retry re-apply the already-completed object, which the API server
+   * rejects.
+   */
+  runId?: string;
 }
 
 export interface KelosClient {
@@ -150,6 +157,7 @@ export function createKelosPhaseRunner(
       model: opts.model,
       phaseName: opts.context.phaseName,
       taskId: opts.context.taskId,
+      runId: opts.context.runId,
     });
 
     if (result.transport === "patch") {
