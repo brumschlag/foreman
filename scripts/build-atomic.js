@@ -64,9 +64,18 @@ try {
 
 // ── Step 2: copy static assets into tmpDir ────────────────────────────────────
 console.error('[build-atomic] Copying assets …');
+// `.sh` is included for the pod-side hooks/shims (tool policy, Agent Mail):
+// their loaders prefer dist/defaults and only fall back to src/defaults, so
+// omitting them here left the packaged layout resolving through a path that
+// exists solely because package.json also ships src/defaults.
 const filter = (s) => {
   const name = basename(s);
-  return !name.includes('.') || name.endsWith('.md') || name.endsWith('.yaml');
+  return (
+    !name.includes('.') ||
+    name.endsWith('.md') ||
+    name.endsWith('.yaml') ||
+    name.endsWith('.sh')
+  );
 };
 
 const legacySrc = join(root, 'src', 'templates');

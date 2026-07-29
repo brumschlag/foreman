@@ -1,6 +1,35 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { resolveArtifactPath } from "../lib/report-paths.js";
+
+/**
+ * Files the pipeline itself writes into the worktree — TASK.md from the worker,
+ * per-phase session logs and reports from each agent.
+ *
+ * The scope guard must never flag these: the developer did not choose to touch
+ * them, so no `## Scope Expansions` entry can justify them, and finalize would
+ * fail with no action the pipeline could take.
+ */
+function isWorkerGeneratedAuditFile(filePath: string): boolean {
+  const name = basename(filePath.replace(/^\.\//, ""));
+  // Root-level markdown only: a repo's own docs/ or src/ markdown is still in
+  // scope. Agents name their logs freely (SESSION_LOG.md, QA_SESSION_LOG.md,
+  // SESSION_LOG_DOCS.md all appeared in live runs), so match the family rather
+  // than enumerating exact names — an enumeration is one invented suffix behind.
+  if (filePath.replace(/^\.\//, "").includes("/")) return false;
+  // Keyword-based, not suffix-based. Five distinct names appeared across live
+  // runs — SESSION_LOG.md, QA_SESSION_LOG.md, SESSION_LOG_DOCS.md,
+  // QA_DETAILED_SESSION_LOG.md, QA_VERIFICATION_SESSION.md — each defeating a
+  // more literal predecessor of this check. Any SHOUTY_CASE root file whose name
+  // contains an audit keyword is pipeline output, since repo content at the root
+  // is conventionally README/LICENSE/CHANGELOG rather than QA_*/SESSION_*.
+  if (!/^[A-Z0-9_]+\.(md|json|txt)$/.test(name)) return false;
+  return (
+    /(SESSION|HANDOFF|REPORT|RUN_LOG|VALIDATION)/.test(name) ||
+    name === "TASK.md" ||
+    name === "BLOCKED.md"
+  );
+}
 
 export interface FinalizeGuardConfig {
   worktreePath: string;
@@ -114,6 +143,25 @@ export function reportJustifiesOutOfScope(report: string, file: string): boolean
   return isValidJustification(justification);
 }
 
+/**
+ * Explorer-scoped paths re-expressed relative to the worktree.
+ *
+ * The explorer is asked for repo-relative paths but sometimes writes the
+ * absolute worktree path instead. Changed files are always repo-relative, so
+ * without this the task's OWN target file reads as out-of-scope.
+ */
+function relativeAllowedPaths(
+  config: FinalizeGuardConfig,
+  allowedPaths: Set<string>,
+): Set<string> {
+  const prefix = config.worktreePath.replace(/\/+$/, "") + "/";
+  const relative = new Set<string>();
+  for (const candidate of allowedPaths) {
+    if (candidate.startsWith(prefix)) relative.add(candidate.slice(prefix.length));
+  }
+  return relative;
+}
+
 export function findFinalizeScopeViolations(config: FinalizeGuardConfig, changedFiles: string[]): string[] {
   const explorerReport = readFinalizeReportFile(config, "EXPLORER_REPORT.md");
   const developerReport = readFinalizeReportFile(config, "DEVELOPER_REPORT.md");
@@ -123,10 +171,116 @@ export function findFinalizeScopeViolations(config: FinalizeGuardConfig, changed
   return changedFiles.filter((file) => {
     const normalized = file.replace(/^\.\//, "");
     if (allowedPaths.has(normalized)) return false;
+    // The explorer sometimes writes an absolute worktree path in Edit First, so
+    // compare the scoped paths repo-relative too rather than flagging the task's
+    // own target file.
+    if (relativeAllowedPaths(config, allowedPaths).has(normalized)) return false;
     if (normalized.startsWith(config.reportDir)) return false;
+    if (isWorkerGeneratedAuditFile(normalized)) return false;
     if (reportJustifiesOutOfScope(developerReport, normalized)) return false;
     return true;
   });
+}
+
+/**
+ * The test command finalize should run for a project, or undefined to skip
+ * validation entirely.
+ *
+ * Finalize used to hardcode `npm test`, so any non-Node project failed
+ * validation with ENOENT no matter what the task changed. A project with no
+ * recognisable test setup is skipped rather than failed — the same choice
+ * `installDependencies()` already makes for missing dependencies, and the only
+ * safe one, since failing gives the pipeline nothing it can act on.
+ *
+ * @param configured explicit override; an empty string opts out deliberately.
+ */
+export function resolveProjectTestCommand(
+  worktreePath: string,
+  configured?: string,
+): string | undefined {
+  if (configured !== undefined) {
+    const trimmed = configured.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }
+
+  const has = (file: string): boolean => existsSync(join(worktreePath, file));
+
+  if (has("package.json")) {
+    // `npm test` without a test script exits non-zero, which would fail finalize
+    // for a reason no task change can fix.
+    return packageHasTestScript(worktreePath) ? "npm test -- --reporter=dot" : undefined;
+  }
+  if (has("mix.exs")) return "mix test";
+  if (has("go.mod")) return "go test ./...";
+  if (has("Cargo.toml")) return "cargo test";
+  return undefined;
+}
+
+function packageHasTestScript(worktreePath: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(join(worktreePath, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const test = parsed.scripts?.test;
+    return typeof test === "string" && test.trim() !== "";
+  } catch {
+    // A malformed package.json is the project's problem, not something finalize
+    // can validate around.
+    return false;
+  }
+}
+
+/**
+ * The dependency-install command for a project, or undefined to skip.
+ *
+ * Finalize hardcoded `npm ci`, which fails twice over on a non-Node repo: with
+ * no `package.json` there is nothing to install, and `npm ci` additionally
+ * REQUIRES a lockfile (`EUSAGE`) so it fails even on a Node project that has
+ * only a manifest. Both were recorded as `Dependency Install: FAILED` in the
+ * finalize report of a run that otherwise succeeded.
+ *
+ * @param configured explicit override; an empty string opts out deliberately.
+ */
+export function resolveProjectInstallCommand(
+  worktreePath: string,
+  configured?: string,
+): string | undefined {
+  const override = explicitCommand(configured);
+  if (override !== NO_OVERRIDE) return override;
+
+  if (!existsSync(join(worktreePath, "package.json"))) return undefined;
+  const hasLockfile = ["package-lock.json", "npm-shrinkwrap.json"]
+    .some((file) => existsSync(join(worktreePath, file)));
+  return hasLockfile ? "npm ci" : "npm install";
+}
+
+/**
+ * The typecheck command for a project, or undefined to skip.
+ *
+ * Requires a `tsconfig.json`, not merely a `package.json`: without one there is
+ * no tsc to run, and `npx tsc` tries to FETCH a package instead — the source of
+ * "This is not the tsc command you are looking for" in a real finalize report.
+ *
+ * @param configured explicit override; an empty string opts out deliberately.
+ */
+export function resolveProjectTypecheckCommand(
+  worktreePath: string,
+  configured?: string,
+): string | undefined {
+  const override = explicitCommand(configured);
+  if (override !== NO_OVERRIDE) return override;
+
+  if (!existsSync(join(worktreePath, "package.json"))) return undefined;
+  return existsSync(join(worktreePath, "tsconfig.json")) ? "npx tsc --noEmit" : undefined;
+}
+
+/** Sentinel distinguishing "no override given" from "override says skip". */
+const NO_OVERRIDE = Symbol("no-override");
+
+function explicitCommand(configured?: string): string | undefined | typeof NO_OVERRIDE {
+  if (configured === undefined) return NO_OVERRIDE;
+  const trimmed = configured.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 export function finalizeValidationCommands(changedFiles: string[]): string[] {

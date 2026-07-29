@@ -379,6 +379,56 @@ Transient failures include provider rate limits, provider overloads (`529 overlo
 
 Operator use of `foreman run task` was removed after the Elixir cutover. Use scheduler-backed `foreman run` for ready work or `foreman retry` for retry flows instead.
 
+## Test Validation in Finalize
+
+The `finalize` phase runs the project's test suite before pushing. The command is
+detected from the repository:
+
+| Marker | Command |
+|--------|---------|
+| `package.json` with a `test` script | `npm test -- --reporter=dot` |
+| `mix.exs` | `mix test` |
+| `go.mod` | `go test ./...` |
+| `Cargo.toml` | `cargo test` |
+
+A project with none of these — or a `package.json` declaring no `test` script —
+**skips** test validation rather than failing it. Finalize also appends
+domain-specific checks based on which files changed (for example `mix test` when
+Elixir sources under `packages/foreman_server/` were touched).
+
+Override detection in `.foreman/config.yaml`:
+
+```yaml
+# Run something else entirely
+testCommand: make check
+
+# Opt out of finalize test validation (empty string, not omitted)
+testCommand: ""
+```
+
+Omitting the key falls back to detection; an empty string is a deliberate
+opt-out.
+
+Workflow `setup:` steps follow the same rule: a step whose package manager has no
+manifest in the repo (`npm` without `package.json`, `mix` without `mix.exs`, and
+so on) is skipped instead of aborting the run. Commands Foreman does not
+recognise always run.
+
+### QA evidence on projects without tests
+
+QA's `PASS` verdict is only honoured when its report shows real evidence — a test
+command plus pass/fail counts — so an agent cannot simply assert that things look
+fine. On a project with no automated test suite, state the skip explicitly:
+
+```markdown
+- Test suite: SKIPPED
+- Raw summary: N/A (repository has no automated test suite)
+```
+
+An explicit `Test suite: SKIPPED` satisfies the evidence check. Without either
+real counts or that marker, the verdict is overridden to FAIL and the pipeline
+loops back to the developer.
+
 ## Documentation Expectations
 
 Every user-visible change should update docs in the same task. Examples:

@@ -17,6 +17,82 @@ describe("finalize guards", () => {
     expect([...paths]).toEqual(["src/cli/commands/task.ts", "src/cli/watch-ui.ts"]);
   });
 
+  // Foreman's own worker writes TASK.md into the worktree, and each phase agent
+  // is instructed to write a session log. A real in-cluster run died at finalize
+  // with `scope_guard_failed: DOCUMENTATION_SESSION_LOG.md, QA_SESSION_LOG.md,
+  // REVIEWER_SESSION_LOG.md, TASK.md` — none of which the developer chose to
+  // touch, so no ## Scope Expansions entry could ever justify them.
+  // Live run: the explorer wrote an ABSOLUTE worktree path under "### Edit First"
+  // ("**Create:** `/home/foreman/.../cluster-smoke-9/CLUSTER_SMOKE.md`"), so the
+  // relative changed-file "CLUSTER_SMOKE.md" never matched and finalize failed
+  // with scope_guard_failed on the task's OWN target file.
+  it("matches an Edit First entry written as an absolute worktree path", () => {
+    const worktreePath = join(tmpdir(), `foreman-finalize-abs-${process.pid}-${Date.now()}`);
+    tmpDirs.push(worktreePath);
+    const reportDir = ".foreman/reports/task-abs/run-abs";
+    mkdirSync(join(worktreePath, reportDir), { recursive: true });
+    writeFileSync(
+      join(worktreePath, reportDir, "EXPLORER_REPORT.md"),
+      `### Edit First\n- **Create:** \`${worktreePath}/CLUSTER_SMOKE.md\`\n`,
+      "utf8",
+    );
+    writeFileSync(join(worktreePath, reportDir, "DEVELOPER_REPORT.md"), `# Developer Report\n`, "utf8");
+
+    expect(findFinalizeScopeViolations({ worktreePath, reportDir }, ["CLUSTER_SMOKE.md"])).toEqual([]);
+  });
+
+  it("does not flag worker-generated audit files as out-of-scope", () => {
+    const worktreePath = join(tmpdir(), `foreman-finalize-audit-${process.pid}-${Date.now()}`);
+    tmpDirs.push(worktreePath);
+    const reportDir = ".foreman/reports/task-audit/run-audit";
+    mkdirSync(join(worktreePath, reportDir), { recursive: true });
+    writeFileSync(join(worktreePath, reportDir, "EXPLORER_REPORT.md"), `### Edit First\n- **CLUSTER_SMOKE.md**\n`, "utf8");
+    writeFileSync(join(worktreePath, reportDir, "DEVELOPER_REPORT.md"), `# Developer Report\n`, "utf8");
+    const config = { worktreePath, reportDir };
+
+    expect(findFinalizeScopeViolations(config, [
+      "CLUSTER_SMOKE.md",
+      "TASK.md",
+      "SESSION_LOG.md",
+      "RUN_LOG.md",
+      "DOCUMENTATION_SESSION_LOG.md",
+      "QA_SESSION_LOG.md",
+      "REVIEWER_SESSION_LOG.md",
+      "SESSION_LOG_DOCS.md",
+      // Every one of these appeared in a real run. Agents invent a new session-log
+      // name almost every time, so the pattern must match the FAMILY.
+      "QA_DETAILED_SESSION_LOG.md",
+      "QA_VERIFICATION_SESSION.md",
+      "EXPLORER_HANDOFF.json",
+      "BLOCKED.md",
+    ])).toEqual([]);
+  });
+
+  it("still flags real source files alongside worker-generated audit files", () => {
+    const worktreePath = join(tmpdir(), `foreman-finalize-audit2-${process.pid}-${Date.now()}`);
+    tmpDirs.push(worktreePath);
+    const reportDir = ".foreman/reports/task-audit2/run-audit2";
+    mkdirSync(join(worktreePath, reportDir), { recursive: true });
+    writeFileSync(join(worktreePath, reportDir, "EXPLORER_REPORT.md"), `### Edit First\n- **src/a.ts**\n`, "utf8");
+    writeFileSync(join(worktreePath, reportDir, "DEVELOPER_REPORT.md"), `# Developer Report\n`, "utf8");
+    const config = { worktreePath, reportDir };
+
+    expect(findFinalizeScopeViolations(config, [
+      "src/a.ts",
+      "QA_SESSION_LOG.md",
+      "src/sneaky.ts",
+      // A nested doc is real content, not a worker audit file, even though its
+      // name resembles one.
+      "docs/SESSION_LOG.md",
+      // Root files that are genuine repo content must still be flagged: the
+      // keyword pattern must not become a blanket root-level exemption.
+      "README.md",
+      "Makefile.md",
+      "CHANGELOG.md",
+      "report.md",
+    ])).toEqual(["src/sneaky.ts", "docs/SESSION_LOG.md", "README.md", "Makefile.md", "CHANGELOG.md", "report.md"]);
+  });
+
   it("flags files outside Explorer scope that lack a structured ## Scope Expansions entry", () => {
     // After removing the global keyword fallback, a file mentioned only in
     // ## Decisions & Trade-offs (or any other section) does NOT count as

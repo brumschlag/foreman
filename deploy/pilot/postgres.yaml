@@ -1,0 +1,98 @@
+# Dedicated Postgres for the Foreman server (TRD-2026-026 Phase 3).
+#
+# Deliberately NOT a shared database. Six other Postgres instances run on this
+# cluster, but each is owned by another app and four are under ArgoCD control —
+# reusing one would tie Foreman's schema lifecycle to an unrelated app's release
+# cadence and share its connection limits.
+#
+# Prerequisite (not created here, since it holds a credential):
+#   kubectl create secret generic foreman-postgres -n kelos-pilot \
+#     --from-literal=password="$(openssl rand -base64 24 | tr -d /=+ | cut -c1-32)"
+#
+# postgres:16-alpine matches the other instances on this cluster. The Elixir
+# event-store migrations need no extensions, so plain Postgres is sufficient
+# (no pgvector).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: foreman-postgres
+  namespace: kelos-pilot
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: auto-ebs-gp3
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foreman-postgres
+  namespace: kelos-pilot
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: an RWO EBS volume cannot attach to the old and
+  # new pod at once, so a rolling replacement deadlocks.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: foreman-postgres
+  template:
+    metadata:
+      labels:
+        app: foreman-postgres
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: foreman
+            - name: POSTGRES_USER
+              value: foreman
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-postgres
+                  key: password
+            # The mount root is not empty (lost+found), which initdb rejects.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, foreman, -d, foreman]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: foreman-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foreman-postgres
+  namespace: kelos-pilot
+spec:
+  selector:
+    app: foreman-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

@@ -81,7 +81,7 @@ import { runWorkspaceHook } from "../lib/setup.js";
 import { loadProjectConfig, type ProjectHooksConfig } from "../lib/project-config.js";
 import { foremanBackendMode } from "../lib/backend-mode.js";
 import { nativeTaskStatusForPhase } from "./task-phase-status.js";
-import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands } from "./finalize-guards.js";
+import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands, resolveProjectInstallCommand, resolveProjectTestCommand, resolveProjectTypecheckCommand } from "./finalize-guards.js";
 import { rotateReport } from "./agent-worker-finalize.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { collectRuntimeAssetIssues, runtimeAssetIssueMessage } from "../lib/runtime-assets.js";
@@ -984,11 +984,16 @@ async function runPhase(
         phaseName: role,
         runId: config.runId,
         taskId: config.taskId,
+        projectId: config.projectId,
         taskTitle: config.taskTitle,
         taskType: config.taskType,
         taskDescription: config.taskDescription,
         worktreePath: config.worktreePath,
         targetBranch: config.targetBranch,
+        // A QA-driven retry loops back within the SAME run, so runId alone does
+        // not distinguish attempts. Backends that name external resources per
+        // phase need this to avoid colliding with the previous attempt.
+        phaseIteration: config.phaseIteration,
       },
       observability: {
         runId: config.runId,
@@ -1871,6 +1876,26 @@ function truncateFinalizeOutput(output: string): string {
   return output.length > 3000 ? `${output.slice(0, 3000)}\n...<truncated>` : output;
 }
 
+/**
+ * Runs an optional finalize step, reporting a skip as success.
+ *
+ * `ok: true` is correct for a skip: the step did not fail, it did not apply. The
+ * output line says so explicitly so the report distinguishes "nothing to do"
+ * from "passed", which a bare SUCCESS would not.
+ */
+async function runFinalizeStep(
+  command: string | undefined,
+  cwd: string,
+  log: (msg: string) => void,
+  label: string,
+): Promise<{ ok: boolean; output: string }> {
+  if (!command) {
+    log(`[FINALIZE] ${label} skipped — no matching toolchain in this project`);
+    return { ok: true, output: `SKIPPED — no ${label} toolchain detected for this project` };
+  }
+  return runShellForFinalize(command, cwd, 5 * 60_000);
+}
+
 function isVerificationTask(config: WorkerConfig): boolean {
   const type = (config.taskType ?? "").toLowerCase();
   const title = config.taskTitle.toLowerCase();
@@ -1987,8 +2012,21 @@ async function runFinalizeBuiltinPhase(args: {
   const reportDir = workerReportDir(config);
 
   log(`[FINALIZE] deterministic builtin starting for ${branchName}`);
-  const install = await runShellForFinalize("npm ci", config.worktreePath, 5 * 60_000);
-  const typecheck = await runShellForFinalize("npx tsc --noEmit", config.worktreePath, 5 * 60_000);
+  // Both are skipped when the project has no matching toolchain. Running them
+  // anyway recorded two false FAILEDs in every non-Node finalize report, which a
+  // reader cannot distinguish from real failures.
+  const install = await runFinalizeStep(
+    resolveProjectInstallCommand(config.worktreePath),
+    config.worktreePath,
+    log,
+    "dependency install",
+  );
+  const typecheck = await runFinalizeStep(
+    resolveProjectTypecheckCommand(config.worktreePath),
+    config.worktreePath,
+    log,
+    "type check",
+  );
 
   const commands = vcsBackend.getFinalizeCommands({
     taskId: config.taskId,
@@ -2065,7 +2103,19 @@ async function runFinalizeBuiltinPhase(args: {
       return { success: false, costUsd: 0, turns: 0, tokensIn: 0, tokensOut: 0, error: `rebase_conflict: ${details}`, outputText: readFileSync(resolveArtifactPath(config.worktreePath, join(reportDir, "FINALIZE_VALIDATION.md")), "utf8") };
     }
     integrationStatus = "SUCCESS";
-    const validationCommands = ["npm test -- --reporter=dot", ...domainValidationCommands];
+    // Detected per project rather than hardcoded to npm: a repo with no
+    // recognisable test setup skips validation instead of failing it.
+    const projectTestCommand = resolveProjectTestCommand(
+      config.worktreePath,
+      loadProjectConfig(config.worktreePath)?.testCommand,
+    );
+    const validationCommands = [
+      ...(projectTestCommand ? [projectTestCommand] : []),
+      ...domainValidationCommands,
+    ];
+    if (validationCommands.length === 0) {
+      log(`[FINALIZE] no test command for this project — skipping test validation`);
+    }
     const test = await runFinalizeValidationCommands(validationCommands, config.worktreePath);
     if (!test.ok) {
       const classification = classifyFinalizeTestFailure(test.output, changedAgainstBase);
