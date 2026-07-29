@@ -82,7 +82,7 @@ export function getTasksIssuesPathForWorkspace(
  * Patterns are pathspecs interpreted by git, and stay root-anchored so a repo's
  * own `docs/SESSION_LOG.md` is untouched.
  */
-const WORKER_ARTIFACT_PATHSPECS = [
+export const WORKER_ARTIFACT_PATHSPECS = [
   "node_modules",
   "TASK.md",
   "BLOCKED.md",

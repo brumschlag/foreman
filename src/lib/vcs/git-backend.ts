@@ -24,7 +24,11 @@ import type {
   FinalizeTemplateVars,
   FinalizeCommands,
 } from "./types.js";
-import { buildTrackedStateRestoreCommand, getWorkspacePath } from "../workspace-paths.js";
+import {
+  WORKER_ARTIFACT_PATHSPECS,
+  buildTrackedStateRestoreCommand,
+  getWorkspacePath,
+} from "../workspace-paths.js";
 import type { VcsBackend } from "./interface.js";
 
 const execFileAsync = promisify(execFile);
@@ -915,7 +919,16 @@ export class GitBackend implements VcsBackend {
     // -N records new files in the index without their content, which is enough for
     // `git diff` to emit them as additions while leaving staged state alone.
     await this.git(["add", "-N", "."], workspacePath);
-    const patch = await this.git(["diff", "--binary", "HEAD"], workspacePath);
+    // Worker artifacts are excluded because the seed is applied inside a fresh
+    // agent pod, where anything it carries looks like part of the task: shipping
+    // them made QA return BLOCKING_SCOPE_BREACH over TASK.md and SESSION_LOG.md it
+    // had itself been handed. Same pathspec list the finalize unstage uses, so the
+    // two cannot drift.
+    const exclusions = WORKER_ARTIFACT_PATHSPECS.map((spec) => `:(glob,top,exclude)${spec}`);
+    const patch = await this.git(
+      ["diff", "--binary", "HEAD", "--", ".", ...exclusions],
+      workspacePath,
+    );
     return patch.trim() === "" ? "" : patch.endsWith("\n") ? patch : `${patch}\n`;
   }
 

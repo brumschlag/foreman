@@ -47,6 +47,25 @@ describe("createWorktreePatch", () => {
     expect(patch).toContain("changed");
   });
 
+  // The seed is applied inside a fresh agent pod, so anything it carries looks to
+  // that agent like part of the task. Shipping worker artifacts made QA return
+  // BLOCKING_SCOPE_BREACH: "the developer committed three files instead of one",
+  // objecting to TASK.md and SESSION_LOG.md it had itself been handed.
+  test("excludes worker-generated artifacts from the seed", async () => {
+    const dir = repo();
+    writeFileSync(join(dir, "KELOS_SMOKE.md"), "real work\n", "utf8");
+    writeFileSync(join(dir, "TASK.md"), "pipeline scratch\n", "utf8");
+    writeFileSync(join(dir, "SESSION_LOG.md"), "pipeline scratch\n", "utf8");
+    writeFileSync(join(dir, "QA_REPORT.md"), "pipeline scratch\n", "utf8");
+
+    const patch = await new GitBackend(dir).createWorktreePatch(dir);
+
+    expect(patch).toContain("KELOS_SMOKE.md");
+    expect(patch).not.toContain("TASK.md");
+    expect(patch).not.toContain("SESSION_LOG.md");
+    expect(patch).not.toContain("QA_REPORT.md");
+  });
+
   test("returns empty when there is nothing to inherit", async () => {
     // The first phase of a run has no prior work; an empty seed must not look like
     // a failure.
