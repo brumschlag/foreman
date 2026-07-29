@@ -272,6 +272,29 @@ export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseR
             },
           }
         : {}),
+      // Reports and mail reuse the same server and token as the policy gate.
+      // Both need a projectId and runId to address Foreman's per-run storage, so
+      // they are omitted when either is unknown rather than posting to a guessed
+      // location — the phase then fails its artifact gate, which is honest.
+      ...(config.toolPolicyServerUrl && opts.context.projectId && opts.context.runId
+        ? {
+            reports: {
+              serverUrl: config.toolPolicyServerUrl,
+              authToken: config.toolPolicyAuthToken,
+              projectId: opts.context.projectId,
+              taskId: opts.context.taskId,
+              runId: opts.context.runId,
+              phaseId: opts.context.phaseName,
+            },
+            mail: {
+              serverUrl: config.toolPolicyServerUrl,
+              authToken: config.toolPolicyAuthToken,
+              runId: opts.context.runId,
+              taskId: opts.context.taskId,
+              phaseId: opts.context.phaseName,
+            },
+          }
+        : {}),
     });
 
     // GitBackend runs on Foreman's machine, so it is rooted at Foreman's path —

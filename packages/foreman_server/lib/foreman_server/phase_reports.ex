@@ -38,14 +38,20 @@ defmodule ForemanServer.PhaseReports do
     end
   end
 
-  @doc "Default reports root, matching where the Node worker writes them."
+  @doc """
+  Default reports root, matching where the Node-side artifact gate looks.
+
+  FOREMAN_HOME already points AT the `.foreman` directory (see
+  `src/lib/foreman-paths.ts`), so it must not be appended again — doing so wrote to
+  `~/.foreman/.foreman/reports`, which the gate never reads. Only the HOME fallback
+  needs the `.foreman` segment.
+  """
   @spec default_root() :: String.t()
   def default_root do
-    Path.join([home_dir(), ".foreman", "reports"])
-  end
-
-  defp home_dir do
-    System.get_env("FOREMAN_HOME") || System.get_env("HOME") || "/tmp"
+    case System.get_env("FOREMAN_HOME") do
+      home when is_binary(home) and home != "" -> Path.join(home, "reports")
+      _ -> Path.join([System.get_env("HOME") || "/tmp", ".foreman", "reports"])
+    end
   end
 
   defp required_binary(input, key) do

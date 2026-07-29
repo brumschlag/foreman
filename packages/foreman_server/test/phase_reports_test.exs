@@ -16,6 +16,17 @@ defmodule ForemanServer.PhaseReportsTest do
     {:ok, root: root}
   end
 
+  # FOREMAN_HOME already points AT the .foreman directory (see
+  # src/lib/foreman-paths.ts), so appending ".foreman" again would write to
+  # ~/.foreman/.foreman/reports — a path the Node-side artifact gate never reads.
+  # Caught before deploying by comparing the two path builders.
+  test "default_root matches where the Node worker's gate looks" do
+    System.put_env("FOREMAN_HOME", "/home/foreman/.foreman")
+    on_exit(fn -> System.delete_env("FOREMAN_HOME") end)
+
+    assert PhaseReports.default_root() == "/home/foreman/.foreman/reports"
+  end
+
   test "writes a report under the run's reports directory", %{root: root} do
     assert {:ok, path} =
              PhaseReports.store(%{

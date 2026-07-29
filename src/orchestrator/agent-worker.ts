@@ -984,6 +984,7 @@ async function runPhase(
         phaseName: role,
         runId: config.runId,
         taskId: config.taskId,
+        projectId: config.projectId,
         taskTitle: config.taskTitle,
         taskType: config.taskType,
         taskDescription: config.taskDescription,

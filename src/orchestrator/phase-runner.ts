@@ -5,6 +5,11 @@ export interface PhaseRunnerContext {
   phaseName: string;
   runId?: string;
   taskId: string;
+  /**
+   * Owning project. Needed by out-of-process backends, which address Foreman's
+   * per-project storage over HTTP rather than by local path.
+   */
+  projectId?: string;
   taskTitle: string;
   taskType?: string;
   taskDescription?: string;

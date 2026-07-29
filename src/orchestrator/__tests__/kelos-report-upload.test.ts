@@ -69,24 +69,87 @@ describe("kelos report shim", () => {
   });
 });
 
-describe("kelos backend report wiring", () => {
-  // The tool-policy work established the failure mode: helper correct, backend
-  // never passes the option, so the feature is silently absent on the real path.
-  test("derives report upload config from the phase context", async () => {
-    const { kelosBackendConfigFromEnv } = await import("../kelos-backend.js");
-    const saved = { ...process.env };
-    try {
-      process.env.KELOS_NAMESPACE = "kelos-pilot";
-      process.env.FOREMAN_SERVER_URL = "http://foreman-server:4766";
-      process.env.FOREMAN_SERVER_AUTH_TOKEN = "tok";
+// The client is the seam that builds the Task, so wiring is asserted here rather
+// than through createKelosBackend, whose kubectl API is constructed internally.
+describe("kelos client report wiring", () => {
+  test("installs the shim, passes the ids, and tells the agent it exists", async () => {
+    const { createKelosCrdClient } = await import("../kelos-client.js");
+    let created: {
+      spec?: {
+        preCommands?: string[][];
+        envOverrides?: { name: string; value: string }[];
+        prompt?: string;
+      };
+    } | undefined;
 
-      const config = kelosBackendConfigFromEnv();
+    const client = createKelosCrdClient({
+      api: {
+        createTask: async (task) => {
+          created = task as typeof created;
+          return "t";
+        },
+        getTask: async () => ({ status: { phase: "Succeeded" } }) as never,
+      },
+      workspace: "repo",
+      agentType: "claude-code",
+      credentials: { type: "none" },
+      pollIntervalMs: 0,
+      reports: {
+        serverUrl: "http://foreman-server:4766",
+        authToken: "tok",
+        projectId: "proj-1",
+        taskId: "task-1",
+        runId: "run-1",
+        phaseId: "documentation",
+      },
+    });
 
-      // Reports reuse the policy endpoint: same server, same token resolution.
-      expect(config.toolPolicyServerUrl).toBe("http://foreman-server:4766");
-      expect(config.toolPolicyAuthToken).toBe("tok");
-    } finally {
-      process.env = saved;
-    }
+    await client.runTask({
+      prompt: "p",
+      systemPrompt: "s",
+      model: "claude-haiku",
+      phaseName: "documentation",
+      taskId: "task-1",
+    });
+
+    const pre = (created?.spec?.preCommands ?? []).map((c) => c.join(" ")).join("\n");
+    expect(pre).toContain(POD_REPORT_SHIM_PATH);
+
+    const env = new Map((created?.spec?.envOverrides ?? []).map((e) => [e.name, e.value] as const));
+    expect(env.get("FOREMAN_PROJECT_ID")).toBe("proj-1");
+    expect(env.get("FOREMAN_SERVER_AUTH_TOKEN")).toBe("tok");
+
+    // Guidance must ride in the prompt or the agent never calls the shim.
+    expect(created?.spec?.prompt).toContain(POD_REPORT_SHIM_PATH);
+  });
+
+  test("adds no report wiring when reports are not configured", async () => {
+    const { createKelosCrdClient } = await import("../kelos-client.js");
+    let created: { spec?: { preCommands?: string[][] } } | undefined;
+
+    const client = createKelosCrdClient({
+      api: {
+        createTask: async (task) => {
+          created = task as typeof created;
+          return "t";
+        },
+        getTask: async () => ({ status: { phase: "Succeeded" } }) as never,
+      },
+      workspace: "repo",
+      agentType: "claude-code",
+      credentials: { type: "none" },
+      pollIntervalMs: 0,
+    });
+
+    await client.runTask({
+      prompt: "p",
+      systemPrompt: "s",
+      model: "claude-haiku",
+      phaseName: "qa",
+      taskId: "task-1",
+    });
+
+    const pre = (created?.spec?.preCommands ?? []).map((c) => c.join(" ")).join("\n");
+    expect(pre).not.toContain(POD_REPORT_SHIM_PATH);
   });
 });
