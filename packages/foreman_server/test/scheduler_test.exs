@@ -163,6 +163,80 @@ defmodule ForemanServer.SchedulerTest do
     assert Process.whereis(Scheduler) == scheduler, "scheduler was restarted by its supervisor"
   end
 
+  # Capacity was counted over ALL active runs while the `stale` flag the
+  # scheduler already computes went unused, so a dead run held its slot forever.
+  # On the pilot four abandoned runs (11-15h old) pinned max_concurrent: 2 and
+  # had to be failed by hand before anything could dispatch.
+  test "a stale active run does not hold a capacity slot" do
+    create_task("task-dead", %{project_id: "alpha", status: "in_progress"})
+    create_task("task-fresh", %{project_id: "alpha", status: "ready"})
+
+    start_run("run-dead", "task-dead", hours_ago(12))
+
+    assert {:ok, %{claimed: [%{task_id: "task-fresh"}], skipped: []}} =
+             Scheduler.tick(max_concurrent: 1)
+  end
+
+  test "a stale run is still reported so the operator can see it" do
+    create_task("task-dead", %{project_id: "alpha", status: "in_progress"})
+    start_run("run-dead", "task-dead", hours_ago(12))
+
+    assert {:ok, %{stale_active_runs: [%{run_id: "run-dead"}], active_runs: 1}} =
+             Scheduler.tick(max_concurrent: 1)
+  end
+
+  # The other direction, and the reason this is not simply "ignore old runs":
+  # WorkerHeartbeat does NOT bump run.updated_at — only phase transitions do — so
+  # a long single phase looks stale by timestamp while its worker is alive and
+  # working. Freeing that slot would double-dispatch the task.
+  test "a long-running run with a recent heartbeat keeps its slot" do
+    create_task("task-busy", %{project_id: "alpha", status: "in_progress"})
+    create_task("task-queued", %{project_id: "alpha", status: "ready"})
+
+    start_run("run-busy", "task-busy", hours_ago(12))
+    heartbeat("run-busy", "worker-busy", DateTime.utc_now())
+
+    assert {:ok, %{claimed: [], skipped: [%{reason: "global_capacity_exhausted"}]}} =
+             Scheduler.tick(max_concurrent: 1)
+  end
+
+  defp hours_ago(hours), do: DateTime.add(DateTime.utc_now(), -hours * 3600, :second)
+
+  defp start_run(run_id, task_id, updated_at) do
+    assert {:ok, _} =
+             EventStore.append(%{
+               stream_id: "run:#{run_id}",
+               event_type: "RunStarted",
+               payload: %{
+                 run_id: run_id,
+                 task_id: task_id,
+                 project_id: "alpha",
+                 status: "in_progress",
+                 updated_at: DateTime.to_iso8601(updated_at)
+               },
+               metadata: %{correlation_id: run_id, idempotency_key: "#{run_id}-start"}
+             })
+  end
+
+  defp heartbeat(run_id, worker_id, observed_at) do
+    assert {:ok, _} =
+             EventStore.append(%{
+               stream_id: "worker:#{run_id}:#{worker_id}",
+               event_type: "WorkerHeartbeat",
+               payload: %{
+                 run_id: run_id,
+                 worker_id: worker_id,
+                 phase_id: "developer",
+                 sequence: 1,
+                 observed_at: observed_at
+               },
+               metadata: %{
+                 correlation_id: run_id,
+                 idempotency_key: "hb:#{run_id}:#{worker_id}:1"
+               }
+             })
+  end
+
   defp assert_receive_tick(fun, attempts \\ 20)
 
   defp assert_receive_tick(fun, attempts) when attempts > 0 do

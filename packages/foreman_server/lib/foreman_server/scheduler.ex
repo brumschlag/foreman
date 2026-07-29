@@ -115,9 +115,12 @@ defmodule ForemanServer.Scheduler do
   defp dispatch(state) do
     tasks = ProjectionStore.dispatchable_tasks()
     active_runs = active_runs()
+    # Capacity is counted over LIVE runs only; reporting below still shows all of
+    # them, so a stale run stays visible to the operator instead of vanishing.
+    live_runs = live_active_runs(active_runs)
 
     {claimed, skipped, _active_count, _project_counts} =
-      Enum.reduce(tasks, {[], [], length(active_runs), project_counts(active_runs)}, fn task,
+      Enum.reduce(tasks, {[], [], length(live_runs), project_counts(live_runs)}, fn task,
                                                                                         {claimed,
                                                                                          skipped,
                                                                                          active_count,
@@ -234,6 +237,7 @@ defmodule ForemanServer.Scheduler do
     |> Enum.map(fn run ->
       task = Map.get(snapshot.tasks, Map.get(run, :task_id), %{})
       updated_at = Map.get(run, :updated_at) || Map.get(task, :updated_at)
+      heartbeat_age = heartbeat_age_seconds(snapshot, Map.get(run, :run_id), now)
 
       %{
         run_id: Map.get(run, :run_id),
@@ -243,17 +247,52 @@ defmodule ForemanServer.Scheduler do
         run_status: Map.get(run, :status),
         updated_at: updated_at,
         age_seconds: age_seconds(updated_at, now),
-        stale: stale?(updated_at, now)
+        heartbeat_age_seconds: heartbeat_age,
+        stale: stale?(updated_at, heartbeat_age, now)
       }
     end)
   end
 
   defp stale_active_runs(active_runs), do: Enum.filter(active_runs, &Map.get(&1, :stale))
 
-  defp stale?(nil, _now), do: true
+  # Runs that genuinely occupy a worker slot. A stale run is excluded, because
+  # counting it kept a dead run's slot reserved forever: nothing sweeps stale
+  # runs (RecoveryEngine only reconciles an observation pushed to it), so the
+  # slot was never released and dispatch silently stopped.
+  defp live_active_runs(active_runs), do: Enum.reject(active_runs, &Map.get(&1, :stale))
 
-  defp stale?(updated_at, now),
+  # A recent heartbeat means the worker is alive, which OVERRIDES an old
+  # updated_at. This matters because WorkerHeartbeat does not bump
+  # run.updated_at — only phase transitions do — so a single long phase looks
+  # stale by timestamp while its worker is actively working. Freeing that slot
+  # would double-dispatch the task.
+  defp stale?(updated_at, heartbeat_age, now)
+
+  defp stale?(_updated_at, heartbeat_age, _now)
+       when is_integer(heartbeat_age) and heartbeat_age >= 0 do
+    heartbeat_age > scheduler_env(:stale_heartbeat_seconds, 5 * 60)
+  end
+
+  defp stale?(nil, _heartbeat_age, _now), do: true
+
+  defp stale?(updated_at, _heartbeat_age, now),
     do: age_seconds(updated_at, now) > scheduler_env(:stale_active_seconds, 30 * 60)
+
+  # Age of the most recent heartbeat across this run's workers, or nil when the
+  # run has never heartbeated.
+  defp heartbeat_age_seconds(_snapshot, nil, _now), do: nil
+
+  defp heartbeat_age_seconds(snapshot, run_id, now) do
+    snapshot
+    |> Map.get(:worker_heartbeats, %{})
+    |> Enum.filter(fn {_key, payload} -> Map.get(payload, :run_id) == run_id end)
+    |> Enum.map(fn {_key, payload} -> age_seconds(Map.get(payload, :observed_at), now) end)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      ages -> Enum.min(ages)
+    end
+  end
 
   defp age_seconds(nil, _now), do: nil
   defp age_seconds(%DateTime{} = updated_at, now), do: DateTime.diff(now, updated_at, :second)
