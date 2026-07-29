@@ -109,63 +109,80 @@ run.
 
 ---
 
-## BLOCKER (kelos-side) — a multi-line `preCommand` wedges the Task controller
+## BLOCKER (kelos-side) — lossy v1alpha1 conversion drops `preCommands`
 
 **Found:** 2026-07-29, first end-to-end dispatch on the kelos phase backend.
-**Not a Foreman bug** — it is in the kelos fork, and it blocks the kelos path
-entirely.
+**Root cause is in the kelos fork** (`internal/conversion/task.go`), not Foreman.
 
-**Symptom.** Foreman creates the Task successfully, then it sits with empty
-`status` and no finalizer forever. No agent pod is ever scheduled. The controller
-logs, every ~40s:
+**Corrects two earlier wrong diagnoses in this document.** I first blamed literal
+newlines in the heredoc, then command size. Both were wrong: a Task with
+`preCommands: [["true"]]` fails, and the byte-identical Task with the
+`preCommands` key removed succeeds. The variable is the FIELD, not its contents.
+
+**Symptom.** Foreman creates the Task; it then sits with empty `status` and no
+finalizer forever, no agent pod ever scheduled, controller logging every ~40s:
 
 ```
-unable to add finalizer ... Task.kelos.dev "foreman-kelos-e2e-1-explorer" is
-invalid: spec: Invalid value: Task spec is immutable after creation
+unable to add finalizer ... Task.kelos.dev "..." is invalid:
+spec: Invalid value: Task spec is immutable after creation
 ```
 
-`internal/controller/task_controller.go:118` adds `kelos.dev/finalizer` and calls
-`r.Update(ctx, &task)`. That update carries the spec back, and the CRD's
-`self == oldSelf` immutability rule (`api/v1alpha2/task_types.go:514`) rejects it
-— so the controller can never take ownership of its own Task.
+**Mechanism.** The CRD serves BOTH `v1alpha1` and `v1alpha2` (storage
+`v1alpha2`) with a conversion webhook. `preCommands`/`postCommands` exist only in
+`v1alpha2` — `v1alpha1.TaskSpec` has no such fields — and
+`internal/conversion/task.go` converts specs with a plain `convertViaJSON` that
+has no preservation for them. So a round-trip through `v1alpha1` silently drops
+both.
 
-**Isolated by bisection.** Applying Tasks by hand, the finalizer is added fine
-with: plain `podOverrides`, `podOverrides` containing a `secretKeyRef` env, and a
-single-line `preCommands` entry. It fails as soon as a `preCommands` argument
-contains **literal newlines** — which Foreman's tool-policy hook install does,
-since it writes the hook script via a heredoc.
+`task_controller.go:118` then adds `kelos.dev/finalizer` with a full-object
+`r.Update()`, which carries the (now field-stripped) spec back. The CRD's
+`self == oldSelf` rule (`api/v1alpha2/task_types.go:514`) sees a changed spec and
+rejects it, so **the controller can never take ownership of a Task that uses
+`preCommands`**.
 
-The stored value round-trips with real `\n` characters intact (verified), so this
-looks like a CEL `self == oldSelf` comparison that is not stable for multi-line
-strings rather than anything Foreman is doing wrong.
+**Proven** with a throwaway test in the fork (`internal/conversion`):
 
-**Consequence.** The tool-policy hook cannot be installed via `preCommands` on
-this controller build, so the kelos backend cannot run a policy-gated phase — the
-capability TRD-2026-026 Phase 5 was written to unblock.
+```
+preCommands LOST in round-trip: got [] want 1 entry
+postCommands LOST in round-trip: got [] want 1 entry
+```
 
-**Options, none of them Foreman-side:**
-1. Fix kelos: skip the immutability rule for controller-originated updates, or add
-   the finalizer with a JSON-patch on `metadata` only rather than a full-object
-   `Update`. Cleanest, needs a controller rebuild and redeploy.
-2. Avoid newlines in `preCommands` — e.g. base64 the hook script and decode in a
-   single-line command. A workaround in Foreman for a kelos defect; feasible, and
-   would let the path be proven before (1) lands.
-3. Bake the hook into the agent image instead of installing per Task.
+i.e. `taskFromHub` → `taskToHub` loses both fields. That is the whole bug; the
+immutability error is a downstream symptom.
 
-Reproduce with the probe used above:
+**Why the pooled path worked.** `foreman-turns-1-developer` (24h old, pooled) has
+`preCommands` and succeeded — Tasks with `workerPoolRef` are reconciled by the
+WorkerPoolReconciler *after* the finalizer is in place, taking a different code
+path. Only the non-pooled path trips this.
+
+**Fix (in kelos).** The fork already has a pattern for exactly this: fields absent
+from `v1alpha1` are stashed on annotations and restored on the way back — see
+`preservedMCPValueFromEnvAnnotation` / `preservedSkillsSecretRefAnnotation` in
+`internal/conversion/agentconfig.go`. Apply the same to
+`preCommands`/`postCommands` in `internal/conversion/task.go`.
+
+Cheaper alternatives, if a controller rebuild is not wanted now:
+1. Stop serving `v1alpha1` (`served: false`) so no conversion happens. One CRD
+   edit, but breaks any v1alpha1 client.
+2. Have the controller add its finalizer with a metadata-only JSON patch instead
+   of a full-object `Update`, so the spec is never resubmitted. Arguably correct
+   regardless — a finalizer add should not rewrite the spec.
+
+**Reproduce:**
 
 ```bash
+# fails: no finalizer, empty status
 kubectl apply -f - <<'YAML'
 apiVersion: kelos.dev/v1alpha2
 kind: Task
-metadata: {name: probe-heredoc, namespace: kelos-pilot}
+metadata: {name: probe-pre, namespace: kelos-pilot}
 spec:
   model: claude-haiku
   prompt: echo hi
   type: claude-code
   credentials: {type: none}
   workspaceRef: {name: packer-pipeline-test}
-  preCommands: [["sh","-c","set -e\necho two"]]
+  preCommands: [["true"]]
 YAML
-# → no finalizer, empty status, controller logs the immutability error
+# succeeds with the preCommands line removed
 ```
