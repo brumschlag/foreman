@@ -1,0 +1,116 @@
+/**
+ * Installs the phase-report upload shim into a kelos agent pod.
+ *
+ * A kelos phase returns its work as a git patch of the REPOSITORY. Reports live
+ * outside the repo (Foreman's `~/.foreman/reports/...`), so they never appeared in
+ * the diff: the documentation phase's artifact gate failed a run whose agents had
+ * all succeeded, and an agent trying to write there hit
+ * `mkdir: cannot create directory '/home/foreman': Permission denied`.
+ *
+ * Same shape as the tool-policy hook and mail shim — the authority stays
+ * server-side (`POST /worker/v1/reports`) and only the write point moves into the
+ * pod, because `Task.spec.preCommands` is an agent's only pre-start seam.
+ *
+ * @module kelos-report-shim
+ */
+
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SHIM_FILE = "report-shim.sh";
+
+/** Where the shim script lands inside the agent pod. */
+export const POD_REPORT_SHIM_PATH = "/tmp/foreman/report-shim.sh";
+
+/**
+ * Absolute path to the shim script. Resolved from this module so it works from
+ * both `src/` under tsx and `dist/` after a build, where `src/defaults/` is
+ * packaged alongside.
+ */
+export function reportShimPath(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, "..", "defaults", "hooks", SHIM_FILE),
+    join(here, "..", "..", "src", "defaults", "hooks", SHIM_FILE),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(`report shim script not found; looked in ${candidates.join(", ")}`);
+}
+
+/**
+ * `Task.spec.preCommands` entries that materialise the shim inside the pod.
+ *
+ * The script's CONTENTS are embedded rather than referenced by path: preCommands
+ * run in the agent pod, where the orchestrator's `src/defaults/` tree does not
+ * exist. A quoted heredoc keeps the shell from expanding the script's own `$VAR`
+ * references while it is being written.
+ */
+export function reportShimInstallCommands(): string[][] {
+  const script = readFileSync(reportShimPath(), "utf8");
+  return [
+    [
+      "sh",
+      "-c",
+      `set -e; mkdir -p ${dirname(POD_REPORT_SHIM_PATH)}; ` +
+        `cat > ${POD_REPORT_SHIM_PATH} <<'FOREMAN_REPORT_SHIM_EOF'\n${script}\nFOREMAN_REPORT_SHIM_EOF\n` +
+        `chmod +x ${POD_REPORT_SHIM_PATH}`,
+    ],
+  ];
+}
+
+/**
+ * Environment the shim reads, as kelos `envOverrides` entries.
+ *
+ * The token is omitted when absent rather than sent empty: an empty-but-present
+ * variable looks configured and 401s every upload.
+ */
+export function reportShimEnv(opts: {
+  serverUrl: string;
+  authToken?: string;
+  projectId: string;
+  taskId: string;
+  runId: string;
+  phaseId: string;
+}): { name: string; value: string }[] {
+  const env = [
+    { name: "FOREMAN_SERVER_URL", value: opts.serverUrl },
+    { name: "FOREMAN_PROJECT_ID", value: opts.projectId },
+    { name: "FOREMAN_TASK_ID", value: opts.taskId },
+    { name: "FOREMAN_RUN_ID", value: opts.runId },
+    { name: "FOREMAN_PHASE_ID", value: opts.phaseId },
+  ];
+  if (opts.authToken) {
+    env.push({ name: "FOREMAN_SERVER_AUTH_TOKEN", value: opts.authToken });
+  }
+  return env;
+}
+
+/**
+ * Prompt text telling the agent the shim exists.
+ *
+ * Required, not decorative: the mail shim established that an installed but
+ * unmentioned capability is never invoked, because the agent's only knowledge of
+ * its tools comes from the prompt.
+ */
+export function reportShimPromptGuidance(): string {
+  return [
+    "## Writing your phase report",
+    "",
+    "You are running in a pod, so Foreman's reports directory is not writable from",
+    "here and a report saved to it would be lost. Upload it instead:",
+    "",
+    "```sh",
+    `cat <<'EOF' | sh ${POD_REPORT_SHIM_PATH} <REPORT_FILE_NAME>`,
+    "<the full report content>",
+    "EOF",
+    "```",
+    "",
+    "Use the exact file name your instructions ask for (for example",
+    "`DOCUMENTATION_REPORT.md`). The command prints `uploaded <name>` on success",
+    "and a `foreman report upload failed:` message otherwise — if it fails, say so",
+    "in your final message rather than reporting the phase as complete.",
+  ].join("\n");
+}

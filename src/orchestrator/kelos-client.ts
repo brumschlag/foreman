@@ -1,5 +1,15 @@
 import type { KelosClient, KelosTaskRequest, KelosTaskResult } from "./kelos-phase-runner.js";
 import { toolPolicyHookEnv, toolPolicyInstallCommands } from "./kelos-tool-policy-hook.js";
+import {
+  mailShimEnv,
+  mailShimInstallCommands,
+  mailShimPromptGuidance,
+} from "./kelos-mail-shim.js";
+import {
+  reportShimEnv,
+  reportShimInstallCommands,
+  reportShimPromptGuidance,
+} from "./kelos-report-shim.js";
 
 export interface KelosTaskObject {
   metadata?: { name?: string };
@@ -69,6 +79,35 @@ export interface KelosCrdClientOptions {
     authToken?: string;
     runId: string;
     taskId: string;
+    phaseId: string;
+  };
+  /**
+   * Give the agent an Agent Mail channel via a pod-side shim over
+   * `/worker/v1/mail*`. Without it a kelos phase cannot read operator steering
+   * or report a blocker, because the Pi path's mail tools are in-process
+   * closures that cannot reach another pod.
+   */
+  mail?: {
+    serverUrl: string;
+    authToken?: string;
+    runId: string;
+    taskId: string;
+    phaseId: string;
+    agentName?: string;
+  };
+  /**
+   * Let the agent upload its phase report through `/worker/v1/reports`.
+   *
+   * A phase's patch carries only the repository diff, so a report written to
+   * Foreman's reports directory never travels and the artifact gate fails a phase
+   * whose agent succeeded.
+   */
+  reports?: {
+    serverUrl: string;
+    authToken?: string;
+    projectId: string;
+    taskId: string;
+    runId: string;
     phaseId: string;
   };
   pollIntervalMs?: number;
@@ -141,6 +180,21 @@ function taskName(request: KelosTaskRequest): string {
   return `foreman-${request.taskId}-${request.phaseName}`.toLowerCase();
 }
 
+/**
+ * Whether an install delivered via `Task.spec.preCommands` will actually run.
+ *
+ * kelos executes preCommands in `internal/workerrunner/runner.go`, which is the
+ * container command only on the POOLED path. A non-pooled Job runs
+ * `/kelos_entrypoint.sh`, which accepts and stores the fields and silently
+ * ignores them — so a pod-side install looks configured and never happens.
+ *
+ * Anything relying on preCommands must consult this rather than assume the
+ * install ran. See docs/TRD/TRD-2026-026-followups.md.
+ */
+export function preCommandsRun(options: Pick<KelosCrdClientOptions, "workerPool">): boolean {
+  return Boolean(options.workerPool);
+}
+
 export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClient {
   const pollIntervalMs = options.pollIntervalMs ?? 5000;
   const maxPolls = options.maxPolls ?? 720;
@@ -167,6 +221,10 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
     // Declared before dispatch so the phase runner can refuse a policy-gated
     // phase rather than discover the gap after the agent has already run.
     enforcesToolPolicy: Boolean(options.toolPolicy),
+    // Mail is requested AND actually installable. On the non-pooled path kelos
+    // silently ignores preCommands, so a configured channel that never gets
+    // installed must not report itself as working.
+    deliversMail: Boolean(options.mail) && preCommandsRun(options),
     async runTask(request: KelosTaskRequest): Promise<KelosTaskResult> {
       const name = await options.api.createTask({
         apiVersion: "kelos.dev/v1alpha2",
@@ -174,7 +232,16 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
         metadata: { name: taskName(request) },
         spec: {
           model: request.model,
-          prompt: `${request.systemPrompt}\n\n${request.prompt}`,
+          // Mail guidance rides in the prompt because the Pi path's tool
+          // descriptions — which is where an agent normally learns the channel
+          // exists — do not travel to a pod. Installed-but-unmentioned slash
+          // commands are never invoked.
+          prompt: [
+            request.systemPrompt,
+            ...(options.mail ? [mailShimPromptGuidance()] : []),
+            ...(options.reports ? [reportShimPromptGuidance()] : []),
+            request.prompt,
+          ].join("\n\n"),
           // A pooled Task carries only the pool reference: the CRD rejects
           // type, credentials, workspaceRef, and podOverrides alongside
           // workerPoolRef, so per-phase env must travel via envOverrides.
@@ -194,6 +261,22 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             if (options.toolPolicy) {
               env.push(...toolPolicyHookEnv(options.toolPolicy));
             }
+            if (options.mail || options.reports) {
+              // The policy, mail, and report env overlap (server URL, correlation
+              // ids). kelos rejects a duplicated envOverrides name, so later
+              // entries for a name already present are dropped, not appended.
+              const seen = new Set(env.map((entry) => entry.name));
+              const extra = [
+                ...(options.mail ? mailShimEnv(options.mail) : []),
+                ...(options.reports ? reportShimEnv(options.reports) : []),
+              ];
+              for (const entry of extra) {
+                if (!seen.has(entry.name)) {
+                  env.push(entry);
+                  seen.add(entry.name);
+                }
+              }
+            }
             return env.length ? { envOverrides: env } : {};
           })(),
           ...(() => {
@@ -201,6 +284,8 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             // leads the preCommands.
             const preCommands = [
               ...(options.toolPolicy ? toolPolicyInstallCommands() : []),
+              ...(options.mail ? mailShimInstallCommands() : []),
+              ...(options.reports ? reportShimInstallCommands() : []),
               ...(patchUpload ? [baselineCaptureCommand()] : []),
             ];
             return {
