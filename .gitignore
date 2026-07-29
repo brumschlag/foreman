@@ -59,3 +59,10 @@ dist-new-*/
 # Graphify-generated local artifacts
 /graphify-out/
 /.omp/agents/skills/graphify/
+
+# Local tool caches and issue-tracker state. All four sit at the repo root and
+# are easy to sweep into a commit with `git add -A`; .beads/ alone is ~11 MB.
+/.beads/
+/.qlty/
+/.claude/tsc-cache/
+/.foreman-pipeline-cache/
