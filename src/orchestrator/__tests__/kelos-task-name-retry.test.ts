@@ -19,9 +19,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { createKelosCrdClient } from "../kelos-client.js";
+import { createKelosCrdClient, type KelosTaskObject } from "../kelos-client.js";
 import { createKelosPhaseRunner, type KelosTaskRequest } from "../kelos-phase-runner.js";
-import type { KelosTaskObject } from "../kelos-kubectl-api.js";
 
 function stubApi(applied: string[]) {
   return {
@@ -42,7 +41,7 @@ function stubApi(applied: string[]) {
   };
 }
 
-function request(runId?: string) {
+function request(runId?: string, phaseIteration?: number) {
   return {
     prompt: "p",
     systemPrompt: "s",
@@ -50,7 +49,18 @@ function request(runId?: string) {
     phaseName: "developer",
     taskId: "k8s-smoke-1",
     ...(runId ? { runId } : {}),
+    ...(phaseIteration ? { phaseIteration } : {}),
   };
+}
+
+function client(applied: string[]) {
+  return createKelosCrdClient({
+    api: stubApi(applied),
+    workspace: "ws",
+    agentType: "claude-code",
+    credentials: { type: "none" },
+    pollIntervalMs: 1,
+  });
 }
 
 describe("kelos Task naming across attempts", () => {
@@ -97,6 +107,28 @@ describe("kelos Task naming across attempts", () => {
   });
 
   /**
+   * The live failure. QA rejects the developer's work and the pipeline loops back
+   * to developer WITHOUT starting a new run, so runId is identical across both
+   * attempts. Naming on runId alone still collides here — this is the common
+   * retry path, and the case a first version of this fix missed.
+   */
+  test("an in-run retry of the same phase gets a distinct Task name", async () => {
+    const applied: string[] = [];
+    const c = client(applied);
+    const runId = "7b63360d-250e-442b-d893-6682b6e95d96";
+
+    await c.runTask(request(runId, 1));
+    // Same run, same phase, second attempt — must NOT be rejected.
+    await expect(c.runTask(request(runId, 2))).resolves.toBeDefined();
+    await expect(c.runTask(request(runId, 3))).resolves.toBeDefined();
+
+    expect(new Set(applied).size).toBe(3);
+    expect(applied[0]).toBe("foreman-k8s-smoke-1-developer-7b63360d");
+    expect(applied[1]).toBe("foreman-k8s-smoke-1-developer-7b63360d-i2");
+    expect(applied[2]).toBe("foreman-k8s-smoke-1-developer-7b63360d-i3");
+  });
+
+  /**
    * The naming fix alone is not sufficient: the phase runner builds the request,
    * and it did not forward `runId`. Without this the client would receive
    * `runId: undefined` on every attempt and fall back to the colliding name — so
@@ -131,11 +163,13 @@ describe("kelos Task naming across attempts", () => {
         taskTitle: "t",
         worktreePath: "/tmp",
         runId: "7b63360d-250e-442b",
+        phaseIteration: 2,
       },
     });
 
     expect(seen).toHaveLength(1);
     expect(seen[0].runId).toBe("7b63360d-250e-442b");
+    expect(seen[0].phaseIteration).toBe(2);
   });
 
   test("a long taskId stays within the k8s object name limit", async () => {

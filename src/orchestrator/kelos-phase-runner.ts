@@ -52,12 +52,18 @@ export interface KelosTaskRequest {
   phaseName: string;
   taskId: string;
   /**
-   * Distinguishes one attempt at a phase from the next. `Task.spec` is immutable
-   * (CRD CEL rule `self == oldSelf`), so a name derived from task and phase alone
-   * makes a retry re-apply the already-completed object, which the API server
-   * rejects.
+   * Separates attempts ACROSS runs (`foreman retry`, re-dispatch). `Task.spec` is
+   * immutable (CRD CEL rule `self == oldSelf`), so a name derived from task and
+   * phase alone makes a retry re-apply the already-completed object, which the
+   * API server rejects.
    */
   runId?: string;
+  /**
+   * Separates attempts WITHIN a run. A QA-driven retry loops back to an earlier
+   * phase without starting a new run, so runId is unchanged and cannot break the
+   * collision on its own — this is the common retry path, not an edge case.
+   */
+  phaseIteration?: number;
 }
 
 export interface KelosClient {
@@ -158,6 +164,7 @@ export function createKelosPhaseRunner(
       phaseName: opts.context.phaseName,
       taskId: opts.context.taskId,
       runId: opts.context.runId,
+      phaseIteration: opts.context.phaseIteration,
     });
 
     if (result.transport === "patch") {

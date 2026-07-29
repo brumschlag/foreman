@@ -213,18 +213,30 @@ function parseToolBreakdown(raw: string | undefined): Record<string, number> {
  * that already exists is rejected with "Task spec is immutable after creation".
  * A name of task + phase alone therefore breaks every retry: the pipeline
  * re-applies the completed object and the phase dies before an agent starts.
- * The run id disambiguates attempts; it is optional so a caller that omits it
- * keeps the previous behaviour rather than producing a name ending in `-`.
  *
- * The stem is bounded because a Task name feeds pod names, which cap at 63
- * characters, and the whole object name caps at 253.
+ * Both discriminators are required, because retries happen at two levels:
+ *   - `runId` separates a re-dispatch or `foreman retry` from the original run.
+ *   - `phaseIteration` separates attempts WITHIN one run. A QA-driven loop back
+ *     to developer keeps the same runId, so runId alone still collides — and
+ *     that is the common path, observed live as
+ *     `qa failed, retrying developer (retry 1/2)` then STUCK.
+ *
+ * Both are optional so a caller supplying neither keeps the original name rather
+ * than one with dangling separators. The stem is bounded because a Task name
+ * feeds pod names, which cap at 63 characters, and object names cap at 253.
  */
 function taskName(request: KelosTaskRequest): string {
-  const attempt = String(request.runId ?? "")
+  const run = String(request.runId ?? "")
     .replace(/[^a-z0-9]/gi, "")
     .slice(0, 8);
-  const stem = `foreman-${request.taskId}-${request.phaseName}`.slice(0, 200);
-  return (attempt ? `${stem}-${attempt}` : stem).toLowerCase();
+  // Iteration 1 is the first attempt, which needs no suffix: omitting it keeps
+  // the name stable for the overwhelmingly common no-retry case.
+  const iteration =
+    typeof request.phaseIteration === "number" && request.phaseIteration > 1
+      ? `i${request.phaseIteration}`
+      : "";
+  const stem = `foreman-${request.taskId}-${request.phaseName}`.slice(0, 180);
+  return [stem, run, iteration].filter(Boolean).join("-").toLowerCase();
 }
 
 /**

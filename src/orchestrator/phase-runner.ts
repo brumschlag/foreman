@@ -15,6 +15,15 @@ export interface PhaseRunnerContext {
   taskDescription?: string;
   worktreePath: string;
   targetBranch?: string;
+  /**
+   * 1-based count of how many times THIS phase has run in the current run.
+   *
+   * A QA-driven retry loops back within the same run, so `runId` alone cannot
+   * tell one attempt from the next. Backends that name external resources per
+   * phase need this: kelos rejects a re-applied `Task` because `Task.spec` is
+   * immutable, so a name without it collides on the first retry.
+   */
+  phaseIteration?: number;
 }
 
 export interface PhaseRunnerOptions extends PiRunOptions {

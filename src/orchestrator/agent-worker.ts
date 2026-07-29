@@ -990,6 +990,10 @@ async function runPhase(
         taskDescription: config.taskDescription,
         worktreePath: config.worktreePath,
         targetBranch: config.targetBranch,
+        // A QA-driven retry loops back within the SAME run, so runId alone does
+        // not distinguish attempts. Backends that name external resources per
+        // phase need this to avoid colliding with the previous attempt.
+        phaseIteration: config.phaseIteration,
       },
       observability: {
         runId: config.runId,
