@@ -298,3 +298,53 @@ was run against it. Results: the agent saw the steering, `unsupported` →
    **pre-existing tool-policy hook** were resolving through their `src/` fallback,
    invisible locally because `package.json` also ships `src/defaults/`. Filter
    fixed; both now resolve from `dist/`.
+
+---
+
+## kelos path end-to-end — DONE
+
+**2026-07-29, `foreman-server:0.1.24`.** Run
+`a130060c-8513-fcbd-5ad2-0032fe54c666` (`kelos-e2e-10`) ran
+explorer → developer → documentation → qa → reviewer as kelos Tasks, then
+finalize and create-pr in-process, and opened
+**`brumschlag/packer-pipeline-test#3`** — one file, `+1/-0`, no worker artifacts.
+$3.49. That last part confirms the finalize unstage fix: PR #1 carried three
+stray files, this carries none.
+
+Three bugs stood between the handoff and that PR. Only the first was known.
+
+**1. An empty response body killed the worker** (the handoff's only listed
+blocker). All seven parse sites in `ElixirServerClient` called
+`await response.json()` unguarded, so an empty body raised
+`Unexpected end of JSON input` out of the client. The same error appeared twice
+earlier in the crashed run as `heartbeat event append failed (non-fatal)` —
+the guarded paths logged it, the unguarded one killed the process. Bodies now
+parse through a helper returning `undefined`, and each site decides what an
+absent body means: 2xx worker-event/command calls synthesise the envelope, reads
+still throw but report the HTTP status, and **tool policy fails closed** because
+a missing decision must never read as allowed.
+
+**2. The scheduler crashed on every tick, so nothing could dispatch at all.**
+`age_seconds/2` clause-matched `nil`, `DateTime` and binary, but the Postgres
+read model returns `updated_at` as a `NaiveDateTime` — every tick raised
+`FunctionClauseError` in `active_runs/0` and terminated the GenServer. The tell
+was misleading twice over: the tick endpoint returned **500 with an empty body**
+(the very shape bug 1 guards), and the scheduler state reported `last_tick: nil`,
+which reads as "never started" rather than "dies every 5s".
+`coerce_datetime/1` in `projection_store.ex` already handled the naive case, so
+this was a missed clause on a known shape, not an unknown one.
+
+**3. RBAC omitted `patch`/`update` on `tasks.kelos.dev`.**
+`kelos-kubectl-api` dispatches with `kubectl apply`, which PATCHes when the
+object already exists, and a phase **retry** reuses the name
+`foreman-<task>-<phase>`. This is what killed `kelos-e2e-8`, where the Forbidden
+surfaced as `worker_exited_without_terminal_event` — so a permissions problem
+was reported as a worker crash.
+
+**Still open from this run.** Capacity is counted over *all* `active_runs`
+regardless of the `stale` flag the scheduler already computes, so four dead runs
+(11–15h old) held every slot against `max_concurrent: 2` and had to be failed by
+hand before `kelos-e2e-10` could be claimed. That is the handoff's item 6, and it
+is a *separate* bug from the crash above — fixing the crash exposed it rather
+than resolving it. Also unchanged: dispatch requires status `ready`, so a task
+created as `open` sits forever with no diagnostic.
