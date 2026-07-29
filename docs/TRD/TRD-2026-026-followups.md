@@ -348,6 +348,71 @@ ever sees it.
 
 ---
 
+## The Node assumption had a FOURTH site — DONE
+
+`resolveProjectTestCommand` (`npm test`) and `setupStepApplies` (`npm install`)
+were each fixed after a live run caught them, but the finalize builtin still ran
+`npm ci` and `npx tsc --noEmit` unconditionally. The run that produced
+`packer-pipeline-test#3` recorded, in `FINALIZE_REPORT.md`:
+
+```
+## Dependency Install
+- Status: FAILED
+- Details: npm error code EUSAGE ... can only install with an existing
+           package-lock.json
+## Type Check
+- Status: FAILED
+- Details: This is not the tsc command you are looking for
+```
+
+**Neither blocked the run, which is exactly why it survived three rounds of
+fixes.** Every non-Node finalize report carried two false failures that a reader
+cannot distinguish from real ones. A step that cannot apply is now skipped, and
+the report says `SKIPPED` rather than `SUCCESS`, so "nothing to do" stays
+distinguishable from "passed".
+
+Two narrower bugs fell out of this: `npm ci` *requires* a lockfile, so it failed
+even on a Node project that had only a manifest (now `npm install`); and
+typecheck requires a `tsconfig.json`, not merely a `package.json`, because
+`npx tsc` otherwise tries to *fetch* a package — the source of the "not the tsc
+command" message.
+
+`non-node-project-finalize.test.ts` is the end-to-end guard. It asserts all four
+sites **together** over a realistic packer/ansible worktree, since each was
+previously found one at a time by a live run and nothing in CI exercised a
+project without a `package.json`. It also pins the opposite direction: a
+skip-everything implementation satisfies every non-Node assertion, so a Node
+project is checked to still install, typecheck and test.
+
+---
+
+## Scheduler backoff — DONE
+
+A task that failed and returned to `ready` was re-claimed on the very next tick,
+forever. Measured with a throwaway probe: **6 ticks → 6 launches → 6 runs**,
+unbounded — at the 5s auto-tick, the ~44 dispatches in 7 minutes seen on the
+pilot. Each attempt spawns a worker and can spend real money, so this is a cost
+bug as much as a correctness one. Still distinct from per-phase `retryOnFail`,
+which is bounded and works correctly.
+
+Re-claim is now delayed 30s, 60s, 120s … capped at 15m, counting only failures
+inside the cap so an old scar does not penalise a task forever. A task with no
+recent failure is unaffected, and the skip reason names the remaining wait.
+
+**Two projection details the tests had to respect, both found by probing rather
+than reading the code:**
+
+1. `RunFailed` stamps `failed_at` from the **event** time and ignores a payload
+   `failed_at`. A payload-only fixture therefore records every failure as "now"
+   and cannot test expiry — the fixture must set `occurred_at`.
+2. A run's `task_id` is populated by `RunStarted`, so a run recorded only via
+   `RunFailed` has none and is **not attributable to its task**. Association
+   accepts the task's own `run_id` as a fallback, and the fixture emits
+   `RunStarted` first as a real run does. Before this, a 4-failure fixture
+   counted as 1 and the backoff window was wrong.
+
+---
+
 ## Stale runs no longer hold capacity slots — DONE
 
 **`foreman-server:0.1.25`.** Capacity was counted over *all* `active_runs` while
