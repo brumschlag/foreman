@@ -114,7 +114,31 @@ defmodule ForemanServer.WorkerLauncher do
     end
   end
 
-  defp server_url do
+  @doc """
+  Base URL a launched worker should use to reach this server.
+
+  Loopback is correct only while the worker shares this network namespace. A kelos
+  agent runs in its own pod, where 127.0.0.1 is the agent container itself — its
+  PreToolUse policy hook then denied every tool call as "policy endpoint
+  unavailable", the gate failing closed against a URL that could never work.
+
+  Public so the resolution is directly testable.
+  """
+  @spec server_url() :: String.t()
+  def server_url do
+    case System.get_env("FOREMAN_SERVER_URL") do
+      url when is_binary(url) ->
+        case String.trim(url) do
+          "" -> loopback_url()
+          trimmed -> trimmed
+        end
+
+      _ ->
+        loopback_url()
+    end
+  end
+
+  defp loopback_url do
     "http://127.0.0.1:#{ForemanServer.RuntimeInfo.http_port()}"
   end
 
