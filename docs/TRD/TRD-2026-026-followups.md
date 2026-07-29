@@ -341,10 +341,37 @@ object already exists, and a phase **retry** reuses the name
 surfaced as `worker_exited_without_terminal_event` — so a permissions problem
 was reported as a worker crash.
 
-**Still open from this run.** Capacity is counted over *all* `active_runs`
-regardless of the `stale` flag the scheduler already computes, so four dead runs
-(11–15h old) held every slot against `max_concurrent: 2` and had to be failed by
-hand before `kelos-e2e-10` could be claimed. That is the handoff's item 6, and it
-is a *separate* bug from the crash above — fixing the crash exposed it rather
-than resolving it. Also unchanged: dispatch requires status `ready`, so a task
-created as `open` sits forever with no diagnostic.
+**Still open from this run.** Dispatch requires status `ready`, so a task created
+as `open` sits forever with no diagnostic — it appears in neither `claimed` nor
+`skipped`, because `dispatchable_tasks/0` filters it out before the scheduler
+ever sees it.
+
+---
+
+## Stale runs no longer hold capacity slots — DONE
+
+**`foreman-server:0.1.25`.** Capacity was counted over *all* `active_runs` while
+the `stale` flag the scheduler already computed went unused, and nothing sweeps
+stale runs (`RecoveryEngine` only reconciles an observation *pushed* to it), so a
+dead run's slot was never released. Four abandoned runs (11–15h old) pinned
+`max_concurrent: 2` and had to be failed by hand before `kelos-e2e-10` could be
+claimed. Fixing the tick crash *exposed* this rather than resolving it.
+
+Capacity now counts live runs only. Reporting still includes every active run, so
+a stale one stays visible in the tick output instead of vanishing.
+
+**Staleness could not be judged on `updated_at` alone.** `WorkerHeartbeat` does
+**not** bump `run.updated_at` — only phase transitions do — so a single long
+phase looks stale by timestamp while its worker is alive and working, and freeing
+that slot would double-dispatch the task. A heartbeat within
+`stale_heartbeat_seconds` (5m) therefore overrides an old `updated_at`, and
+`heartbeat_age_seconds` is now reported alongside `age_seconds`.
+
+**Verified against the live cluster, not just tests.** The abandoned
+`kelos-e2e-9` run was still present and flagged `stale: true` with
+`heartbeat_age_seconds: 44677` (12.4h — the worker was long dead while
+`updated_at` was only ~42m old, which is exactly why the heartbeat signal
+matters). A probe task then dispatched *despite* that run occupying what used to
+be the only slot. Both directions were also checked in tests: reverting the
+capacity change fails the stale-slot test, and dropping the heartbeat override
+fails the double-dispatch test.
