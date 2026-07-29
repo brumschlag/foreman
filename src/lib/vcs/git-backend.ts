@@ -899,6 +899,27 @@ export class GitBackend implements VcsBackend {
   }
 
   /**
+   * Produce a patch of all uncommitted work in the worktree.
+   *
+   * Used to seed a kelos phase's pod, which is a fresh clone and would otherwise
+   * not see earlier phases' work — a verdict phase then reports the task's own
+   * output missing.
+   *
+   * Untracked files are included by staging first, because a phase's output is
+   * usually a NEW file that a plain `git diff` omits entirely. Staging is done with
+   * an `--intent-to-add` style pass so file contents are not otherwise disturbed.
+   * Returns "" when there is nothing to inherit, which is normal for a run's first
+   * phase and must not read as a failure.
+   */
+  async createWorktreePatch(workspacePath: string): Promise<string> {
+    // -N records new files in the index without their content, which is enough for
+    // `git diff` to emit them as additions while leaving staged state alone.
+    await this.git(["add", "-N", "."], workspacePath);
+    const patch = await this.git(["diff", "--binary", "HEAD"], workspacePath);
+    return patch.trim() === "" ? "" : patch.endsWith("\n") ? patch : `${patch}\n`;
+  }
+
+  /**
    * Apply a patch file to the working tree and index.
    */
   async applyPatchToIndex(workspacePath: string, patchFilePath: string): Promise<void> {

@@ -20,7 +20,12 @@ import { GitBackend } from "../lib/vcs/git-backend.js";
 import { createKelosCrdClient } from "./kelos-client.js";
 import { createKubectlKelosApi } from "./kelos-kubectl-api.js";
 import { createKelosPhaseRunner } from "./kelos-phase-runner.js";
-import { createS3PatchStore, patchObjectKey, type PatchStore } from "./kelos-patch-store.js";
+import {
+  createS3PatchStore,
+  patchObjectKey,
+  seedObjectKey,
+  type PatchStore,
+} from "./kelos-patch-store.js";
 import type { ConfiguredPhaseRunner, PhaseRunnerOptions } from "./phase-runner.js";
 import type { PiRunResult } from "./pi-sdk-runner.js";
 
@@ -245,6 +250,34 @@ export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseR
       };
     }
 
+    // Seed the pod with Foreman's accumulated worktree state. Each phase runs in a
+    // fresh clone, so without this a phase cannot see earlier phases' work — a
+    // verdict phase reported the task's own output missing while it sat in
+    // Foreman's worktree.
+    //
+    // ONE cumulative patch from Foreman's own worktree, not a chain of per-phase
+    // patches: no ordering to get wrong and no re-collision at each boundary.
+    let seed: { url: string; envVar: string; key: string } | undefined;
+    const seedSource = config.localWorktreePath ?? opts.cwd;
+    if (config.patchStore?.put && config.patchStore?.presignGet && config.patch && seedSource) {
+      const body = await new GitBackend(seedSource).createWorktreePatch(seedSource);
+      // An empty seed is normal for a run's first phase; skip the upload rather
+      // than hand the pod an empty file to reason about.
+      if (body !== "") {
+        const key = seedObjectKey({
+          prefix: config.patch.prefix,
+          runId: opts.context.runId ?? opts.context.taskId,
+          phaseName: opts.context.phaseName,
+        });
+        await config.patchStore.put(key, body);
+        seed = {
+          key,
+          envVar: "FOREMAN_SEED_URL",
+          url: await config.patchStore.presignGet(key),
+        };
+      }
+    }
+
     const client = createKelosCrdClient({
       api,
       workspace: config.workspace,
@@ -257,6 +290,7 @@ export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseR
       podOverrides: config.podOverrides,
       envOverrides: config.envOverridesFor(opts.model),
       patchUpload,
+      seed,
       pollIntervalMs: config.pollIntervalMs,
       // Only when a policy is actually requested AND we have an endpoint for it.
       // Without a reachable server the hook denies every tool call, so leaving

@@ -153,3 +153,76 @@ describe("kelos client report wiring", () => {
     expect(pre).not.toContain(POD_REPORT_SHIM_PATH);
   });
 });
+
+// Option A: seed each pod with Foreman's accumulated worktree state.
+describe("kelos seed patch wiring", () => {
+  test("applies the seed BEFORE capturing the baseline", async () => {
+    // Ordering is the correctness property. The baseline is what the phase's own
+    // diff is taken against, so a seed applied after it would be attributed to
+    // this phase and re-uploaded as its work.
+    const { createKelosCrdClient } = await import("../kelos-client.js");
+    let created: { spec?: { preCommands?: string[][] } } | undefined;
+
+    const client = createKelosCrdClient({
+      api: {
+        createTask: async (task) => {
+          created = task as typeof created;
+          return "t";
+        },
+        getTask: async () => ({ status: { phase: "Succeeded" } }) as never,
+      },
+      workspace: "repo",
+      agentType: "claude-code",
+      credentials: { type: "none" },
+      pollIntervalMs: 0,
+      patchUpload: { url: "https://example.invalid/put", envVar: "FOREMAN_PATCH_URL" },
+      seed: { url: "https://example.invalid/seed", envVar: "FOREMAN_SEED_URL" },
+    });
+
+    await client.runTask({
+      prompt: "p",
+      systemPrompt: "s",
+      model: "claude-haiku",
+      phaseName: "qa",
+      taskId: "task-1",
+    });
+
+    const pre = (created?.spec?.preCommands ?? []).map((c) => c.join(" "));
+    const seedIndex = pre.findIndex((c) => c.includes("FOREMAN_SEED_URL"));
+    const baselineIndex = pre.findIndex((c) => c.includes("git stash create"));
+
+    expect(seedIndex).toBeGreaterThanOrEqual(0);
+    expect(baselineIndex).toBeGreaterThanOrEqual(0);
+    expect(seedIndex).toBeLessThan(baselineIndex);
+  });
+
+  test("omits seed wiring when no seed is provided", async () => {
+    const { createKelosCrdClient } = await import("../kelos-client.js");
+    let created: { spec?: { preCommands?: string[][] } } | undefined;
+
+    const client = createKelosCrdClient({
+      api: {
+        createTask: async (task) => {
+          created = task as typeof created;
+          return "t";
+        },
+        getTask: async () => ({ status: { phase: "Succeeded" } }) as never,
+      },
+      workspace: "repo",
+      agentType: "claude-code",
+      credentials: { type: "none" },
+      pollIntervalMs: 0,
+    });
+
+    await client.runTask({
+      prompt: "p",
+      systemPrompt: "s",
+      model: "claude-haiku",
+      phaseName: "explorer",
+      taskId: "task-1",
+    });
+
+    const pre = (created?.spec?.preCommands ?? []).map((c) => c.join(" ")).join("\n");
+    expect(pre).not.toContain("FOREMAN_SEED_URL");
+  });
+});

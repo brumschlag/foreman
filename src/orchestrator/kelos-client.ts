@@ -69,6 +69,15 @@ export interface KelosCrdClientOptions {
    */
   patchUpload?: { url: string; envVar: string; key?: string };
   /**
+   * Presigned download of Foreman's accumulated worktree state, applied before the
+   * agent starts.
+   *
+   * Each phase runs in a fresh clone, so without this a phase cannot see earlier
+   * phases' work — a verdict phase reported the task's own output missing while it
+   * sat in Foreman's worktree.
+   */
+  seed?: { url: string; envVar: string; key?: string };
+  /**
    * Enforce Foreman's tool policy inside the agent pod via a PreToolUse hook.
    * The gate itself stays server-side (`/worker/v1/tool-policy`); only the
    * interception point moves, because an in-process tool wrapper cannot reach a
@@ -128,6 +137,27 @@ const BASELINE_FILE = "/tmp/foreman-baseline";
  * touching the worktree or the stash list. It prints nothing when the worktree is
  * clean, hence the fallback to HEAD.
  */
+/**
+ * Applies Foreman's accumulated worktree state before the agent runs.
+ *
+ * MUST precede baselineCaptureCommand: the baseline is what this phase's own diff
+ * is measured against, so a seed applied after it would be attributed to this
+ * phase and uploaded again as its work.
+ *
+ * A missing or empty seed is not an error — the first phase of a run has nothing
+ * to inherit. A seed that exists but will not apply IS an error, because running
+ * the agent against a wrong tree produces a result nobody can trust.
+ */
+function seedApplyCommand(envVar: string): string[] {
+  return [
+    "sh",
+    "-c",
+    `set -e; curl -sSf --max-time 120 -o /tmp/foreman-seed.patch "$${envVar}" || exit 0; ` +
+      `[ -s /tmp/foreman-seed.patch ] || exit 0; ` +
+      `git apply --index /tmp/foreman-seed.patch`,
+  ];
+}
+
 function baselineCaptureCommand(): string[] {
   return [
     "sh",
@@ -258,6 +288,9 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             if (patchUpload) {
               env.push({ name: patchUpload.envVar, value: patchUpload.url });
             }
+            if (options.seed) {
+              env.push({ name: options.seed.envVar, value: options.seed.url });
+            }
             if (options.toolPolicy) {
               env.push(...toolPolicyHookEnv(options.toolPolicy));
             }
@@ -286,6 +319,7 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
               ...(options.toolPolicy ? toolPolicyInstallCommands() : []),
               ...(options.mail ? mailShimInstallCommands() : []),
               ...(options.reports ? reportShimInstallCommands() : []),
+              ...(options.seed ? [seedApplyCommand(options.seed.envVar)] : []),
               ...(patchUpload ? [baselineCaptureCommand()] : []),
             ];
             return {
