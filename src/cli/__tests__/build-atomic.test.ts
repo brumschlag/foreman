@@ -85,4 +85,27 @@ describe("build-atomic.js --dry mode", () => {
     // Final rename: tmpDir → dist/
     expect(src).toContain("renameSync(tmpDir, finalDir)");
   });
+
+  it("packages .sh assets so pod-side hooks resolve from dist", () => {
+    // The asset filter allowed only extensionless/.md/.yaml, so no shell script
+    // ever reached dist/defaults/hooks. The tool-policy hook and the Agent Mail
+    // shim both prefer dist and fall back to src, so this was invisible locally
+    // (package.json also ships src/defaults) while leaving the packaged layout
+    // dependent on that fallback.
+    const src = readFileSync(join(root, "scripts/build-atomic.js"), "utf8");
+    expect(src).toContain(".sh");
+  });
+});
+
+// ── packaged pod-side assets ──────────────────────────────────────────────────
+
+describe("pod-side hook packaging", () => {
+  // These run against whatever dist/ currently holds, so they are meaningful
+  // only after a build; skipping keeps a fresh clone's suite green.
+  const hooks = join(root, "dist/defaults/hooks");
+
+  it.skipIf(!existsSync(hooks))("ships the tool-policy hook and mail shim", () => {
+    expect(existsSync(join(hooks, "tool-policy-pretooluse.sh"))).toBe(true);
+    expect(existsSync(join(hooks, "mail-shim.sh"))).toBe(true);
+  });
 });

@@ -1,0 +1,42 @@
+# RBAC for dispatching pipeline phases as kelos Tasks (TRD-2026-026 Phase 5).
+#
+# The kelos phase backend talks to the cluster through the kubectl CLI
+# (kelos-kubectl-api.ts), so the server's ServiceAccount needs direct access to
+# the Task CRD. Without this every dispatch fails with a Forbidden from the API
+# server rather than anything Foreman reports as a phase error.
+#
+# Scoped to the Task CRD in this namespace only — Foreman creates and polls Tasks
+# and needs nothing else. Deliberately no access to WorkerPools or Workspaces,
+# which are operator-managed (see workloads.yaml in the kelos fork).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: foreman-kelos-dispatch
+  namespace: kelos-pilot
+rules:
+  # `patch`/`update` are required because kelos-kubectl-api dispatches with
+  # `kubectl apply`, which PATCHes when the Task name already exists. A phase
+  # retry reuses the name `foreman-<task>-<phase>`, so without these a retried
+  # phase failed with a Forbidden that surfaced as a worker crash rather than an
+  # RBAC error (observed on run kelos-e2e-8).
+  - apiGroups: [kelos.dev]
+    resources: [tasks]
+    verbs: [create, get, list, watch, delete, patch, update]
+  # Task status carries the phase result Foreman polls for.
+  - apiGroups: [kelos.dev]
+    resources: [tasks/status]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: foreman-kelos-dispatch
+  namespace: kelos-pilot
+subjects:
+  - kind: ServiceAccount
+    name: foreman-server
+    namespace: kelos-pilot
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: foreman-kelos-dispatch

@@ -127,6 +127,107 @@ describe("ElixirServerClient", () => {
     await expect(client.listProjects()).rejects.toThrow("boom");
   });
 
+  describe("empty and unparseable response bodies", () => {
+    // The server intermittently answers with an empty body. Every parse site used
+    // `await response.json()` unguarded, so the SyntaxError propagated out of the
+    // client and killed the worker at the finalize boundary with
+    // `Fatal: Unexpected end of JSON input`. A success status with no body is a
+    // successful call, and a failure status with no body must report the status
+    // rather than the parser's complaint.
+    function mockEmptyBody(status: number): void {
+      fetchMock.mockResolvedValueOnce({
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => {
+          throw new SyntaxError("Unexpected end of JSON input");
+        },
+      } as unknown as Response);
+    }
+
+    it("treats an empty 202 from the worker event endpoint as success", async () => {
+      globalThis.fetch = fetchMock;
+      mockEmptyBody(202);
+      const client = new ElixirServerClient("http://server.test", "token-1");
+
+      await expect(client.sendWorkerEvent({
+        run_id: "run-1",
+        phase_id: "finalize",
+        worker_id: "node-pipeline:task-1",
+        type: "phase_completed",
+        sequence: 9,
+      })).resolves.toMatchObject({ ok: true });
+    });
+
+    it("never surfaces a JSON parse error to the caller", async () => {
+      globalThis.fetch = fetchMock;
+      // One empty body per parse site, so a single unguarded site fails this test.
+      for (let i = 0; i < 8; i += 1) mockEmptyBody(200);
+      const client = new ElixirServerClient("http://server.test");
+
+      const calls: Array<[string, Promise<unknown>]> = [
+        ["sendCommand", client.sendCommand({ command_id: "c1", command_type: "task.create" })],
+        ["sendWorkerEvent", client.sendWorkerEvent({ run_id: "r", phase_id: "p", worker_id: "w", type: "t", sequence: 1 })],
+        ["getTask", client.getTask("task-1")],
+        ["listProjects", client.listProjects()],
+        ["schedulerTick", client.schedulerTick()],
+        ["checkToolPolicy", client.checkToolPolicy({ run_id: "r", phase_id: "p", tool_name: "Bash" })],
+        ["getGithubRepo", client.getGithubRepo("proj", "owner", "repo")],
+        ["getRunReport", client.getRunReport("run-1")],
+      ];
+
+      for (const [name, call] of calls) {
+        const outcome = await call.then(
+          (value) => ({ ok: true as const, value }),
+          (err: unknown) => ({ ok: false as const, message: err instanceof Error ? err.message : String(err) }),
+        );
+        if (!outcome.ok) {
+          expect(outcome.message, `${name} leaked a parse error`).not.toContain("Unexpected end of JSON input");
+          expect(outcome.message, `${name} leaked a parse error`).not.toContain("not valid JSON");
+        }
+      }
+    });
+
+    it("reports the HTTP status when an error response has no parseable body", async () => {
+      globalThis.fetch = fetchMock;
+      mockEmptyBody(500);
+      mockEmptyBody(503);
+      const client = new ElixirServerClient("http://server.test");
+
+      await expect(client.sendCommand({ command_id: "c1", command_type: "task.create" })).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INTERNAL", message: "unexpected Foreman server status 500" },
+      });
+      await expect(client.listProjects()).rejects.toThrow("unexpected Foreman server status 503");
+    });
+
+    // The tool policy is a safety gate, so it is the one endpoint that must NOT
+    // degrade to a usable value. Callers deny on a throw; returning a permissive
+    // default would leave the phase silently unguarded — indistinguishable from a
+    // working gate, which is how the kelos tool-policy hook shipped doing nothing.
+    // Without this test, "fix" the empty body by allowing the call and all the
+    // other assertions here still pass.
+    it("fails closed when the tool policy returns no decision", async () => {
+      globalThis.fetch = fetchMock;
+      mockEmptyBody(200);
+      mockJsonResponse(200, { ok: true });
+      const client = new ElixirServerClient("http://server.test");
+
+      await expect(client.checkToolPolicy({ run_id: "r", phase_id: "p", tool_name: "Bash" }))
+        .rejects.toThrow("unexpected Foreman server status 200");
+      // A well-formed body that simply omits the decision must fail closed too.
+      await expect(client.checkToolPolicy({ run_id: "r", phase_id: "p", tool_name: "Bash" }))
+        .rejects.toThrow();
+    });
+
+    it("still returns null for a 404 with an empty body", async () => {
+      globalThis.fetch = fetchMock;
+      mockEmptyBody(404);
+      const client = new ElixirServerClient("http://server.test");
+
+      await expect(client.getTask("missing")).resolves.toBeNull();
+    });
+  });
+
   it("filters malformed log entries and returns only valid LogEntry records", async () => {
     globalThis.fetch = fetchMock;
     const validEntry = { event_id: "e1", sequence: 1, type: "tool", phase_id: "dev", worker_id: "w1", stream: "stdout", message: "valid", occurred_at: "2024-01-01T00:00:00Z" };

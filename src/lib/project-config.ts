@@ -304,6 +304,15 @@ export interface ProjectConfig {
    * When set, commands should prefer this value over VCS auto-detection.
    */
   defaultBranch?: string;
+  /**
+   * Test command finalize runs to validate a task's changes.
+   *
+   * When unset, it is detected from the project (package.json → `npm test`,
+   * mix.exs → `mix test`, go.mod → `go test ./...`, Cargo.toml → `cargo test`),
+   * and a project with no recognisable test setup skips validation. Set an empty
+   * string to opt out deliberately.
+   */
+  testCommand?: string;
   /** VCS backend configuration for this project. */
   vcs?: {
     /**
@@ -409,6 +418,16 @@ function validateProjectConfig(raw: unknown, filePath: string): ProjectConfig {
       throw new ProjectConfigError(filePath, "'defaultBranch' must be a non-empty branch name");
     }
     config.defaultBranch = normalizedDefaultBranch;
+  }
+
+  if ("testCommand" in raw) {
+    if (typeof raw["testCommand"] !== "string") {
+      throw new ProjectConfigError(filePath, "'testCommand' must be a string");
+    }
+    // Preserved verbatim, including empty: an empty string is a deliberate
+    // opt-out of finalize test validation, distinct from omitting the key
+    // (which falls back to detection).
+    config.testCommand = raw["testCommand"] as string;
   }
 
   if ("vcs" in raw) {

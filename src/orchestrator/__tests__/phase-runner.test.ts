@@ -13,9 +13,61 @@ describe("phase-runner", () => {
       rmSync(tmpDir, { recursive: true, force: true });
       tmpDir = undefined;
     }
-    delete process.env.FOREMAN_RUNTIME_MODE;
+    process.env.FOREMAN_RUNTIME_MODE = "test";
     delete process.env.FOREMAN_PHASE_RUNNER_MODULE;
     delete process.env.FOREMAN_PHASE_RUNNER_EXPORT;
+    delete process.env.FOREMAN_PHASE_BACKEND;
+  });
+
+  it("selects a custom phase runner in normal runtime when FOREMAN_PHASE_BACKEND=module", async () => {
+    tmpDir = createGitFixture();
+    process.env.FOREMAN_RUNTIME_MODE = "normal";
+    process.env.FOREMAN_PHASE_BACKEND = "module";
+    process.env.FOREMAN_PHASE_RUNNER_MODULE = join(
+      process.cwd(),
+      "src/test-support/deterministic-phase-runner.ts",
+    );
+
+    const result = await runPhaseSession({
+      prompt: "deterministic prompt",
+      systemPrompt: "system",
+      cwd: tmpDir,
+      model: "test/model",
+      logFile: join(tmpDir, "phase.log"),
+      context: {
+        phaseName: "developer",
+        taskId: "task-1",
+        taskTitle: "Task 1",
+        taskType: "smoke",
+        taskDescription:
+          'FOREMAN_TEST_SCENARIO={"kind":"create","file":"test.txt","content":"hello from selected runner\\n"}',
+        worktreePath: tmpDir,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(tmpDir, "test.txt"), "utf-8")).toContain("hello from selected runner");
+  });
+
+  it("fails loudly when FOREMAN_PHASE_BACKEND=module without a module path", async () => {
+    tmpDir = createGitFixture();
+    process.env.FOREMAN_RUNTIME_MODE = "normal";
+    process.env.FOREMAN_PHASE_BACKEND = "module";
+
+    await expect(
+      runPhaseSession({
+        prompt: "p",
+        systemPrompt: "s",
+        cwd: tmpDir,
+        model: "test/model",
+        context: {
+          phaseName: "developer",
+          taskId: "task-1",
+          taskTitle: "Task 1",
+          worktreePath: tmpDir,
+        },
+      }),
+    ).rejects.toThrow(/FOREMAN_PHASE_RUNNER_MODULE/);
   });
 
   function createGitFixture(): string {

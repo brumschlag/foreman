@@ -380,15 +380,27 @@ function createLegacySlashPromptAliasExtension(): ExtensionFactory {
  */
 export function getPiSdkEventError(event: AgentSessionEvent): string | undefined {
   const eventRecord = event as Record<string, unknown>;
-  if (eventRecord.stopReason === "error") {
-    return typeof eventRecord.errorMessage === "string" && eventRecord.errorMessage
-      ? eventRecord.errorMessage
-      : "Pi SDK event stopped with error";
-  }
-  if (typeof eventRecord.errorMessage === "string" && eventRecord.errorMessage) {
-    return eventRecord.errorMessage;
+  // Pi reports provider errors on event.message (a 401 shows up as
+  // message.stopReason === "error"), not on the event itself. Checking only the
+  // flat shape let an auth failure on every turn report success.
+  const nested = eventRecord.message;
+  const candidates = [eventRecord, ...(isRecord(nested) ? [nested] : [])];
+
+  for (const candidate of candidates) {
+    if (candidate.stopReason === "error") {
+      return typeof candidate.errorMessage === "string" && candidate.errorMessage
+        ? candidate.errorMessage
+        : "Pi SDK event stopped with error";
+    }
+    if (typeof candidate.errorMessage === "string" && candidate.errorMessage) {
+      return candidate.errorMessage;
+    }
   }
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 /**
@@ -694,6 +706,18 @@ export async function runWithPiSdk(opts: PiRunOptions): Promise<PiRunResult> {
 
     // Clean up
     session.dispose();
+
+    // Backstop for a silently unproductive phase: a real model call always
+    // consumes tokens, so turns with zero tokens in AND out means every request
+    // failed (e.g. an auth rejection on each turn) even if no error event was
+    // recognised. Without this such a phase reports success having done nothing,
+    // and the run fails later at whichever phase first needs the missing work.
+    if (success && totalTurns > 0 && tokensIn === 0 && tokensOut === 0) {
+      success = false;
+      errorMessage =
+        errorMessage ??
+        `Phase made ${totalTurns} turn(s) but consumed no tokens; the provider rejected every request`;
+    }
 
     writeLog(
       `[pi-sdk-runner] success=${success} turns=${totalTurns} maxTurns=${opts.maxTurns ?? "none"} tools=${totalToolCalls} cost=$${costUsd.toFixed(4)} tokensIn=${tokensIn} tokensOut=${tokensOut}`, 

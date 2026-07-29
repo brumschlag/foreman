@@ -162,6 +162,31 @@ export async function installDependencies(dir: string): Promise<void> {
 }
 
 /**
+ * Whether a setup step's toolchain is actually used by this project.
+ *
+ * The bundled workflows declare `npm install` with `failFatal: true`, which
+ * aborted any non-Node repo before its first phase. A step whose package manager
+ * has no manifest here cannot succeed, so it is skipped; an unrecognised command
+ * runs unchanged, since a project-supplied step is the author's call.
+ */
+export function setupStepApplies(step: WorkflowSetupStep, dir: string): boolean {
+  const [tool] = step.command.trim().split(/\s+/);
+  const manifests: Record<string, string[]> = {
+    npm: ["package.json"],
+    yarn: ["package.json"],
+    pnpm: ["package.json"],
+    mix: ["mix.exs"],
+    go: ["go.mod"],
+    cargo: ["Cargo.toml"],
+    bundle: ["Gemfile"],
+    poetry: ["pyproject.toml"],
+  };
+  const required = manifests[tool ?? ""];
+  if (!required) return true;
+  return required.some((file) => existsSync(join(dir, file)));
+}
+
+/**
  * Run workflow setup steps in a workspace directory.
  */
 export async function runSetupSteps(
@@ -170,6 +195,10 @@ export async function runSetupSteps(
 ): Promise<void> {
   for (const step of steps) {
     const label = step.description ?? step.command;
+    if (!setupStepApplies(step, dir)) {
+      console.error(`[setup] Skipping (toolchain not used by this project): ${step.command}`);
+      continue;
+    }
     console.error(`[setup] Running: ${step.command}`);
 
     const argv = step.command.trim().split(/\s+/);

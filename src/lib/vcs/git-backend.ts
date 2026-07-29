@@ -24,7 +24,11 @@ import type {
   FinalizeTemplateVars,
   FinalizeCommands,
 } from "./types.js";
-import { buildTrackedStateRestoreCommand, getWorkspacePath } from "../workspace-paths.js";
+import {
+  WORKER_ARTIFACT_PATHSPECS,
+  buildTrackedStateRestoreCommand,
+  getWorkspacePath,
+} from "../workspace-paths.js";
 import type { VcsBackend } from "./interface.js";
 
 const execFileAsync = promisify(execFile);
@@ -896,6 +900,36 @@ export class GitBackend implements VcsBackend {
    */
   async removeFromIndex(workspacePath: string, filePath: string): Promise<void> {
     await this.git(["rm", "--cached", filePath], workspacePath);
+  }
+
+  /**
+   * Produce a patch of all uncommitted work in the worktree.
+   *
+   * Used to seed a kelos phase's pod, which is a fresh clone and would otherwise
+   * not see earlier phases' work — a verdict phase then reports the task's own
+   * output missing.
+   *
+   * Untracked files are included by staging first, because a phase's output is
+   * usually a NEW file that a plain `git diff` omits entirely. Staging is done with
+   * an `--intent-to-add` style pass so file contents are not otherwise disturbed.
+   * Returns "" when there is nothing to inherit, which is normal for a run's first
+   * phase and must not read as a failure.
+   */
+  async createWorktreePatch(workspacePath: string): Promise<string> {
+    // -N records new files in the index without their content, which is enough for
+    // `git diff` to emit them as additions while leaving staged state alone.
+    await this.git(["add", "-N", "."], workspacePath);
+    // Worker artifacts are excluded because the seed is applied inside a fresh
+    // agent pod, where anything it carries looks like part of the task: shipping
+    // them made QA return BLOCKING_SCOPE_BREACH over TASK.md and SESSION_LOG.md it
+    // had itself been handed. Same pathspec list the finalize unstage uses, so the
+    // two cannot drift.
+    const exclusions = WORKER_ARTIFACT_PATHSPECS.map((spec) => `:(glob,top,exclude)${spec}`);
+    const patch = await this.git(
+      ["diff", "--binary", "HEAD", "--", ".", ...exclusions],
+      workspacePath,
+    );
+    return patch.trim() === "" ? "" : patch.endsWith("\n") ? patch : `${patch}\n`;
   }
 
   /**
