@@ -186,3 +186,49 @@ spec:
 YAML
 # succeeds with the preCommands line removed
 ```
+
+---
+
+## kelos: `preCommands` are only honoured on the POOLED path
+
+**Found:** 2026-07-29, after fixing the conversion bug below.
+
+With the conversion fix deployed, Foreman's Task was reconciled, an agent pod ran,
+and the Task **Succeeded** — but the tool-policy hook never fired. Server-side
+`ToolCall*` events: **zero**. The agent called `Bash` freely in the explorer
+phase, which the policy denies.
+
+**Cause.** `preCommands`/`postCommands` are executed by
+`internal/workerrunner/runner.go` (`runPreCommands`, called from `runAgent`), and
+that binary only runs on the **pooled** path:
+
+| Path | Container command | Runs preCommands |
+| --- | --- | --- |
+| pooled (`workerPoolRef`) | `/kelos/bin/kelos-worker-runner` | yes |
+| non-pooled (Job) | `/kelos_entrypoint.sh` | **no** |
+
+So the fields are accepted, stored, and silently ignored on the non-pooled path.
+Foreman uses non-pooled specifically because the CRD forbids `podOverrides`
+alongside `workerPoolRef`, and `podOverrides` is how agents receive gateway
+credentials.
+
+**This is the real blocker for tool policy on kelos**, and it is a genuine
+conflict rather than a bug to patch quickly:
+
+- pooled → `preCommands` run, but no `podOverrides`, so no per-Task gateway
+  credentials, and the pool's workspace is a fixed repo (`envoverrides-scratch` →
+  octocat/Hello-World);
+- non-pooled → credentials and the right repo, but `preCommands` are ignored.
+
+**Options:**
+1. Teach the non-pooled entrypoint to run pre/postCommands, so the two paths agree.
+   The honest fix; `/kelos_entrypoint.sh` is in the agent image, not the controller.
+2. Bake the hook into the agent image and enable it by env var, avoiding
+   `preCommands` altogether. Works on both paths.
+3. Give the WorkerPool the gateway env in its own template (already supported) and
+   create a per-repo pool, then use the pooled path. No kelos change, but a pool
+   per repository.
+
+Until one of these lands, a policy-gated phase on the kelos backend runs
+**unguarded** — the pod accepts the Task, ignores the hook install, and the agent
+proceeds. Foreman cannot detect this from the Task status, which reports Succeeded.
