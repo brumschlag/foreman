@@ -200,6 +200,98 @@ defmodule ForemanServer.SchedulerTest do
              Scheduler.tick(max_concurrent: 1)
   end
 
+  # A task that returns to `ready` after a failed run was re-claimed on the very
+  # next tick, forever: measured 6 ticks -> 6 launches -> 6 runs. At the 5s
+  # auto-tick that is the ~44 dispatches in 7 minutes seen on the pilot. This is
+  # SCHEDULER-level and distinct from per-phase `retryOnFail`, which is bounded
+  # and works correctly.
+  test "a task that just failed is not re-dispatched immediately" do
+    create_task("task-flap", %{project_id: "alpha", status: "ready"})
+    fail_run("run-flap-1", "task-flap", seconds_ago(2))
+
+    assert {:ok, %{claimed: [], skipped: [%{task_id: "task-flap", reason: reason}]}} =
+             Scheduler.tick(max_concurrent: 2)
+
+    assert reason =~ "backoff"
+  end
+
+  test "backoff expires so a failed task is eventually retried" do
+    create_task("task-flap", %{project_id: "alpha", status: "ready"})
+    fail_run("run-flap-1", "task-flap", hours_ago(2))
+
+    assert {:ok, %{claimed: [%{task_id: "task-flap"}]}} = Scheduler.tick(max_concurrent: 2)
+  end
+
+  test "backoff grows with consecutive failures" do
+    # One failure 90s ago is already past the first (30s) window.
+    create_task("task-flap", %{project_id: "alpha", status: "ready"})
+    fail_run("run-flap-1", "task-flap", seconds_ago(90))
+    assert {:ok, %{claimed: [%{task_id: "task-flap"}]}} = Scheduler.tick(max_concurrent: 2)
+
+    # Four failures at the same age must still be held back, or a persistently
+    # broken task burns spend at tick rate.
+    create_task("task-flap2", %{project_id: "alpha", status: "ready"})
+    for n <- 1..4, do: fail_run("run-flap2-#{n}", "task-flap2", seconds_ago(60 + n))
+
+    assert {:ok, %{skipped: skipped}} = Scheduler.tick(max_concurrent: 2)
+    assert [%{task_id: "task-flap2", reason: reason}] = skipped
+    assert reason =~ "backoff"
+  end
+
+  test "a first-time task is dispatched with no delay" do
+    # The backoff must not tax the normal path — only tasks with a recent failure.
+    create_task("task-fresh", %{project_id: "alpha", status: "ready"})
+
+    assert {:ok, %{claimed: [%{task_id: "task-fresh"}], skipped: []}} =
+             Scheduler.tick(max_concurrent: 2)
+  end
+
+  defp seconds_ago(seconds), do: DateTime.add(DateTime.utc_now(), -seconds, :second)
+
+  # RunFailed also flips the task to "failed", which is not dispatchable. The
+  # observed loop needs the task back at "ready" — that is what a retry/reset
+  # does, and it is exactly the state in which the scheduler re-claimed it every
+  # 5s. So the fixture restores "ready" to reproduce the real shape.
+  #
+  # RunStarted first, because that is what populates the run's task_id: a run
+  # recorded only via RunFailed has none, so a failure-only fixture is not
+  # attributable to its task and silently under-counts.
+  defp fail_run(run_id, task_id, failed_at) do
+    assert {:ok, _} =
+             EventStore.append(%{
+               stream_id: "run:#{run_id}",
+               event_type: "RunStarted",
+               occurred_at: failed_at,
+               payload: %{run_id: run_id, task_id: task_id, project_id: "alpha"},
+               metadata: %{correlation_id: run_id, idempotency_key: "#{run_id}-started"}
+             })
+
+    # occurred_at, not just the payload: the RunFailed projection stamps
+    # failed_at from the EVENT time and ignores a payload failed_at, so a
+    # payload-only fixture records every failure as "now" and cannot test expiry.
+    assert {:ok, _} =
+             EventStore.append(%{
+               stream_id: "run:#{run_id}",
+               event_type: "RunFailed",
+               occurred_at: failed_at,
+               payload: %{
+                 run_id: run_id,
+                 task_id: task_id,
+                 project_id: "alpha",
+                 reason: "boom",
+                 failed_at: DateTime.to_iso8601(failed_at)
+               },
+               metadata: %{correlation_id: run_id, idempotency_key: "#{run_id}-failed"}
+             })
+
+    assert {:ok, _} =
+             ForemanServer.handle_command(%{
+               command_id: "requeue-#{run_id}",
+               command_type: "task.update",
+               payload: %{task_id: task_id, project_id: "alpha", status: "ready"}
+             })
+  end
+
   defp hours_ago(hours), do: DateTime.add(DateTime.utc_now(), -hours * 3600, :second)
 
   defp start_run(run_id, task_id, updated_at) do

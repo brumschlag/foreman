@@ -114,6 +114,8 @@ defmodule ForemanServer.Scheduler do
 
   defp dispatch(state) do
     tasks = ProjectionStore.dispatchable_tasks()
+    snapshot = ProjectionStore.snapshot()
+    now = DateTime.utc_now()
     active_runs = active_runs()
     # Capacity is counted over LIVE runs only; reporting below still shows all of
     # them, so a stale run stays visible to the operator instead of vanishing.
@@ -127,7 +129,19 @@ defmodule ForemanServer.Scheduler do
                                                                                          project_counts} ->
         project_id = Map.get(task, :project_id)
 
+        backoff = backoff_remaining(task, snapshot, now)
+
         cond do
+          is_integer(backoff) ->
+            skip(
+              task,
+              "backoff:#{backoff}s_after_recent_failure",
+              skipped,
+              claimed,
+              active_count,
+              project_counts
+            )
+
           active_count >= state.max_concurrent ->
             skip(
               task,
@@ -254,6 +268,71 @@ defmodule ForemanServer.Scheduler do
   end
 
   defp stale_active_runs(active_runs), do: Enum.filter(active_runs, &Map.get(&1, :stale))
+
+  # Seconds still to wait before this task may be re-dispatched, or nil when it
+  # is clear to run.
+  #
+  # Without this, a task that fails fast and returns to "ready" was re-claimed on
+  # the very next tick forever — measured at 6 ticks -> 6 launches -> 6 runs, and
+  # ~44 dispatches in 7 minutes on the pilot at the 5s auto-tick. Each attempt
+  # spawns a worker and can spend real money, so an unbounded retry is a cost bug
+  # as much as a correctness one.
+  #
+  # Distinct from per-phase `retryOnFail`, which is bounded and works correctly:
+  # this bounds how often the SCHEDULER may re-claim the same task.
+  defp backoff_remaining(task, snapshot, now) do
+    failures = recent_failure_run_times(snapshot, task)
+
+    case failures do
+      [] ->
+        nil
+
+      [latest | _] ->
+        # Exponential in the number of consecutive failures, capped: 30s, 60s,
+        # 120s, 240s ... so a transient blip retries promptly while a
+        # persistently broken task backs off toward the cap.
+        base = scheduler_env(:backoff_base_seconds, 30)
+        cap = scheduler_env(:backoff_max_seconds, 15 * 60)
+        window = min(base * Integer.pow(2, min(length(failures) - 1, 10)), cap)
+        elapsed = age_seconds(latest, now)
+
+        cond do
+          is_nil(elapsed) -> nil
+          elapsed >= window -> nil
+          true -> window - elapsed
+        end
+    end
+  end
+
+  # Failure timestamps for this task's runs, newest first. Only failures inside
+  # the backoff cap are counted, so an old scar does not penalise a task forever.
+  #
+  # A run's `task_id` is populated by RunStarted, so a run recorded only via
+  # RunFailed has none. Association therefore also accepts the task's own
+  # `run_id` — the task projection tracks that on every terminal event.
+  defp recent_failure_run_times(snapshot, task) do
+    task_id = Map.get(task, :task_id)
+    task_run_id = Map.get(task, :run_id)
+    cap = scheduler_env(:backoff_max_seconds, 15 * 60)
+    now = DateTime.utc_now()
+
+    snapshot
+    |> Map.get(:runs, %{})
+    |> Enum.filter(fn {run_id, run} ->
+      Map.get(run, :status) == "failed" and
+        (Map.get(run, :task_id) == task_id or
+           (is_binary(task_run_id) and run_id == task_run_id))
+    end)
+    |> Enum.map(fn {_run_id, run} -> Map.get(run, :failed_at) || Map.get(run, :updated_at) end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(fn at ->
+      case age_seconds(at, now) do
+        nil -> false
+        age -> age <= cap
+      end
+    end)
+    |> Enum.sort_by(&age_seconds(&1, now), :asc)
+  end
 
   # Runs that genuinely occupy a worker slot. A stale run is excluded, because
   # counting it kept a dead run's slot reserved forever: nothing sweeps stale
