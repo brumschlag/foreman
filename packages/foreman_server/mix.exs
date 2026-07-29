@@ -9,7 +9,17 @@ defmodule ForemanServer.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       ecto_repos: [ForemanServer.Repo],
-      post_compile: :copy_bundled_workflows
+      post_compile: :copy_bundled_workflows,
+      releases: releases()
+    ]
+  end
+
+  defp releases do
+    [
+      foreman_server: [
+        include_executables_for: [:unix],
+        applications: [foreman_server: :permanent]
+      ]
     ]
   end
 

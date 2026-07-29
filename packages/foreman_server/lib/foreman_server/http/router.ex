@@ -475,6 +475,31 @@ defmodule ForemanServer.Http.Router do
     end
   end
 
+  post "/worker/v1/reports" do
+    # A kelos phase runs in its own pod; its patch carries only the repo diff, so a
+    # report written to Foreman's reports directory cannot travel. Workers upload
+    # here and the server writes it where the artifact gate already looks.
+    with :ok <- authorize(conn),
+         params <-
+           Map.put_new(
+             conn.body_params,
+             "reports_root",
+             ForemanServer.PhaseReports.default_root()
+           ),
+         {:ok, path} <- ForemanServer.PhaseReports.store(params) do
+      send_json(conn, 201, %{ok: true, path: path})
+    else
+      {:error, :unauthorized} ->
+        send_error(conn, 401, "UNAUTHORIZED", "missing or invalid authorization", false)
+
+      {:error, {:missing_or_invalid, key}} ->
+        send_error(conn, 400, "VALIDATION_FAILED", "missing or invalid #{key}", false)
+
+      {:error, reason} ->
+        send_error(conn, 500, "INTERNAL", inspect(reason), true)
+    end
+  end
+
   post "/worker/v1/tool-policy" do
     with :ok <- authorize(conn),
          {:ok, decision} <- ForemanServer.Overwatch.check_tool(conn.body_params) do
@@ -485,6 +510,79 @@ defmodule ForemanServer.Http.Router do
 
       {:error, {:missing_or_invalid, key}} ->
         send_error(conn, 400, "VALIDATION_FAILED", "missing or invalid #{key}", false)
+
+      {:error, reason} ->
+        send_error(conn, 500, "INTERNAL", inspect(reason), true)
+    end
+  end
+
+  # Agent Mail for workers that cannot hold an in-process mail client.
+  #
+  # On the Pi path mail is a set of in-process tool closures over a live
+  # AgentMailClient. A kelos agent runs as a separate program in a separate pod,
+  # so it reaches the same mail store over HTTP instead — the store does not
+  # move, only the way the agent reaches it (mirroring /worker/v1/tool-policy).
+  get "/worker/v1/mail" do
+    conn = fetch_query_params(conn)
+
+    with :ok <- authorize(conn),
+         {:ok, run_id} <- required_param(conn.query_params, "run_id") do
+      agent = conn.query_params["agent"]
+      unread_only = conn.query_params["unread"] == "true"
+      snapshot = ForemanServer.ProjectionStore.snapshot()
+
+      mail =
+        snapshot.inbox_messages
+        |> Map.values()
+        |> Enum.filter(&(Map.get(&1, :run_id) == run_id))
+        |> Enum.filter(&addressed_to?(&1, agent))
+        |> Enum.filter(fn message ->
+          # A delivered message must not come back: the agent would re-read the
+          # same steering on every check and loop on stale instructions.
+          not unread_only or Map.get(message, :delivery_status) != "delivered"
+        end)
+        |> Enum.sort_by(&message_timestamp_sort_value/1, :asc)
+        |> Enum.take(query_limit(conn.query_params["limit"], 20))
+
+      send_json(conn, 200, %{ok: true, mail: mail})
+    else
+      {:error, :unauthorized} ->
+        send_error(conn, 401, "UNAUTHORIZED", "missing or invalid authorization", false)
+
+      {:error, {:missing_or_invalid, key}} ->
+        send_error(conn, 400, "VALIDATION_FAILED", "missing or invalid #{key}", false)
+    end
+  end
+
+  post "/worker/v1/mail/send" do
+    with :ok <- authorize(conn),
+         {:ok, result} <- ForemanServer.Inbox.send_worker_message(conn.body_params) do
+      send_json(conn, 202, %{ok: true, mail: Map.get(result, :result)})
+    else
+      {:error, :unauthorized} ->
+        send_error(conn, 401, "UNAUTHORIZED", "missing or invalid authorization", false)
+
+      {:error, {:missing_or_invalid, key}} ->
+        send_error(conn, 400, "VALIDATION_FAILED", "missing or invalid #{key}", false)
+
+      {:error, reason} ->
+        send_error(conn, 500, "INTERNAL", inspect(reason), true)
+    end
+  end
+
+  post "/worker/v1/mail/ack" do
+    with :ok <- authorize(conn),
+         {:ok, result} <- ForemanServer.Inbox.update_delivery(conn.body_params) do
+      send_json(conn, 202, %{ok: true, delivery: Map.get(result, :result)})
+    else
+      {:error, :unauthorized} ->
+        send_error(conn, 401, "UNAUTHORIZED", "missing or invalid authorization", false)
+
+      {:error, {:missing_or_invalid, key}} ->
+        send_error(conn, 400, "VALIDATION_FAILED", "missing or invalid #{key}", false)
+
+      {:error, {:message_not_found, id}} ->
+        send_error(conn, 404, "NOT_FOUND", "unknown message #{id}", false)
 
       {:error, reason} ->
         send_error(conn, 500, "INTERNAL", inspect(reason), true)
@@ -650,6 +748,29 @@ defmodule ForemanServer.Http.Router do
     case Integer.parse(value) do
       {limit, ""} when limit > 0 -> limit
       _ -> fallback
+    end
+  end
+
+  defp required_param(params, key) do
+    case Map.get(params, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, {:missing_or_invalid, String.to_atom(key)}}
+    end
+  end
+
+  # A worker asks for its own mail. With no agent named, every message on the run
+  # is in scope; named, it gets what was addressed to it. `foreman` and `worker`
+  # are accepted for any agent because operator and Overwatch senders address
+  # those generically when they do not know the phase's agent name.
+  defp addressed_to?(_message, agent) when agent in [nil, ""], do: true
+
+  defp addressed_to?(message, agent) do
+    recipient = Map.get(message, :to) || Map.get(message, :recipient_agent_type)
+
+    case recipient do
+      nil -> true
+      "" -> true
+      value -> value == agent or value in ["worker", "foreman"]
     end
   end
 

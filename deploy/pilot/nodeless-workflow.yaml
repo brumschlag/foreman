@@ -1,0 +1,111 @@
+# The pilot's end-to-end test workflow (task_type: nodeless).
+#
+# This is NOT a bundled workflow — `foreman init --force` neither installs nor
+# overwrites it. It lives only on the `foreman-home` PVC at
+# /home/foreman/.foreman/workflows/nodeless.yaml, so this file is the sole
+# versioned copy. Karpenter evicts the server pod ("Underutilized") and the
+# volume is unversioned, so without this the reproduction case for every
+# in-cluster run is one `kubectl delete pvc` away from being lost.
+#
+# Two things make it work in-cluster where the bundled workflows do not:
+#   - models are native Bedrock ids, because Pi ignores ANTHROPIC_BASE_URL and
+#     reaches Bedrock directly via Pod Identity;
+#   - there is no `setup:` step, so it runs against a repo with no package.json
+#     (bundled `smoke` hardcodes `npm install` with failFatal: true).
+#
+# To restore after recreating the PVC:
+#   kubectl cp deploy/pilot/nodeless-workflow.yaml \
+#     kelos-pilot/<server-pod>:/home/foreman/.foreman/workflows/nodeless.yaml
+#
+# Models map keys: "default" (required), "P0"–"P4" (optional priority overrides).
+name: nodeless
+task_type: nodeless
+phases:
+  - name: explorer
+    prompt: explorer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
+    skipIfArtifact: EXPLORER_REPORT.md
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: developer
+
+  - name: developer
+    prompt: developer.md
+    tools:
+      allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
+    mail:
+      onStart: true
+      onComplete: true
+
+  - name: documentation
+    prompt: documentation.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      P0: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: foreman
+
+  - name: qa
+    prompt: qa.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/QA_REPORT.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 2
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+
+  - name: reviewer
+    prompt: reviewer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/REVIEW.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 1
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+      forwardArtifactTo: foreman
+
+  - name: finalize
+    builtin: true
+    artifact: "{task.projectReportsDir}/FINALIZE_VALIDATION.md"
+    maxTurns: 500
+    verdict: true
+    retryWith: developer
+    retryOnFail: 1
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+
+  - name: create-pr
+    builtin: true
+    artifact: "{task.projectReportsDir}/PR_METADATA.json"

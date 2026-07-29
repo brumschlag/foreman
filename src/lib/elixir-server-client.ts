@@ -115,6 +115,45 @@ function isValidLogEntry(value: unknown): value is LogEntry {
   );
 }
 
+/**
+ * Reads a response body as JSON, yielding `undefined` rather than throwing when
+ * there is nothing to parse.
+ *
+ * The server intermittently answers with an empty body. Every call site here
+ * used `await response.json()` unguarded, so the resulting SyntaxError escaped
+ * the client and killed the worker at the finalize boundary with
+ * `Fatal: Unexpected end of JSON input` — a transport detail presented as a
+ * pipeline failure. Callers decide what an absent body means for them, which
+ * differs by endpoint: for a 2xx it is a successful call with nothing to report,
+ * for an error status it must surface the status instead of the parser's
+ * complaint.
+ */
+async function parseJsonBody(response: Response): Promise<unknown | undefined> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when the body carries a structured `{ ok: false, error }` envelope. */
+function isServerError(body: unknown): body is ForemanServerError {
+  return typeof body === "object"
+    && body !== null
+    && (body as { ok?: unknown }).ok === false
+    && typeof (body as { error?: unknown }).error === "object"
+    && (body as { error?: unknown }).error !== null;
+}
+
+/**
+ * The error to raise for a response that did not yield a usable body: the
+ * server's own message when it sent one, otherwise the HTTP status.
+ */
+function responseError(response: Response, body: unknown): Error {
+  if (isServerError(body)) return new Error(body.error.message);
+  return new Error(`unexpected Foreman server status ${response.status}`);
+}
+
 export class ElixirServerClient {
   constructor(
     private readonly baseUrl: string,
@@ -128,7 +167,12 @@ export class ElixirServerClient {
       body: JSON.stringify({ schema_version: 1, payload: {}, metadata: {}, ...command }),
     });
 
-    const body = (await response.json()) as ForemanServerResponse;
+    const parsed = await parseJsonBody(response);
+    // An empty body on a success status is a successful command with nothing to
+    // report; synthesise the envelope so callers checking `.ok` still work.
+    const body = (parsed ?? (response.ok
+      ? { ok: true, events: [], projection_version: 0, correlation_id: command.metadata?.correlation_id as string | undefined ?? command.command_id }
+      : { ok: true })) as ForemanServerResponse;
     if (!body.ok || response.ok) return body;
 
     return {
@@ -159,9 +203,9 @@ export class ElixirServerClient {
       headers: this.headers({ command_id: `github-repo-get-${projectId}-${owner}-${repo}`, command_type: "github.repo.get" }),
     });
     if (response.status === 404) return null;
-    const body = await response.json() as { ok: true; repo: unknown } | ForemanServerError;
-    if (response.ok && body.ok) return body.repo;
-    throw new Error(!body.ok ? body.error.message : `unexpected Foreman server status ${response.status}`);
+    const body = await parseJsonBody(response);
+    if (response.ok && !isServerError(body)) return (body as { repo?: unknown } | undefined)?.repo ?? null;
+    throw responseError(response, body);
   }
 
   async upsertGithubRepo(input: Record<string, unknown>): Promise<unknown> {
@@ -189,9 +233,9 @@ export class ElixirServerClient {
       headers: this.headers({ command_id: `task-get-${taskId}`, command_type: "task.get" }),
     });
     if (response.status === 404) return null;
-    const body = await response.json() as { ok: true; task: ElixirTask } | ForemanServerError;
-    if (response.ok && body.ok) return body.task;
-    throw new Error(!body.ok ? body.error.message : `unexpected Foreman server status ${response.status}`);
+    const body = await parseJsonBody(response);
+    if (response.ok && !isServerError(body)) return (body as { task?: ElixirTask } | undefined)?.task ?? null;
+    throw responseError(response, body);
   }
 
   async listRuns(opts: { projectId?: string } = {}): Promise<ElixirRun[]> {
@@ -208,9 +252,9 @@ export class ElixirServerClient {
       headers: this.headers({ command_id: "scheduler-tick", command_type: "scheduler.tick" }),
       body: JSON.stringify({}),
     });
-    const body = await response.json() as { ok: true; scheduler: unknown } | ForemanServerError;
-    if (response.ok && body.ok) return body.scheduler;
-    throw new Error(!body.ok ? body.error.message : `unexpected Foreman server status ${response.status}`);
+    const body = await parseJsonBody(response);
+    if (response.ok && !isServerError(body)) return (body as { scheduler?: unknown } | undefined)?.scheduler;
+    throw responseError(response, body);
   }
 
   async sendWorkerEvent(payload: {
@@ -235,9 +279,14 @@ export class ElixirServerClient {
       headers: this.headers({ command_id: `worker-event-${payload.run_id}-${payload.sequence}`, command_type: "worker.event" }),
       body: JSON.stringify(payload),
     });
-    const body = await response.json() as ForemanServerOk | ForemanServerError;
-    if (response.ok && body.ok) return body;
-    throw new Error(!body.ok ? body.error.message : `unexpected Foreman server status ${response.status}`);
+    const body = await parseJsonBody(response);
+    // The event was accepted; an empty body means the server had nothing to add,
+    // not that the append failed. Throwing here is what killed the worker mid-run.
+    if (response.ok && !isServerError(body)) {
+      return (body as ForemanServerOk | undefined)
+        ?? { ok: true, events: [], projection_version: 0, correlation_id: payload.run_id };
+    }
+    throw responseError(response, body);
   }
 
   async checkToolPolicy(payload: {
@@ -255,9 +304,15 @@ export class ElixirServerClient {
       headers: this.headers({ command_id: `tool-policy-${payload.run_id}-${payload.tool_call_id ?? payload.tool_name}`, command_type: "worker.tool_policy" }),
       body: JSON.stringify(payload),
     });
-    const body = await response.json() as { ok: true; decision: { allowed: boolean; action: string; reason: string; message?: string | null } } | ForemanServerError;
-    if (response.ok && body.ok) return body.decision;
-    throw new Error(!body.ok ? body.error.message : `unexpected Foreman server status ${response.status}`);
+    const body = await parseJsonBody(response);
+    const decision = response.ok && !isServerError(body)
+      ? (body as { decision?: { allowed: boolean; action: string; reason: string; message?: string | null } } | undefined)?.decision
+      : undefined;
+    // This is a safety gate, so it fails CLOSED: a missing decision must never
+    // read as "allowed". Callers deny on a throw; degrading to a permissive
+    // default here would silently unguard the phase.
+    if (decision) return decision;
+    throw responseError(response, body);
   }
 
   async listInbox(opts: { runId?: string; projectId?: string; limit?: number; unread?: boolean } = {}): Promise<ElixirInboxMessage[]> {
@@ -324,9 +379,12 @@ export class ElixirServerClient {
       method: "GET",
       headers: this.headers({ command_id: `read-${path}`, command_type: "read" }),
     });
-    const body = await response.json() as T | ForemanServerError;
-    if (response.ok && (body as { ok?: boolean }).ok !== false) return body as T;
-    throw new Error(!(body as ForemanServerError).ok ? (body as ForemanServerError).error.message : `unexpected Foreman server status ${response.status}`);
+    const body = await parseJsonBody(response);
+    // Reads must not invent data: an absent body cannot satisfy a caller that is
+    // about to destructure `.projects`/`.tasks`, so this still throws — but with
+    // the status rather than a parser error.
+    if (response.ok && body !== undefined && !isServerError(body)) return body as T;
+    throw responseError(response, body);
   }
 
   private headers(command: ForemanServerCommand): Record<string, string> {

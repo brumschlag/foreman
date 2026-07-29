@@ -1,0 +1,214 @@
+# Foreman server in-cluster (TRD-2026-026 Phase 3).
+#
+# Prerequisites (not created here, since they hold credentials):
+#   kubectl create secret generic foreman-server -n kelos-pilot \
+#     --from-literal=auth-token="$(openssl rand -hex 32)"
+#   secret/foreman-postgres — see postgres.yaml
+#
+# Image is amd64-only (see the TRD Phase 2 correction), hence the nodeSelector.
+# Pi SDK phases invoke Bedrock directly. Pi does NOT honour ANTHROPIC_BASE_URL,
+# so it cannot be pointed at the LiteLLM gateway with an API key — that silently
+# sends requests to api.anthropic.com and 401s. Bedrock is a first-class Pi
+# provider and picks up EKS Pod Identity credentials automatically, so no model
+# key is stored anywhere.
+#
+# Bound to arn:aws:iam::565715328522:role/eks-kelos-pilot-foreman-server via:
+#   aws eks create-pod-identity-association --cluster-name software-engineering \
+#     --namespace kelos-pilot --service-account foreman-server \
+#     --role-arn arn:aws:iam::565715328522:role/eks-kelos-pilot-foreman-server
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: foreman-server
+  namespace: kelos-pilot
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: foreman-home
+  namespace: kelos-pilot
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: auto-ebs-gp3
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foreman-server
+  namespace: kelos-pilot
+spec:
+  # One replica only: the home PVC is RWO and the scheduler is not known to be
+  # safe to run concurrently.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: foreman-server
+  template:
+    metadata:
+      labels:
+        app: foreman-server
+    spec:
+      serviceAccountName: foreman-server
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      # A freshly provisioned PVC mounts as root:root, which MASKS the image's
+      # chown of $HOME/.foreman — the container runs as uid 10001 and cannot
+      # create worktrees or the project store. fsGroup makes the kubelet chown
+      # the volume to the pod's group on mount.
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      # Migrations run here rather than in the app container so a restart or a
+      # future second replica cannot race the schema. Idempotent — a
+      # already-migrated database reports "Migrations already up" and exits 0.
+      initContainers:
+        - name: migrate
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.26
+          args: [migrate]
+          env:
+            - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
+              value: postgres
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-database-url
+                  key: url
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      containers:
+        - name: server
+          image: 565715328522.dkr.ecr.us-east-1.amazonaws.com/foreman-server:0.1.26
+          ports:
+            - name: http
+              containerPort: 4766
+          env:
+            # The image defaults this to 0.0.0.0; stated explicitly because
+            # without it the server binds loopback and the Service cannot reach it.
+            - name: FOREMAN_SERVER_HTTP_BIND
+              value: 0.0.0.0
+            - name: FOREMAN_SERVER_HTTP_PORT
+              value: "4766"
+            - name: FOREMAN_SERVER_EVENT_STORE_ADAPTER
+              value: postgres
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-database-url
+                  key: url
+            # Required: binding beyond loopback without a token is refused at
+            # startup (exit 1), by design.
+            - name: FOREMAN_SERVER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: foreman-server
+                  key: auth-token
+            # Workers launched by worker_launcher.ex reach the server by Service
+            # DNS rather than 127.0.0.1.
+            - name: FOREMAN_SERVER_URL
+              value: http://foreman-server.kelos-pilot.svc.cluster.local:4766
+            # Every PR and merge path shells out to the gh CLI, which reads this.
+            # git push over HTTPS uses it too, via the credential helper below.
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token-write
+                  key: GITHUB_TOKEN
+            # Pi resolves Bedrock credentials from Pod Identity; only the region
+            # is needed. Do NOT set ANTHROPIC_API_KEY here — Pi would prefer the
+            # Anthropic provider and ignore Bedrock.
+            - name: AWS_REGION
+              value: us-east-1
+            # ── kelos phase backend ──────────────────────────────────────────
+            # Dispatches each phase as a kelos Task in its own pod instead of
+            # running the Pi SDK in this process. Requires kubectl in the image
+            # and the RBAC in kelos-rbac.yaml.
+            #
+            # The NON-POOLED path is used deliberately: envoverrides-pool owns a
+            # workspace pointing at octocat/Hello-World, and the CRD forbids
+            # podOverrides (how agents get gateway credentials) alongside
+            # workerPoolRef. So no KELOS_WORKER_POOL here.
+            - name: FOREMAN_PHASE_BACKEND
+              value: module
+            - name: FOREMAN_PHASE_RUNNER_MODULE
+              value: /app/dist/orchestrator/kelos-backend.js
+            - name: FOREMAN_PHASE_RUNNER_EXPORT
+              value: runKelosPhase
+            - name: KELOS_NAMESPACE
+              value: kelos-pilot
+            - name: KELOS_WORKSPACE
+              value: packer-pipeline-test
+            - name: KELOS_AGENT_TYPE
+              value: claude-code
+            # Agent pods hold no AWS credentials; they reach Bedrock through the
+            # shared LiteLLM gateway. This is a DIFFERENT credential path from the
+            # in-process runner, which uses Pod Identity directly.
+            - name: KELOS_AGENT_ENV
+              value: ANTHROPIC_BASE_URL=http://bedrock-gateway.honcho.svc.cluster.local,MAX_THINKING_TOKENS=0
+            - name: KELOS_AGENT_ENV_FROM_SECRET
+              value: ANTHROPIC_AUTH_TOKEN=honcho-gateway-key:gateway-api-key
+            # The gateway serves its own model names, so workflow models must be
+            # mapped. An unmapped model is refused rather than silently
+            # substituted, which would change cost and quality without saying so.
+            - name: KELOS_MODEL_MAP
+              value: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0=claude-haiku
+            # Phase work returns as a git patch through S3 rather than a shared
+            # volume: an EBS volume is AZ-pinned, which would force the server and
+            # every agent pod onto one node (see the TRD Phase 5 outcome).
+            - name: KELOS_PATCH_BUCKET
+              value: foreman-patches-565715328522-us-east-1
+            - name: KELOS_PATCH_REGION
+              value: us-east-1
+          # /api/v1/health answers unauthenticated (a token only adds the runtime
+          # detail block), so no probe credential is needed.
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            # Worktrees and the term-backed project store both live under
+            # $HOME/.foreman and must survive a restart.
+            - name: home
+              mountPath: /home/foreman/.foreman
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: foreman-home
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foreman-server
+  namespace: kelos-pilot
+spec:
+  selector:
+    app: foreman-server
+  ports:
+    - name: http
+      port: 4766
+      targetPort: http

@@ -353,6 +353,44 @@ describe("qaReportHasTestEvidence", () => {
     expect(qaReportHasTestEvidence("Test suite: 10 passed, 0 failed")).toBe(false);
   });
 
+  // The QA prompt's own format explicitly allows "Test suite: ... | SKIPPED", but
+  // the check required a runner command AND counts — so a project with no test
+  // suite could never produce a satisfying report. A live run on a packer/ansible
+  // repo had QA verdict PASS overridden to fail on every attempt, burning both
+  // retries each time.
+  it("accepts an explicitly SKIPPED test suite for a project without tests", () => {
+    const report = [
+      "## Verdict: PASS",
+      "## Test Results",
+      "- Targeted command(s) run: manual file verification (wc, od)",
+      "- Full suite command: SKIPPED (finalize owns broad/full-suite validation)",
+      "- Test suite: SKIPPED",
+      "- Raw summary: N/A (repository has no automated test suite)",
+    ].join("\n");
+
+    expect(qaReportHasTestEvidence(report)).toBe(true);
+  });
+
+  // Live run: the agent wrote "Test suite: N/A (this is a file creation task, no
+  // tests to run)" rather than the literal SKIPPED, and the verdict was still
+  // overridden to fail. The marker has to cover how agents actually phrase it.
+  it("accepts N/A as an explicit no-test-suite statement", () => {
+    const report = [
+      "## Verdict: PASS",
+      "## Test Results",
+      "- Targeted command(s) run: `wc -l CLUSTER_SMOKE.md`",
+      "- Test suite: N/A (this is a file creation task, no tests to run)",
+    ].join("\n");
+
+    expect(qaReportHasTestEvidence(report)).toBe(true);
+  });
+
+  it("does not accept a bare claim of success with no command and no skip marker", () => {
+    // Still rejects the case the check exists for: an agent asserting things are
+    // fine without running or explicitly skipping anything.
+    expect(qaReportHasTestEvidence("## Verdict: PASS\nEverything looks correct.")).toBe(false);
+  });
+
   it("returns false when pass/fail counts are missing", () => {
     expect(qaReportHasTestEvidence("Command run: npm test -- --reporter=dot\nAll tests looked good")).toBe(false);
   });

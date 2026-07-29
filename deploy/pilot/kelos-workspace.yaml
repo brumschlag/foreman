@@ -1,0 +1,19 @@
+# Workspace for the repo Foreman dispatches kelos phases against.
+#
+# The pre-warmed `envoverrides-pool` owns `envoverrides-scratch`
+# (octocat/Hello-World), so dispatching to that pool would run phases against the
+# wrong repository and produce a patch that does not apply. Foreman therefore uses
+# the NON-POOLED path: each phase is a Job with its own workspaceRef, so kelos
+# clones this repo fresh.
+#
+# The non-pooled path also allows podOverrides, which is how the agent receives
+# gateway credentials (KELOS_AGENT_ENV / KELOS_AGENT_ENV_FROM_SECRET) — the CRD
+# forbids podOverrides alongside workerPoolRef.
+apiVersion: kelos.dev/v1alpha2
+kind: Workspace
+metadata:
+  name: packer-pipeline-test
+  namespace: kelos-pilot
+spec:
+  repo: https://github.com/brumschlag/packer-pipeline-test.git
+  ref: master

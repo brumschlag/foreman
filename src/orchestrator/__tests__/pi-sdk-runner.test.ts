@@ -65,6 +65,41 @@ describe("getPiSdkEventError", () => {
       errorMessage: "provider failed",
     } as never)).toBe("provider failed");
   });
+
+  // Pi reports provider errors on event.message, not on the event itself. Only
+  // the flat shape was checked, so a run whose every turn 401'd was reported as
+  // success=true with 0 turns and $0 cost — a failure presenting as success.
+  // Payload below is copied from a real in-cluster run.
+  it("treats a provider error nested on event.message as a failure", () => {
+    const errorMessage =
+      '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}';
+
+    expect(getPiSdkEventError({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        provider: "anthropic",
+        model: "claude-opus-4-6",
+        stopReason: "error",
+        errorMessage,
+      },
+    } as never)).toBe(errorMessage);
+  });
+
+  it("treats a nested stopReason=error with no message as a failure", () => {
+    expect(getPiSdkEventError({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "error" },
+    } as never)).toBe("Pi SDK event stopped with error");
+  });
+
+  it("does not flag a healthy nested message", () => {
+    expect(getPiSdkEventError({
+      type: "message_end",
+      message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "ok" }] },
+    } as never)).toBeUndefined();
+  });
 });
 
 describe("getSandboxedPiResourcePaths", () => {

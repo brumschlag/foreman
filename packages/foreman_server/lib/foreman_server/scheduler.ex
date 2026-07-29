@@ -114,17 +114,34 @@ defmodule ForemanServer.Scheduler do
 
   defp dispatch(state) do
     tasks = ProjectionStore.dispatchable_tasks()
+    snapshot = ProjectionStore.snapshot()
+    now = DateTime.utc_now()
     active_runs = active_runs()
+    # Capacity is counted over LIVE runs only; reporting below still shows all of
+    # them, so a stale run stays visible to the operator instead of vanishing.
+    live_runs = live_active_runs(active_runs)
 
     {claimed, skipped, _active_count, _project_counts} =
-      Enum.reduce(tasks, {[], [], length(active_runs), project_counts(active_runs)}, fn task,
+      Enum.reduce(tasks, {[], [], length(live_runs), project_counts(live_runs)}, fn task,
                                                                                         {claimed,
                                                                                          skipped,
                                                                                          active_count,
                                                                                          project_counts} ->
         project_id = Map.get(task, :project_id)
 
+        backoff = backoff_remaining(task, snapshot, now)
+
         cond do
+          is_integer(backoff) ->
+            skip(
+              task,
+              "backoff:#{backoff}s_after_recent_failure",
+              skipped,
+              claimed,
+              active_count,
+              project_counts
+            )
+
           active_count >= state.max_concurrent ->
             skip(
               task,
@@ -234,6 +251,7 @@ defmodule ForemanServer.Scheduler do
     |> Enum.map(fn run ->
       task = Map.get(snapshot.tasks, Map.get(run, :task_id), %{})
       updated_at = Map.get(run, :updated_at) || Map.get(task, :updated_at)
+      heartbeat_age = heartbeat_age_seconds(snapshot, Map.get(run, :run_id), now)
 
       %{
         run_id: Map.get(run, :run_id),
@@ -243,20 +261,127 @@ defmodule ForemanServer.Scheduler do
         run_status: Map.get(run, :status),
         updated_at: updated_at,
         age_seconds: age_seconds(updated_at, now),
-        stale: stale?(updated_at, now)
+        heartbeat_age_seconds: heartbeat_age,
+        stale: stale?(updated_at, heartbeat_age, now)
       }
     end)
   end
 
   defp stale_active_runs(active_runs), do: Enum.filter(active_runs, &Map.get(&1, :stale))
 
-  defp stale?(nil, _now), do: true
+  # Seconds still to wait before this task may be re-dispatched, or nil when it
+  # is clear to run.
+  #
+  # Without this, a task that fails fast and returns to "ready" was re-claimed on
+  # the very next tick forever — measured at 6 ticks -> 6 launches -> 6 runs, and
+  # ~44 dispatches in 7 minutes on the pilot at the 5s auto-tick. Each attempt
+  # spawns a worker and can spend real money, so an unbounded retry is a cost bug
+  # as much as a correctness one.
+  #
+  # Distinct from per-phase `retryOnFail`, which is bounded and works correctly:
+  # this bounds how often the SCHEDULER may re-claim the same task.
+  defp backoff_remaining(task, snapshot, now) do
+    failures = recent_failure_run_times(snapshot, task)
 
-  defp stale?(updated_at, now),
+    case failures do
+      [] ->
+        nil
+
+      [latest | _] ->
+        # Exponential in the number of consecutive failures, capped: 30s, 60s,
+        # 120s, 240s ... so a transient blip retries promptly while a
+        # persistently broken task backs off toward the cap.
+        base = scheduler_env(:backoff_base_seconds, 30)
+        cap = scheduler_env(:backoff_max_seconds, 15 * 60)
+        window = min(base * Integer.pow(2, min(length(failures) - 1, 10)), cap)
+        elapsed = age_seconds(latest, now)
+
+        cond do
+          is_nil(elapsed) -> nil
+          elapsed >= window -> nil
+          true -> window - elapsed
+        end
+    end
+  end
+
+  # Failure timestamps for this task's runs, newest first. Only failures inside
+  # the backoff cap are counted, so an old scar does not penalise a task forever.
+  #
+  # A run's `task_id` is populated by RunStarted, so a run recorded only via
+  # RunFailed has none. Association therefore also accepts the task's own
+  # `run_id` — the task projection tracks that on every terminal event.
+  defp recent_failure_run_times(snapshot, task) do
+    task_id = Map.get(task, :task_id)
+    task_run_id = Map.get(task, :run_id)
+    cap = scheduler_env(:backoff_max_seconds, 15 * 60)
+    now = DateTime.utc_now()
+
+    snapshot
+    |> Map.get(:runs, %{})
+    |> Enum.filter(fn {run_id, run} ->
+      Map.get(run, :status) == "failed" and
+        (Map.get(run, :task_id) == task_id or
+           (is_binary(task_run_id) and run_id == task_run_id))
+    end)
+    |> Enum.map(fn {_run_id, run} -> Map.get(run, :failed_at) || Map.get(run, :updated_at) end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(fn at ->
+      case age_seconds(at, now) do
+        nil -> false
+        age -> age <= cap
+      end
+    end)
+    |> Enum.sort_by(&age_seconds(&1, now), :asc)
+  end
+
+  # Runs that genuinely occupy a worker slot. A stale run is excluded, because
+  # counting it kept a dead run's slot reserved forever: nothing sweeps stale
+  # runs (RecoveryEngine only reconciles an observation pushed to it), so the
+  # slot was never released and dispatch silently stopped.
+  defp live_active_runs(active_runs), do: Enum.reject(active_runs, &Map.get(&1, :stale))
+
+  # A recent heartbeat means the worker is alive, which OVERRIDES an old
+  # updated_at. This matters because WorkerHeartbeat does not bump
+  # run.updated_at — only phase transitions do — so a single long phase looks
+  # stale by timestamp while its worker is actively working. Freeing that slot
+  # would double-dispatch the task.
+  defp stale?(updated_at, heartbeat_age, now)
+
+  defp stale?(_updated_at, heartbeat_age, _now)
+       when is_integer(heartbeat_age) and heartbeat_age >= 0 do
+    heartbeat_age > scheduler_env(:stale_heartbeat_seconds, 5 * 60)
+  end
+
+  defp stale?(nil, _heartbeat_age, _now), do: true
+
+  defp stale?(updated_at, _heartbeat_age, now),
     do: age_seconds(updated_at, now) > scheduler_env(:stale_active_seconds, 30 * 60)
+
+  # Age of the most recent heartbeat across this run's workers, or nil when the
+  # run has never heartbeated.
+  defp heartbeat_age_seconds(_snapshot, nil, _now), do: nil
+
+  defp heartbeat_age_seconds(snapshot, run_id, now) do
+    snapshot
+    |> Map.get(:worker_heartbeats, %{})
+    |> Enum.filter(fn {_key, payload} -> Map.get(payload, :run_id) == run_id end)
+    |> Enum.map(fn {_key, payload} -> age_seconds(Map.get(payload, :observed_at), now) end)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      ages -> Enum.min(ages)
+    end
+  end
 
   defp age_seconds(nil, _now), do: nil
   defp age_seconds(%DateTime{} = updated_at, now), do: DateTime.diff(now, updated_at, :second)
+
+  # The Postgres read model returns timestamps as NaiveDateTime. Without this
+  # clause every tick raised FunctionClauseError, terminating the Scheduler
+  # GenServer so nothing could ever dispatch. Stored values are UTC, so read the
+  # naive timestamp as UTC rather than guessing a local zone.
+  defp age_seconds(%NaiveDateTime{} = updated_at, now),
+    do: DateTime.diff(now, DateTime.from_naive!(updated_at, "Etc/UTC"), :second)
 
   defp age_seconds(updated_at, now) when is_binary(updated_at) do
     case DateTime.from_iso8601(updated_at) do
