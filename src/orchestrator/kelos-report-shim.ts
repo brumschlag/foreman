@@ -94,13 +94,23 @@ export function reportShimEnv(opts: {
  * Required, not decorative: the mail shim established that an installed but
  * unmentioned capability is never invoked, because the agent's only knowledge of
  * its tools comes from the prompt.
+ *
+ * It must also explicitly BEAT the phase prompt's `mkdir -p "{{reportDir}}"`,
+ * which is correct on the local path but impossible in a pod. Saying "the
+ * directory is not writable" is too indirect: a MiniMax documentation phase read
+ * both, followed the concrete mkdir, hit "Permission denied", and gave up without
+ * calling the shim. So the conflicting instruction is named and overruled here,
+ * and this guidance is appended after the phase prompt (see kelos-client).
  */
 export function reportShimPromptGuidance(): string {
   return [
-    "## Writing your phase report",
+    "## Writing your phase report — overrides your instructions above",
     "",
-    "You are running in a pod, so Foreman's reports directory is not writable from",
-    "here and a report saved to it would be lost. Upload it instead:",
+    "You are running in a pod. Foreman's reports directory does NOT exist here and",
+    "cannot be created, so ignore any instruction above telling you to `mkdir -p`",
+    "that directory or to write your report into it — those apply only outside a",
+    "pod, and following them will fail with `Permission denied`. Upload the report",
+    "instead, which is the only way it reaches Foreman:",
     "",
     "```sh",
     `cat <<'EOF' | sh ${POD_REPORT_SHIM_PATH} <REPORT_FILE_NAME>`,
@@ -112,5 +122,8 @@ export function reportShimPromptGuidance(): string {
     "`DOCUMENTATION_REPORT.md`). The command prints `uploaded <name>` on success",
     "and a `foreman report upload failed:` message otherwise — if it fails, say so",
     "in your final message rather than reporting the phase as complete.",
+    "",
+    "A `Permission denied` from the reports directory is expected and is not a",
+    "blocker: run the upload command above instead of reporting the phase blocked.",
   ].join("\n");
 }

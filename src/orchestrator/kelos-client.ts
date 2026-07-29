@@ -295,11 +295,16 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
           // descriptions — which is where an agent normally learns the channel
           // exists — do not travel to a pod. Installed-but-unmentioned slash
           // commands are never invoked.
+          // Report guidance goes LAST, after the phase prompt. The shared phase
+          // prompts tell the agent to `mkdir -p "{{reportDir}}"` — correct on the
+          // local path, impossible in a pod — and the later, more specific
+          // instruction wins. A MiniMax documentation phase followed the mkdir,
+          // hit "Permission denied", and never called the shim.
           prompt: [
             request.systemPrompt,
             ...(options.mail ? [mailShimPromptGuidance()] : []),
-            ...(options.reports ? [reportShimPromptGuidance()] : []),
             request.prompt,
+            ...(options.reports ? [reportShimPromptGuidance()] : []),
           ].join("\n\n"),
           // A pooled Task carries only the pool reference: the CRD rejects
           // type, credentials, workspaceRef, and podOverrides alongside

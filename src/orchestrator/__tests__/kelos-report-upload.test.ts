@@ -123,6 +123,59 @@ describe("kelos client report wiring", () => {
     expect(created?.spec?.prompt).toContain(POD_REPORT_SHIM_PATH);
   });
 
+  // Run 4e7fb82a went STUCK on a missing DOCUMENTATION_REPORT.md because the
+  // phase prompt's `mkdir -p "{{reportDir}}"` came AFTER the shim guidance and
+  // won: MiniMax followed it literally, hit "Permission denied", and never
+  // called the shim. Haiku had resolved the same conflict correctly, so this
+  // read as model flakiness rather than an ordering bug.
+  test("puts the shim guidance after the phase prompt so it is the last word", async () => {
+    const { createKelosCrdClient } = await import("../kelos-client.js");
+    let created: { spec?: { prompt?: string } } | undefined;
+
+    const client = createKelosCrdClient({
+      api: {
+        createTask: async (task) => {
+          created = task as typeof created;
+          return "t";
+        },
+        getTask: async () => ({ status: { phase: "Succeeded" } }) as never,
+      },
+      workspace: "repo",
+      agentType: "claude-code",
+      credentials: { type: "none" },
+      pollIntervalMs: 0,
+      reports: {
+        serverUrl: "http://foreman-server:4766",
+        projectId: "proj-1",
+        taskId: "task-1",
+        runId: "run-1",
+        phaseId: "documentation",
+      },
+    });
+
+    // Verbatim shape of the instruction the shim has to beat.
+    const phasePrompt = 'Create the directory first with `mkdir -p "/home/foreman/.foreman/reports/p/t/r"`.';
+    await client.runTask({
+      prompt: phasePrompt,
+      systemPrompt: "s",
+      model: "MiniMax",
+      phaseName: "documentation",
+      taskId: "task-1",
+    });
+
+    const prompt = created?.spec?.prompt ?? "";
+    expect(prompt.indexOf(POD_REPORT_SHIM_PATH)).toBeGreaterThan(prompt.indexOf(phasePrompt));
+  });
+
+  test("guidance overrides an earlier instruction to mkdir the reports directory", () => {
+    // Being last is not enough on its own — the agent has to be told which of
+    // two conflicting instructions wins, by name.
+    const guidance = reportShimPromptGuidance().toLowerCase();
+
+    expect(guidance).toContain("mkdir");
+    expect(guidance).toMatch(/ignore|instead of|overrides|even if|supersede/);
+  });
+
   test("adds no report wiring when reports are not configured", async () => {
     const { createKelosCrdClient } = await import("../kelos-client.js");
     let created: { spec?: { preCommands?: string[][] } } | undefined;
