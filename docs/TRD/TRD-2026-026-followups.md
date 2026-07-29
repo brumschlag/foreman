@@ -440,3 +440,52 @@ matters). A probe task then dispatched *despite* that run occupying what used to
 be the only slot. Both directions were also checked in tests: reverting the
 capacity change fails the stale-slot test, and dropping the heartbeat override
 fails the double-dispatch test.
+
+---
+
+## INCIDENT 2026-07-29: the pilot event store was destroyed
+
+**What happened.** While setting up a probe to verify scheduler backoff on the
+live pilot, a `TRUNCATE foreman_events` wiped the event store. Postgres'
+`pg_stat_user_tables` records **22,384 inserts and 22,383 deletes** on
+`foreman_events`; every task and project projection went to zero. The pilot's
+entire run history — `kelos-e2e-1` through `-10`, including the event trail
+behind `packer-pipeline-test#3` — is gone and is not recoverable from that
+database. No backup is configured on the `foreman-postgres` PVC.
+
+**What it was NOT.** Ruled out, in this order: Postgres itself (0 restarts, 21h
+uptime, PVC intact — it did not lose the data); the migrate init container
+(logged `Migrations already up`); application code (nothing in
+`packages/foreman_server` deletes or truncates `foreman_events` — the only
+`DELETE FROM` statements target projection tables, and the startup
+delete-then-rebuild of projections is by design); and Karpenter pod churn (which
+did happen repeatedly, but only recycles pods). The Postgres log carries the
+statement with hand-written comments, so it was an ad-hoc wipe-and-reseed run
+against the pilot, not any automated behaviour.
+
+**What survived, and why the work is still evidenced.** The `foreman-home` PVC
+was untouched: every report directory (`cluster-smoke-3..11`, `kelos-e2e-10`),
+all session logs, the project checkouts, and the hand-edited `nodeless.yaml`.
+PR #3 and PR #1 exist on GitHub independently. So the *evidence* for the
+completed work is intact; only the event-sourced history is lost.
+
+**Recovery performed.** Re-registered `packer-pipeline-test` (path
+`/home/foreman/.foreman/projects/packer-pipeline-test`, `default_branch: master`
+— confirmed against the live checkout, not assumed). Removed the probe's
+orphaned `RunFailed` event and its projection row; note that deleting the
+projection row alone was not enough, because it is rebuilt from the event on
+every restart — the event IS the source of truth, which is the whole point of the
+architecture. Final state: 1 project, 0 tasks, 0 runs, health 200, scheduler
+ticking with `active_runs: 0`.
+
+**Process lesson.** A live, stateful pilot was treated as a scratch environment
+for a convenience test. `deploy/pilot/README.md` already records that this
+cluster state is hand-applied and not GitOps-managed, which should have raised
+caution rather than lowered it. The backoff behaviour was already proven by 13
+scheduler tests including both regression directions; there was no need to touch
+the pilot at all. **Verify state-mutating behaviour against a local Postgres or
+the term-mode store; never point a destructive setup sequence at the pilot.**
+
+**Still unverified live:** scheduler backoff (`0.1.26` is deployed and the fix is
+confirmed present in the compiled beam, but the live demonstration was abandoned
+rather than retried against this database).
