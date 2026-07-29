@@ -294,7 +294,10 @@ describe("kelos phase runner", () => {
             applyPatchToIndex: async () => {
               attempts.push("apply");
               if (attempts.filter((a) => a === "apply").length === 1) {
-                throw new Error("error: SESSION_LOG.md: already exists in index");
+                // git uses TWO wordings depending on whether the path is in the
+                // index or only on disk. The first fix matched "in index" only,
+                // and the very next live run failed on "in working directory".
+                throw new Error("error: SESSION_LOG.md: already exists in working directory");
               }
             },
           },
@@ -306,6 +309,42 @@ describe("kelos phase runner", () => {
       expect(result.success).toBe(true);
       expect(result.filesChanged).toEqual(["KELOS_SMOKE.md"]);
       // The colliding path was cleared from the index, then the patch retried.
+      expect(attempts).toEqual(["apply", "rm:SESSION_LOG.md", "apply"]);
+    });
+
+    // Both wordings must recover: git says "in index" for a tracked path and
+    // "in working directory" for one only on disk. Live runs produced each.
+    test.each([
+      "error: SESSION_LOG.md: already exists in index",
+      "error: SESSION_LOG.md: already exists in working directory",
+    ])("recovers from %s", async (gitError: string) => {
+      const attempts: string[] = [];
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "patch", patchKey: "k" }),
+        {
+          patchStore: {
+            presignPut: async () => "https://example.invalid/put",
+            get: async () => "PATCH",
+          },
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => ["KELOS_SMOKE.md"],
+            removeFromIndex: async (_repo: string, file: string) => {
+              attempts.push(`rm:${file}`);
+            },
+            applyPatchToIndex: async () => {
+              attempts.push("apply");
+              if (attempts.filter((a) => a === "apply").length === 1) throw new Error(gitError);
+            },
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(true);
       expect(attempts).toEqual(["apply", "rm:SESSION_LOG.md", "apply"]);
     });
 

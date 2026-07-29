@@ -61,6 +61,15 @@ export interface KelosClient {
    * already ran unguarded.
    */
   enforcesToolPolicy?: boolean;
+  /**
+   * True when this client gives the agent a working Agent Mail channel.
+   *
+   * False means the phase runs without one: it cannot read operator steering or
+   * report a blocker over mail. Unlike the tool policy that is NOT a reason to
+   * refuse the phase — mail is a capability, not a guard — so callers use this to
+   * warn and to skip mail-dependent workflow hooks, not to abort.
+   */
+  deliversMail?: boolean;
 }
 
 /**
@@ -167,11 +176,14 @@ export function createKelosPhaseRunner(
  * and reports at the worktree root. An earlier phase's patch already added those
  * paths to the index, and `git apply --index` refuses to add them again.
  */
-const ALREADY_EXISTS_IN_INDEX = /error:\s*(?<path>[^\n:]+):\s*already exists in index/g;
+// git reports this two ways depending on whether the path is already tracked in
+// the index or merely present on disk. Matching only the index wording let the
+// very next live run fail on "already exists in working directory".
+const ALREADY_EXISTS = /error:\s*(?<path>[^\n:]+):\s*already exists in (?:index|working directory)/g;
 
 function collidingIndexPaths(message: string): string[] {
   const paths = new Set<string>();
-  for (const match of message.matchAll(ALREADY_EXISTS_IN_INDEX)) {
+  for (const match of message.matchAll(ALREADY_EXISTS)) {
     const path = match.groups?.path?.trim();
     if (path) paths.add(path);
   }
@@ -202,8 +214,13 @@ async function applyPhasePatch(
     const colliding = collidingIndexPaths(message);
     if (colliding.length === 0 || !deps.vcs?.removeFromIndex) throw err;
 
+    // BOTH are required, verified against real git: `git rm --cached` alone clears
+    // the index and the retry then fails with "already exists in working
+    // directory", because the file is still on disk. Dropping the worktree copy is
+    // safe — the patch being applied carries this phase's own version of it.
     for (const path of colliding) {
       await deps.vcs.removeFromIndex(worktreePath, path);
+      rmSync(join(worktreePath, path), { force: true });
     }
     await deps.vcs?.applyPatchToIndex?.(worktreePath, patchFile);
   }
