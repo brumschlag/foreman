@@ -79,6 +79,8 @@ export interface KelosVcs {
   getModifiedFiles?(workspacePath: string): Promise<string[]>;
   /** Applies a patch file to the worktree and index. */
   applyPatchToIndex?(workspacePath: string, patchFilePath: string): Promise<void>;
+  /** Clears one path from the index, leaving the worktree file alone. */
+  removeFromIndex?(workspacePath: string, filePath: string): Promise<void>;
 }
 
 export interface KelosPhaseRunnerDeps {
@@ -158,6 +160,56 @@ export function createKelosPhaseRunner(
 }
 
 /**
+ * Paths `git apply --index` reports as already present when a later phase's patch
+ * re-adds a worker artifact.
+ *
+ * Every kelos phase runs in a fresh pod, so each agent writes its own session log
+ * and reports at the worktree root. An earlier phase's patch already added those
+ * paths to the index, and `git apply --index` refuses to add them again.
+ */
+const ALREADY_EXISTS_IN_INDEX = /error:\s*(?<path>[^\n:]+):\s*already exists in index/g;
+
+function collidingIndexPaths(message: string): string[] {
+  const paths = new Set<string>();
+  for (const match of message.matchAll(ALREADY_EXISTS_IN_INDEX)) {
+    const path = match.groups?.path?.trim();
+    if (path) paths.add(path);
+  }
+  return [...paths];
+}
+
+/**
+ * Applies a phase's patch, recovering from worker-artifact collisions.
+ *
+ * A collision on a file the pipeline itself generates is not a conflict in the
+ * task's work — it stopped a run whose agent phases had all succeeded — so the
+ * colliding paths are cleared from the index and the patch retried once. Anything
+ * else propagates, so a genuine conflict still routes to the merge-resolver phase.
+ *
+ * Only paths git itself named are cleared, so this cannot silently discard
+ * unrelated work.
+ */
+async function applyPhasePatch(
+  deps: KelosPhaseRunnerDeps,
+  worktreePath: string,
+  patchFile: string,
+): Promise<void> {
+  try {
+    await deps.vcs?.applyPatchToIndex?.(worktreePath, patchFile);
+    return;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const colliding = collidingIndexPaths(message);
+    if (colliding.length === 0 || !deps.vcs?.removeFromIndex) throw err;
+
+    for (const path of colliding) {
+      await deps.vcs.removeFromIndex(worktreePath, path);
+    }
+    await deps.vcs?.applyPatchToIndex?.(worktreePath, patchFile);
+  }
+}
+
+/**
  * Patch transport: the agent uploaded a git patch to object storage, which Foreman
  * applies to its own worktree. Nothing is read from the pod, so the pod can be
  * reclaimed as soon as it exits.
@@ -177,7 +229,7 @@ async function syncPatch(
     const patchFile = join(tmpdir(), `kelos-${randomUUID()}.patch`);
     writeFileSync(patchFile, patch, "utf-8");
     try {
-      await deps.vcs?.applyPatchToIndex?.(localWorktreePath, patchFile);
+      await applyPhasePatch(deps, localWorktreePath, patchFile);
     } catch (err) {
       return {
         ...accounting(result),

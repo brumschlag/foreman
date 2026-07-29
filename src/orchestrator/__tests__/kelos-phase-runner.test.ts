@@ -266,6 +266,88 @@ describe("kelos phase runner", () => {
       expect(result.filesChanged).toEqual([]);
     });
 
+    // Every kelos phase runs in a fresh pod, so each agent writes its own
+    // SESSION_LOG.md at the worktree root. The explorer's patch adds it to the
+    // index; the developer's patch then adds the same path and `git apply --index`
+    // refuses with "already exists in index".
+    //
+    // That is a worker-artifact collision, not a conflict in the task's own work,
+    // and it stopped a run whose agent phases had all succeeded. Retry without the
+    // colliding paths rather than failing the phase.
+    test("recovers when a worker artifact already exists in the index", async () => {
+      const attempts: string[] = [];
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "patch", patchKey: "k" }),
+        {
+          patchStore: {
+            presignPut: async () => "https://example.invalid/put",
+            get: async () => "PATCH",
+          },
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => ["KELOS_SMOKE.md"],
+            removeFromIndex: async (_repo: string, file: string) => {
+              attempts.push(`rm:${file}`);
+            },
+            applyPatchToIndex: async () => {
+              attempts.push("apply");
+              if (attempts.filter((a) => a === "apply").length === 1) {
+                throw new Error("error: SESSION_LOG.md: already exists in index");
+              }
+            },
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(true);
+      expect(result.filesChanged).toEqual(["KELOS_SMOKE.md"]);
+      // The colliding path was cleared from the index, then the patch retried.
+      expect(attempts).toEqual(["apply", "rm:SESSION_LOG.md", "apply"]);
+    });
+
+    // A genuine conflict must still fail even when removeFromIndex is available,
+    // and must not be retried: re-applying a patch git already rejected cannot
+    // succeed, and the retry is what an over-broad recovery guard would cause.
+    test("does not clear the index or retry for a conflict git did not name", async () => {
+      const cleared: string[] = [];
+      let applyAttempts = 0;
+      const runner = createKelosPhaseRunner(
+        stubClient({ transport: "patch", patchKey: "k" }),
+        {
+          patchStore: {
+            presignPut: async () => "https://example.invalid/put",
+            get: async () => "PATCH",
+          },
+          vcs: {
+            fetch: async () => {},
+            merge: async () => ({ success: true }),
+            getChangedFiles: async () => [],
+            getModifiedFiles: async () => [],
+            removeFromIndex: async (_repo: string, file: string) => {
+              cleared.push(file);
+            },
+            applyPatchToIndex: async () => {
+              applyAttempts += 1;
+              throw new Error("error: patch failed: src/real.ts:12\nerror: src/real.ts: patch does not apply");
+            },
+          },
+        },
+      );
+
+      const result = await runner(options(worktree));
+
+      expect(result.success).toBe(false);
+      expect(result.errorMessage).toMatch(/^merge_conflict:/);
+      expect(cleared).toEqual([]);
+      expect(applyAttempts).toBe(1);
+    });
+
+    // A genuine conflict in the task's own files must still fail, so
+    // retryWithByReason can route it to the merge-resolver phase.
     // A patch that will not apply is a conflict, and must surface in the form
     // Foreman's retryWithByReason routes to the merge-resolver phase.
     test("fails the phase when the patch does not apply", async () => {
