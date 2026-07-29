@@ -128,6 +128,41 @@ defmodule ForemanServer.SchedulerTest do
     assert Scheduler.state().last_event_id
   end
 
+  # The Postgres read-model returns `updated_at` as a NaiveDateTime, but
+  # age_seconds/2 only clause-matched nil, DateTime and binary. So every tick
+  # raised FunctionClauseError inside active_runs/0, the Scheduler GenServer
+  # terminated, and NO task could ever dispatch — with `last_tick: nil` making it
+  # look like the scheduler had simply never run.
+  test "tick survives a NaiveDateTime updated_at from the Postgres read model" do
+    # active_runs/0 only inspects runs whose TASK is also in_progress, so the
+    # task must be claimed first or the run is filtered out before age_seconds.
+    create_task("task-naive", %{project_id: "alpha", status: "in_progress"})
+
+    # A run whose updated_at is a NaiveDateTime, as the Postgres projection
+    # returns it — not the ISO8601 string term mode happens to produce.
+    assert {:ok, _} =
+             EventStore.append(%{
+               stream_id: "run:run-naive",
+               event_type: "RunStarted",
+               payload: %{
+                 run_id: "run-naive",
+                 task_id: "task-naive",
+                 project_id: "alpha",
+                 status: "in_progress",
+                 updated_at: ~N[2026-07-29 03:20:33.881504]
+               },
+               metadata: %{correlation_id: "run-naive", idempotency_key: "run-naive-start"}
+             })
+
+    scheduler = Process.whereis(Scheduler)
+
+    # The crash was inside the GenServer, so the tick call exits rather than
+    # returning an error tuple. Assert on both: no raise, and still alive.
+    assert {:ok, _result} = Scheduler.tick(max_concurrent: 2)
+    assert Process.alive?(scheduler), "scheduler terminated on a NaiveDateTime updated_at"
+    assert Process.whereis(Scheduler) == scheduler, "scheduler was restarted by its supervisor"
+  end
+
   defp assert_receive_tick(fun, attempts \\ 20)
 
   defp assert_receive_tick(fun, attempts) when attempts > 0 do

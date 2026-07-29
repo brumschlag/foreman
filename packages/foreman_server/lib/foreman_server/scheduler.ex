@@ -258,6 +258,13 @@ defmodule ForemanServer.Scheduler do
   defp age_seconds(nil, _now), do: nil
   defp age_seconds(%DateTime{} = updated_at, now), do: DateTime.diff(now, updated_at, :second)
 
+  # The Postgres read model returns timestamps as NaiveDateTime. Without this
+  # clause every tick raised FunctionClauseError, terminating the Scheduler
+  # GenServer so nothing could ever dispatch. Stored values are UTC, so read the
+  # naive timestamp as UTC rather than guessing a local zone.
+  defp age_seconds(%NaiveDateTime{} = updated_at, now),
+    do: DateTime.diff(now, DateTime.from_naive!(updated_at, "Etc/UTC"), :second)
+
   defp age_seconds(updated_at, now) when is_binary(updated_at) do
     case DateTime.from_iso8601(updated_at) do
       {:ok, parsed, _offset} -> DateTime.diff(now, parsed, :second)

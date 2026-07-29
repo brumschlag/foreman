@@ -14,9 +14,14 @@ metadata:
   name: foreman-kelos-dispatch
   namespace: kelos-pilot
 rules:
+  # `patch`/`update` are required because kelos-kubectl-api dispatches with
+  # `kubectl apply`, which PATCHes when the Task name already exists. A phase
+  # retry reuses the name `foreman-<task>-<phase>`, so without these a retried
+  # phase failed with a Forbidden that surfaced as a worker crash rather than an
+  # RBAC error (observed on run kelos-e2e-8).
   - apiGroups: [kelos.dev]
     resources: [tasks]
-    verbs: [create, get, list, watch, delete]
+    verbs: [create, get, list, watch, delete, patch, update]
   # Task status carries the phase result Foreman polls for.
   - apiGroups: [kelos.dev]
     resources: [tasks/status]
