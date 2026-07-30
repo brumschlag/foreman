@@ -19,9 +19,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SHIM_FILE = "report-shim.sh";
+const WRITE_HOOK_FILE = "report-write-pretooluse.sh";
 
 /** Where the shim script lands inside the agent pod. */
 export const POD_REPORT_SHIM_PATH = "/tmp/foreman/report-shim.sh";
+
+/** Where the Write-interception hook lands inside the agent pod. */
+export const POD_REPORT_WRITE_HOOK_PATH = "/tmp/foreman/report-write-pretooluse.sh";
 
 /**
  * Absolute path to the shim script. Resolved from this module so it works from
@@ -29,15 +33,26 @@ export const POD_REPORT_SHIM_PATH = "/tmp/foreman/report-shim.sh";
  * packaged alongside.
  */
 export function reportShimPath(): string {
+  return resolveHookScript(SHIM_FILE, "report shim script");
+}
+
+/**
+ * Absolute path to the Write-interception hook, resolved the same way.
+ */
+export function reportWriteHookPath(): string {
+  return resolveHookScript(WRITE_HOOK_FILE, "report write hook script");
+}
+
+function resolveHookScript(fileName: string, label: string): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    join(here, "..", "defaults", "hooks", SHIM_FILE),
-    join(here, "..", "..", "src", "defaults", "hooks", SHIM_FILE),
+    join(here, "..", "defaults", "hooks", fileName),
+    join(here, "..", "..", "src", "defaults", "hooks", fileName),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error(`report shim script not found; looked in ${candidates.join(", ")}`);
+  throw new Error(`${label} not found; looked in ${candidates.join(", ")}`);
 }
 
 /**
@@ -50,6 +65,7 @@ export function reportShimPath(): string {
  */
 export function reportShimInstallCommands(): string[][] {
   const script = readFileSync(reportShimPath(), "utf8");
+  const writeHook = readFileSync(reportWriteHookPath(), "utf8");
   return [
     [
       "sh",
@@ -58,7 +74,35 @@ export function reportShimInstallCommands(): string[][] {
         `cat > ${POD_REPORT_SHIM_PATH} <<'FOREMAN_REPORT_SHIM_EOF'\n${script}\nFOREMAN_REPORT_SHIM_EOF\n` +
         `chmod +x ${POD_REPORT_SHIM_PATH}`,
     ],
+    // The interception hook is what covers a phase denied the Bash tool, which
+    // cannot invoke the shim above at all.
+    [
+      "sh",
+      "-c",
+      `set -e; mkdir -p ${dirname(POD_REPORT_WRITE_HOOK_PATH)}; ` +
+        `cat > ${POD_REPORT_WRITE_HOOK_PATH} <<'FOREMAN_REPORT_WRITE_HOOK_EOF'\n${writeHook}\nFOREMAN_REPORT_WRITE_HOOK_EOF\n` +
+        `chmod +x ${POD_REPORT_WRITE_HOOK_PATH}`,
+    ],
   ];
+}
+
+/**
+ * The hook's `PreToolUse` settings entry.
+ *
+ * Returned rather than written: Claude Code loads ONE settings.json, and the
+ * tool-policy install already writes that file with `cat >`. A second writer
+ * would clobber the gate, so the report hook is merged into that single write
+ * (see toolPolicyHookSettings).
+ *
+ * The matcher is narrow because both hooks fire in parallel on a match and each
+ * adds latency to the call it matches; only file-writing tools can target the
+ * reports directory.
+ */
+export function reportWriteHookSettingsEntry(timeoutSeconds = 30): unknown {
+  return {
+    matcher: "Write|Edit|NotebookWrite",
+    hooks: [{ type: "command", command: `sh ${POD_REPORT_WRITE_HOOK_PATH}`, timeout: timeoutSeconds }],
+  };
 }
 
 /**
@@ -125,5 +169,10 @@ export function reportShimPromptGuidance(): string {
     "",
     "A `Permission denied` from the reports directory is expected and is not a",
     "blocker: run the upload command above instead of reporting the phase blocked.",
+    "",
+    "If you do not have the shell tool, just write the report to the reports path",
+    "with your normal file-writing tool. Foreman intercepts that write and uploads",
+    "it for you, then tells you it did so and skips the write — that response means",
+    "the report IS saved, so do not retry it or report the phase blocked.",
   ].join("\n");
 }

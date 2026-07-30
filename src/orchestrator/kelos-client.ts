@@ -9,6 +9,7 @@ import {
   reportShimEnv,
   reportShimInstallCommands,
   reportShimPromptGuidance,
+  reportWriteHookSettingsEntry,
 } from "./kelos-report-shim.js";
 
 export interface KelosTaskObject {
@@ -350,7 +351,16 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             // The hook must be on disk before the agent starts, so its install
             // leads the preCommands.
             const preCommands = [
-              ...(options.toolPolicy ? toolPolicyInstallCommands() : []),
+              // The report Write-interception hook is registered through the
+              // policy install because that install owns the pod's single
+              // settings.json. Without reports configured there is nowhere to
+              // upload, so the hook is not registered at all.
+              ...(options.toolPolicy
+                ? toolPolicyInstallCommands(
+                    undefined,
+                    options.reports ? [reportWriteHookSettingsEntry()] : [],
+                  )
+                : []),
               ...(options.mail ? mailShimInstallCommands() : []),
               ...(options.reports ? reportShimInstallCommands() : []),
               ...(options.seed ? [seedApplyCommand(options.seed.envVar)] : []),

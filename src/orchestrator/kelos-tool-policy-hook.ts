@@ -58,9 +58,14 @@ export function toolPolicyHookPath(): string {
  * exist. A heredoc with a quoted delimiter keeps the shell from expanding the
  * script's own `$VAR` references while it is being written.
  */
-export function toolPolicyInstallCommands(timeoutSeconds = 10): string[][] {
+export function toolPolicyInstallCommands(
+  timeoutSeconds = 10,
+  extraPreToolUse: unknown[] = [],
+): string[][] {
   const script = readFileSync(toolPolicyHookPath(), "utf8");
-  const settings = JSON.stringify(toolPolicyHookSettings(POD_HOOK_PATH, timeoutSeconds));
+  const settings = JSON.stringify(
+    toolPolicyHookSettings(POD_HOOK_PATH, timeoutSeconds, extraPreToolUse),
+  );
 
   return [
     [
@@ -110,8 +115,21 @@ export function toolPolicyHookEnv(opts: {
 /**
  * Claude Code settings registering the hook for every tool. Written into the agent's
  * config directory before the agent starts.
+ *
+ * Claude Code reads exactly ONE settings.json, and this function is its only
+ * writer, so any other pod-side PreToolUse hook has to be merged in here through
+ * `extraPreToolUse` rather than writing the file itself — a second `cat >` would
+ * silently drop this gate.
+ *
+ * The policy gate stays FIRST. Matching hooks run in parallel and a deny from any
+ * one of them blocks the call, so ordering is not what enforces the gate; leading
+ * with it keeps the file readable as "policy first, conveniences after".
  */
-export function toolPolicyHookSettings(hookPath: string, timeoutSeconds = 10): unknown {
+export function toolPolicyHookSettings(
+  hookPath: string,
+  timeoutSeconds = 10,
+  extraPreToolUse: unknown[] = [],
+): unknown {
   return {
     hooks: {
       PreToolUse: [
@@ -120,6 +138,7 @@ export function toolPolicyHookSettings(hookPath: string, timeoutSeconds = 10): u
           matcher: "*",
           hooks: [{ type: "command", command: `sh ${hookPath}`, timeout: timeoutSeconds }],
         },
+        ...extraPreToolUse,
       ],
     },
   };
