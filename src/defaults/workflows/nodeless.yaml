@@ -1,0 +1,108 @@
+# Nodeless workflow: the full standard pipeline with NO dependency-install step.
+#
+# Used when a task has the `workflow:nodeless` label or type "nodeless".
+# Identical in shape to `smoke`, minus the `npm install` setup step and its
+# node_modules cache — for repositories that are not Node projects, or where
+# dependencies are already present in the image. That omission is the whole
+# point of the workflow: phases that shell out to a package manager will fail
+# here, so keep `setup` empty and let each project declare its own steps.
+#
+# Unlike `explore`, this workflow DOES include finalize and create-pr, so a run
+# can publish work. Point it only at repositories you intend to write to.
+#
+# Models are pinned to fully-qualified Bedrock model IDs rather than the haiku/
+# sonnet/opus shorthands, so runs resolve through the Bedrock gateway without
+# depending on the shorthand alias map.
+#
+# Models map keys: "default" (required), "P0"–"P4" (optional priority overrides).
+name: nodeless
+task_type: nodeless
+phases:
+  - name: explorer
+    prompt: explorer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
+    skipIfArtifact: EXPLORER_REPORT.md
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: developer
+
+  - name: developer
+    prompt: developer.md
+    tools:
+      allowed: [Agent, Bash, Edit, Glob, Grep, Read, TaskOutput, TaskStop, TodoWrite, WebFetch, WebSearch, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
+    mail:
+      onStart: true
+      onComplete: true
+
+  - name: documentation
+    prompt: documentation.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      P0: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: foreman
+
+  - name: qa
+    prompt: qa.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/QA_REPORT.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 2
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+
+  - name: reviewer
+    prompt: reviewer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/REVIEW.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 1
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+      forwardArtifactTo: foreman
+
+  - name: finalize
+    builtin: true
+    artifact: "{task.projectReportsDir}/FINALIZE_VALIDATION.md"
+    maxTurns: 500
+    verdict: true
+    retryWith: developer
+    retryOnFail: 1
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+
+  - name: create-pr
+    builtin: true
+    artifact: "{task.projectReportsDir}/PR_METADATA.json"

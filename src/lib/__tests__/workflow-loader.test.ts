@@ -533,12 +533,31 @@ phases:
       const documentationIdx = phaseNames.indexOf("documentation");
       const finalizeIdx = phaseNames.indexOf("finalize");
       expect(documentationIdx, workflowName).toBeGreaterThanOrEqual(0);
-      expect(finalizeIdx, workflowName).toBeGreaterThanOrEqual(0);
-      expect(documentationIdx, workflowName).toBeLessThan(finalizeIdx);
+      // A workflow may omit finalize deliberately (explore has no push-capable
+      // phase at all); the ordering invariant only binds when finalize exists.
+      if (finalizeIdx >= 0) {
+        expect(documentationIdx, workflowName).toBeLessThan(finalizeIdx);
+      }
       const documentationPhase = config.phases[documentationIdx];
       expect(documentationPhase?.prompt, workflowName).toBe("documentation.md");
       expect(documentationPhase?.artifact, workflowName).toBe("{task.projectReportsDir}/DOCUMENTATION_REPORT.md");
       expect(documentationPhase?.tools?.allowed, workflowName).toContain("Edit");
+    }
+  });
+
+  it("the explore workflow declares no phase that can publish work", () => {
+    // explore is pointed at repositories we only have read intent for, and the
+    // ONLY thing preventing a push is the absence of these phases — not a prompt
+    // and not a tool policy (the pod-side policy hook fails open by design).
+    const publishingPhases = ["finalize", "create-pr", "pr-wait", "merge", "merge-resolver"];
+    const config = loadWorkflowConfig("explore", tmpDir);
+    const phaseNames = config.phases.map((phase) => phase.name);
+
+    for (const phaseName of publishingPhases) {
+      expect(phaseNames, `explore must not declare ${phaseName}`).not.toContain(phaseName);
+    }
+    for (const phase of config.phases) {
+      expect(phase.checkpointPr, `explore.${phase.name}`).not.toBe(true);
     }
   });
 

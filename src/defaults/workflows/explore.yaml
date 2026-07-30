@@ -1,0 +1,120 @@
+# Explore workflow: Explorer → Developer ⇄ QA → Reviewer, with no push phase.
+#
+# Used when a task has the `workflow:explore` label or type "explore".
+# Intended for pointing a pipeline at an unfamiliar or third-party repository:
+# every phase that can publish work — finalize, create-pr, pr-wait,
+# merge-resolver, checkpointPr — is deliberately ABSENT, so no agent decision
+# and no over-scoped token can push to the remote. Omitting those phases is the
+# safety property; do not add one back without revisiting the credentials the
+# workflow runs under.
+#
+# Phases still Edit/Write inside the worktree and their changes appear in the
+# returned patch. "No push", not "no writes".
+#
+# Because `finalize` is what marks a pipeline complete, a run of this workflow
+# ends in `in-progress/reviewer` and never reports "done". That is expected —
+# read PIPELINE_REPORT.md for the verdicts.
+#
+# `setup` is empty so the pipeline makes no assumption about the target repo's
+# toolchain. Add steps per project rather than here.
+#
+# Models map keys: "default" (required), "P0"–"P4" (optional priority overrides).
+# Priority P0 = critical, P4 = backlog. Shorthands: haiku, sonnet, opus.
+name: explore
+task_type: explore
+onError: stop
+setup: []
+phases:
+  - name: explorer
+    prompt: explorer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: MiniMax
+      P0: MiniMax-highspeed
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/EXPLORER_REPORT.md"
+    skipIfArtifact: EXPLORER_REPORT.md
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: developer
+
+  - name: developer
+    prompt: developer.md
+    tools:
+      allowed:
+        [
+          Agent,
+          Bash,
+          Edit,
+          Glob,
+          Grep,
+          Read,
+          TaskOutput,
+          TaskStop,
+          TodoWrite,
+          WebFetch,
+          WebSearch,
+          Write,
+        ]
+    models:
+      default: MiniMax
+      P0: MiniMax-highspeed
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/DEVELOPER_REPORT.md"
+    mail:
+      onStart: true
+      onComplete: true
+    files:
+      reserve: true
+      leaseSecs: 600
+
+  - name: documentation
+    prompt: documentation.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, Write]
+    models:
+      default: MiniMax
+      P0: MiniMax-highspeed
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/DOCUMENTATION_REPORT.md"
+    mail:
+      onStart: true
+      onComplete: true
+      forwardArtifactTo: foreman
+
+  - name: qa
+    prompt: qa.md
+    tools:
+      allowed: [Bash, Edit, Glob, Grep, Read, TodoWrite, Write]
+    models:
+      default: MiniMax
+      P0: MiniMax-highspeed
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/QA_REPORT.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 2
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+
+  - name: reviewer
+    prompt: reviewer.md
+    tools:
+      allowed: [Glob, Grep, Read, Write]
+    models:
+      default: MiniMax
+      P0: MiniMax-highspeed
+    maxTurns: 500
+    artifact: "{task.projectReportsDir}/REVIEW.md"
+    verdict: true
+    retryWith: developer
+    retryOnFail: 1
+    mail:
+      onStart: true
+      onComplete: true
+      onFail: developer
+      forwardArtifactTo: foreman
