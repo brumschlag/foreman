@@ -26,6 +26,11 @@ import {
   seedObjectKey,
   type PatchStore,
 } from "./kelos-patch-store.js";
+import {
+  projectWorkspaceFromConfig,
+  resolveKelosWorkspace,
+  type ResolveKelosWorkspaceInput,
+} from "./kelos-workspace.js";
 import type { ConfiguredPhaseRunner, PhaseRunnerOptions } from "./phase-runner.js";
 import type { PiRunResult } from "./pi-sdk-runner.js";
 
@@ -92,7 +97,21 @@ export interface KelosBackendConfig {
   namespace: string;
   context?: string;
   workerPool?: string;
+  /**
+   * Deployment-wide default workspace (`KELOS_WORKSPACE`), used for projects
+   * that do not declare a `kelosWorkspace` of their own.
+   */
   workspace: string;
+  /**
+   * Reads the owning project's `config` blob so a project can name its own kelos
+   * Workspace. Injected rather than called inline so resolution is testable
+   * without a live server.
+   *
+   * Must REJECT (not resolve `undefined`) when the config cannot be read:
+   * falling back to the deployment default would run the agent against a
+   * different repository than the task targets.
+   */
+  projectConfigFor?: (projectId: string) => Promise<Record<string, unknown> | undefined>;
   agentType: string;
   pollIntervalMs?: number;
   /**
@@ -162,6 +181,14 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
 
   const patchBucket = process.env.KELOS_PATCH_BUCKET?.trim() || undefined;
 
+  // One server endpoint backs the tool-policy gate, the report shim, the mail
+  // shim, and now the per-project workspace lookup.
+  const serverUrl = process.env.FOREMAN_SERVER_URL?.trim() || undefined;
+  const serverToken =
+    process.env.FOREMAN_WORKER_EVENT_TOKEN?.trim() ||
+    process.env.FOREMAN_SERVER_AUTH_TOKEN?.trim() ||
+    undefined;
+
   const agentEnv = [
     ...parseLiteralEnv(process.env.KELOS_AGENT_ENV ?? ""),
     ...parseSecretEnv(process.env.KELOS_AGENT_ENV_FROM_SECRET ?? ""),
@@ -201,11 +228,8 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
       : undefined,
     podOverrides: agentEnv.length > 0 ? { env: agentEnv } : undefined,
     localWorktreePath: process.env.KELOS_LOCAL_WORKTREE?.trim() || undefined,
-    toolPolicyServerUrl: process.env.FOREMAN_SERVER_URL?.trim() || undefined,
-    toolPolicyAuthToken:
-      process.env.FOREMAN_WORKER_EVENT_TOKEN?.trim() ||
-      process.env.FOREMAN_SERVER_AUTH_TOKEN?.trim() ||
-      undefined,
+    toolPolicyServerUrl: serverUrl,
+    toolPolicyAuthToken: serverToken,
     ...(patchBucket
       ? {
           patchStore: createS3PatchStore({
@@ -219,12 +243,73 @@ export function kelosBackendConfigFromEnv(): KelosBackendConfig {
         }
       : {}),
     workspace: process.env.KELOS_WORKSPACE?.trim() || "",
+    // Lets a project name its own kelos Workspace instead of every project
+    // sharing KELOS_WORKSPACE. Reuses the server URL/token the reports and mail
+    // shims already require, so this adds no new configuration.
+    ...(serverUrl ? { projectConfigFor: projectConfigReader(serverUrl, serverToken) } : {}),
     agentType: process.env.KELOS_AGENT_TYPE?.trim() || "claude-code",
     pollIntervalMs: Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : undefined,
     gatewayModel,
     envOverridesFor: (model) =>
       modelEnv ? [{ name: modelEnv, value: gatewayModel(model) }] : [],
   };
+}
+
+/**
+ * Reads a project's `config` blob from the Foreman server.
+ *
+ * THROWS on any failure — an unreachable server, a non-2xx, or an unparseable
+ * body. The caller turns that into a refusal to dispatch, because resolving
+ * `undefined` instead would look like "this project declares no workspace" and
+ * silently fall back to a default naming a different repository.
+ */
+function projectConfigReader(
+  serverUrl: string,
+  authToken: string | undefined,
+): (projectId: string) => Promise<Record<string, unknown> | undefined> {
+  return async (projectId: string) => {
+    const response = await fetch(new URL("/api/v1/projects", serverUrl), {
+      headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) {
+      throw new Error(`project lookup failed: ${response.status} ${response.statusText}`);
+    }
+    const body = (await response.json()) as {
+      projects?: { project_id?: string; id?: string; config?: Record<string, unknown> }[];
+    };
+    // A project absent from the list is a legitimate "declares nothing" answer,
+    // not a failure: the list itself was read successfully.
+    const project = body.projects?.find((p) => (p.project_id ?? p.id) === projectId);
+    return project?.config;
+  };
+}
+
+/**
+ * Gathers the two workspace sources for a phase.
+ *
+ * A failed lookup is reported as `lookupFailed` rather than thrown here, so the
+ * fail-closed decision lives in one place (`resolveKelosWorkspace`) instead of
+ * being split across the caller.
+ */
+async function projectWorkspaceInputs(
+  config: KelosBackendConfig,
+  projectId: string | undefined,
+): Promise<ResolveKelosWorkspaceInput> {
+  // No lookup configured, or no project to look up: the deployment default is
+  // the only available answer, and that is not a failure.
+  if (!config.projectConfigFor || !projectId) {
+    return { envWorkspace: config.workspace };
+  }
+
+  try {
+    const projectConfig = await config.projectConfigFor(projectId);
+    return {
+      projectWorkspace: projectWorkspaceFromConfig(projectConfig),
+      envWorkspace: config.workspace,
+    };
+  } catch {
+    return { envWorkspace: config.workspace, lookupFailed: true };
+  }
 }
 
 export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseRunner {
@@ -278,9 +363,18 @@ export function createKelosBackend(config: KelosBackendConfig): ConfiguredPhaseR
       }
     }
 
+    // Resolved per invocation, not once at startup: a Workspace names ONE repo,
+    // so a single deployment-wide value pinned every project to the same
+    // repository. A pooled Task carries no workspaceRef at all (the pool owns
+    // its clone), so skip the lookup entirely rather than fail a pooled run on
+    // an unreachable server.
+    const workspace = config.workerPool
+      ? config.workspace
+      : resolveKelosWorkspace(await projectWorkspaceInputs(config, opts.context.projectId));
+
     const client = createKelosCrdClient({
       api,
-      workspace: config.workspace,
+      workspace,
       agentType: config.agentType,
       // The credential comes from the pool or the pod env, not the Task. An
       // empty secretRef.name is rejected by the API server, so omit it.
