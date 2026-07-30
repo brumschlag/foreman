@@ -85,6 +85,133 @@ defmodule ForemanServer.OverwatchTest do
     assert decision.reason =~ "Graphify tools are disabled"
   end
 
+  # A pod worker's files live in ITS container. The server cannot stat them, so
+  # File.exists?/File.dir? here answered a question about the SERVER's disk and
+  # denied every read of a real repository file. Run ovr-hook-verify-2 did zero
+  # exploration because of this.
+  test "approves a pod worker's read of a path this server cannot see" do
+    assert {:ok, %{allowed: true, action: "approve"}} =
+             Overwatch.check_tool(%{
+               run_id: "run-1",
+               task_id: "task-1",
+               phase_id: "explorer",
+               tool_name: "Read",
+               tool_call_id: "tool-pod-read",
+               worker_id: "kelos-pretooluse:session-abc",
+               args: %{file_path: "/workspace/repo/InPulse.Api/Program.cs"}
+             })
+  end
+
+  test "a pod worker may read a path that is a directory on this server" do
+    # The decisive asymmetry: this same path denies for a local worker.
+    assert {:ok, %{allowed: true, action: "approve"}} =
+             Overwatch.check_tool(%{
+               run_id: "run-1",
+               task_id: "task-1",
+               phase_id: "explorer",
+               tool_name: "Read",
+               tool_call_id: "tool-pod-dir",
+               worker_id: "kelos-pretooluse:session-abc",
+               args: %{path: System.tmp_dir!()}
+             })
+  end
+
+  test "still denies a LOCAL worker's read of a missing absolute path" do
+    # The filesystem checks remain meaningful when the worker shares this disk,
+    # so relaxing them for pods must not relax them here.
+    missing =
+      Path.join(
+        System.tmp_dir!(),
+        "foreman-overwatch-local-missing-#{System.unique_integer([:positive])}.txt"
+      )
+
+    assert {:ok, decision} =
+             Overwatch.check_tool(%{
+               run_id: "run-1",
+               task_id: "task-1",
+               phase_id: "fix",
+               tool_name: "Read",
+               tool_call_id: "tool-local-missing",
+               worker_id: "node-pipeline-policy:task-1:fix",
+               args: %{path: missing}
+             })
+
+    refute decision.allowed
+    assert decision.reason =~ "does not exist"
+  end
+
+  # Grep/Glob are absent from the agent runtime's default tool set, so the old
+  # blanket bash deny left the explorer with no discovery route at all.
+  test "explorer may run read-only shell discovery" do
+    for command <- [
+          "grep -rn \"PermissionCheck\" /workspace/repo --include=*.cs",
+          "find /workspace/repo -name \"*.csproj\"",
+          "ls -la /workspace/repo",
+          "cat /workspace/repo/README.md",
+          "git log --oneline -5",
+          "grep -c foo /workspace/repo/x.cs 2>/dev/null"
+        ] do
+      assert {:ok, %{allowed: true, action: "approve"}} =
+               Overwatch.check_tool(%{
+                 run_id: "run-1",
+                 task_id: "task-1",
+                 phase_id: "explorer",
+                 tool_name: "Bash",
+                 tool_call_id: "tool-ro-#{System.unique_integer([:positive])}",
+                 worker_id: "kelos-pretooluse:session-abc",
+                 args: %{command: command}
+               }),
+             "expected read-only command to be allowed: #{command}"
+    end
+  end
+
+  test "explorer still cannot mutate through the shell" do
+    # Discovery-only has to stay ENFORCED, not merely intended: a write redirect
+    # is the hole an allowlist of "safe" binaries would leave open.
+    for command <- [
+          "grep -rn foo /workspace/repo > /tmp/out.txt",
+          "echo hacked >> /workspace/repo/README.md",
+          "rm -rf /workspace/repo/src",
+          "mv /workspace/repo/a /workspace/repo/b",
+          "sed -i s/a/b/ /workspace/repo/README.md",
+          "git commit -am wip",
+          "git push origin develop",
+          "npm install left-pad",
+          "gh pr create --title x",
+          "tee /workspace/repo/out.txt"
+        ] do
+      assert {:ok, decision} =
+               Overwatch.check_tool(%{
+                 run_id: "run-1",
+                 task_id: "task-1",
+                 phase_id: "explorer",
+                 tool_name: "Bash",
+                 tool_call_id: "tool-mut-#{System.unique_integer([:positive])}",
+                 worker_id: "kelos-pretooluse:session-abc",
+                 args: %{command: command}
+               })
+
+      refute decision.allowed, "expected mutating command to be denied: #{command}"
+    end
+  end
+
+  test "process-control commands stay blocked for the explorer" do
+    # The pre-existing destructive guard must not be lost in the rework.
+    assert {:ok, decision} =
+             Overwatch.check_tool(%{
+               run_id: "run-1",
+               task_id: "task-1",
+               phase_id: "explorer",
+               tool_name: "Bash",
+               tool_call_id: "tool-kill",
+               worker_id: "kelos-pretooluse:session-abc",
+               args: %{command: "pkill -f foreman"}
+             })
+
+    refute decision.allowed
+    assert decision.reason =~ "destructive"
+  end
+
   test "approves ordinary file reads" do
     file =
       Path.join(

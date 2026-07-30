@@ -50,7 +50,7 @@ defmodule ForemanServer.Overwatch do
     with {:ok, run_id} <- required_binary(run_id, :run_id),
          {:ok, tool_name} <- required_binary(tool_name, :tool_name),
          :ok <- append_requested(input, run_id, phase_id, tool_name, args) do
-      decision = decide_tool(phase_id, tool_name, args)
+      decision = decide_tool(phase_id, tool_name, args, pod_worker?(fetch(input, :worker_id)))
       append_decision(input, run_id, phase_id, tool_name, args, decision)
       maybe_send_tool_nudge(run_id, phase_id, tool_name, decision)
       {:ok, decision}
@@ -294,35 +294,58 @@ defmodule ForemanServer.Overwatch do
     do:
       "Use the source report as steering context. Avoid rediscovery unless the report conflicts with direct evidence."
 
-  defp decide_tool(_phase_id, "read", args) do
+  defp decide_tool(_phase_id, "read", args, pod?) do
     path = fetch(args, :path) || fetch(args, :file_path) || fetch(args, :filePath)
 
     cond do
       not is_binary(path) or path == "" ->
         deny("read requires explicit file path")
 
+      # A pod worker's paths live in ITS filesystem, which this process cannot
+      # see: File.dir?/File.exists? here answer a question about the SERVER.
+      # They denied every read of a real repo file (/workspace/repo/...) while
+      # allowing server-local paths like /app/package.json — so for a pod worker
+      # the only honest answer is to let the agent's own runtime decide.
+      pod? ->
+        approve("tool allowed")
+
       File.dir?(path) ->
-        deny("read target is a directory; use Glob to select regular files")
+        deny("read target is a directory; select a regular file")
 
       missing_read_path?(path) ->
-        deny("read target does not exist; rediscover with Grep or Glob")
+        deny("read target does not exist; rediscover it before reading")
 
       true ->
         approve("tool allowed")
     end
   end
 
-  defp decide_tool(_phase_id, tool_name, _args)
+  defp decide_tool(_phase_id, tool_name, _args, _pod?)
        when tool_name in ["graphify", "graphifyquery", "graphifyexplain"] do
-    deny("Graphify tools are disabled; use Grep, Glob, and Read")
+    deny("Graphify tools are disabled; use Read and shell search instead")
   end
 
-  defp decide_tool("explorer", tool_name, _args)
-       when tool_name in ["bash", "find", "ls"] do
-    deny("explorer must use Grep/Glob/Read discovery, not shell commands")
+  # The explorer is discovery-only, but Grep/Glob are absent from the agent
+  # runtime's default tool set, so denying it the shell left it with no way to
+  # discover anything — a real run produced zero exploration. Read-only shell
+  # commands are permitted instead; anything that could MUTATE still denies, so
+  # "discovery-only" remains enforced rather than merely intended.
+  defp decide_tool("explorer", "bash", args, _pod?) do
+    command = fetch(args, :command) || ""
+
+    cond do
+      dangerous_command?(command) ->
+        deny("destructive Foreman/server process-control commands are blocked in workers")
+
+      mutating_command?(command) ->
+        deny("explorer is discovery-only: use read-only shell commands (grep, find, ls, cat, head)")
+
+      true ->
+        approve("tool allowed")
+    end
   end
 
-  defp decide_tool(_phase_id, "bash", args) do
+  defp decide_tool(_phase_id, "bash", args, _pod?) do
     command = fetch(args, :command) || ""
 
     if dangerous_command?(command) do
@@ -332,7 +355,15 @@ defmodule ForemanServer.Overwatch do
     end
   end
 
-  defp decide_tool(_phase_id, _tool_name, _args), do: approve("tool allowed")
+  defp decide_tool(_phase_id, _tool_name, _args, _pod?), do: approve("tool allowed")
+
+  # The kelos PreToolUse hook identifies itself as "kelos-pretooluse:<session>";
+  # the in-process pipeline sends "node-pipeline-policy:<task>:<role>", which
+  # shares this server's filesystem.
+  defp pod_worker?(worker_id) when is_binary(worker_id),
+    do: String.starts_with?(worker_id, "kelos-")
+
+  defp pod_worker?(_), do: false
 
   defp approve(reason), do: %{allowed: true, action: "approve", reason: reason, message: nil}
   defp deny(reason), do: %{allowed: false, action: "deny", reason: reason, message: reason}
@@ -350,6 +381,40 @@ defmodule ForemanServer.Overwatch do
   end
 
   defp dangerous_command?(_), do: false
+
+  # Read-only is enforced by rejecting the ways a shell command can change
+  # state, not by allowlisting binaries: an allowlist of "safe" commands is
+  # trivially bypassed by a pipeline, and the explorer legitimately needs a wide
+  # range of readers (grep, find, ls, cat, head, wc, git log, rg, ...).
+  #
+  # A write REDIRECT is the main hole — `grep x y > out` is an allowlisted
+  # binary that still writes — so redirects are matched before anything else.
+  # `2>/dev/null` and `2>&1` are reads-with-noise-suppression and stay allowed.
+  defp mutating_command?(command) when is_binary(command) do
+    normalized = command |> String.downcase() |> String.replace(~r/\s+/, " ")
+
+    write_redirect?(normalized) or
+      Regex.match?(
+        ~r/(^|[;&|]\s*)(rm|rmdir|mv|cp|touch|mkdir|chmod|chown|ln|truncate|dd|tee|patch|sed\s+-i|install)\b/,
+        normalized
+      ) or
+      Regex.match?(
+        ~r/\bgit\s+(commit|push|add|checkout|switch|reset|revert|rebase|merge|cherry-pick|apply|am|stash|tag|clean|rm|mv|restore)\b/,
+        normalized
+      ) or
+      Regex.match?(~r/\b(npm|pnpm|yarn|pip|pip3|apt|apt-get|gem|cargo|go)\s+(i|install|add|remove|uninstall|publish)\b/, normalized) or
+      Regex.match?(~r/\b(gh|glab)\s+(pr|issue|release|repo)\s+(create|edit|close|merge|comment|delete)\b/, normalized)
+  end
+
+  defp mutating_command?(_), do: false
+
+  # `>` / `>>` that is not a stderr dup (`2>&1`) or a discard (`>/dev/null`).
+  defp write_redirect?(normalized) do
+    normalized
+    |> String.replace(~r/\d?>>?\s*\/dev\/null/, "")
+    |> String.replace(~r/\d?>&\d/, "")
+    |> then(&Regex.match?(~r/>/, &1))
+  end
 
   defp append_requested(input, run_id, phase_id, tool_name, args) do
     EventStore.append(%{
