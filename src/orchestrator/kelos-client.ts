@@ -11,6 +11,7 @@ import {
   reportShimPromptGuidance,
   reportWriteHookSettingsEntry,
 } from "./kelos-report-shim.js";
+import { toolWrapperInstallCommands } from "./kelos-tool-wrapper.js";
 
 export interface KelosTaskObject {
   metadata?: { name?: string };
@@ -351,6 +352,11 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
             // The hook must be on disk before the agent starts, so its install
             // leads the preCommands.
             const preCommands = [
+              // The wrapper restores tools the agent's default set omits, so it
+              // only has to precede the AGENT, not the other installs — and a
+              // pooled worker reuses its filesystem across Tasks, so it is
+              // rewritten every time rather than conditionally.
+              ...toolWrapperInstallCommands(),
               // The report Write-interception hook is registered through the
               // policy install because that install owns the pod's single
               // settings.json. Without reports configured there is nowhere to
@@ -364,6 +370,9 @@ export function createKelosCrdClient(options: KelosCrdClientOptions): KelosClien
               ...(options.mail ? mailShimInstallCommands() : []),
               ...(options.reports ? reportShimInstallCommands() : []),
               ...(options.seed ? [seedApplyCommand(options.seed.envVar)] : []),
+              // Last, and deliberately so: the baseline is the worktree state the
+              // returned patch is diffed against, so every install that might
+              // touch the worktree has to have run already.
               ...(patchUpload ? [baselineCaptureCommand()] : []),
             ];
             return {

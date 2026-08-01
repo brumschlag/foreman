@@ -465,11 +465,18 @@ describe("kelos CRD client", () => {
 
       await client.runTask(request);
 
-      const pre = (created?.spec?.preCommands as string[][])[0].join(" ");
+      // Located by content rather than by index: other installs share
+      // preCommands, so pinning [0] would break whenever one is added.
+      const preCommands = (created?.spec?.preCommands as string[][]).map((c) => c.join(" "));
+      const baselineIdx = preCommands.findIndex((c) => c.includes("stash create"));
       const post = (created?.spec?.postCommands as string[][])[0].join(" ");
-      expect(pre).toContain("stash create");
+
+      expect(baselineIdx, "a baseline must be captured").toBeGreaterThanOrEqual(0);
       // Falls back to HEAD: stash create prints nothing on a clean worktree.
-      expect(pre).toContain("rev-parse HEAD");
+      expect(preCommands[baselineIdx]).toContain("rev-parse HEAD");
+      // The baseline is what the returned patch is diffed against, so it has to
+      // be the LAST preCommand — anything after it would land outside the diff.
+      expect(baselineIdx).toBe(preCommands.length - 1);
       expect(post).toContain("FOREMAN_BASELINE");
     });
 
