@@ -2624,6 +2624,17 @@ async function runPipeline(
       notifyClient,
       agentMailClient,
       observabilityWriter: registeredObservabilityWriter,
+      // Closing a task mid-run used to change nothing: the projection went to
+      // closed while the pipeline, which never read it, dispatched every
+      // remaining phase — two "stopped" runs completed all five phases anyway.
+      // The task store is the cancellation source because task.close is what an
+      // operator already reaches for. Errors propagate to the pipeline, which
+      // logs and continues rather than failing a working run.
+      async checkCancelled(taskId) {
+        if (!taskId) return undefined;
+        const task = await runtimeTaskClient.show(taskId);
+        return task?.status;
+      },
       async onTaskPhaseChange(taskId, phaseName) {
         if (runtimeTaskBackend !== "native" || !taskId) return;
         const nativeStatus = nativeTaskStatusForPhase(phaseName);

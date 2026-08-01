@@ -238,6 +238,16 @@ export interface PipelineContext {
    */
   onTaskPhaseChange?: (taskId: string | null | undefined, phaseName: string) => Promise<void> | void;
   /**
+   * Optional mid-run stop check, consulted before each phase is dispatched.
+   *
+   * A callback rather than a server client so the pipeline keeps no dependency
+   * on the Elixir API and stays testable without one. Returning the task's
+   * current status is enough; `cancellationReason` decides what is terminal.
+   *
+   * Absent means "no cancellation source", which preserves today's behaviour.
+   */
+  checkCancelled?: (taskId: string | null | undefined) => Promise<string | undefined> | string | undefined;
+  /**
    * Optional task note callback for append-only phase timeline visibility.
    */
   onTaskPhaseNote?: (
@@ -514,6 +524,30 @@ export function isRateLimitError(error: string | undefined): boolean {
     errorLower.includes("server is temporarily busy") ||
     errorLower.includes("peak-hour surge")
   );
+}
+
+/**
+ * Task statuses that mean "stop dispatching phases".
+ *
+ * Separators vary in the projection (`in-progress` and `in_progress` both
+ * appear), so these are compared normalised rather than literally.
+ */
+export const TERMINAL_TASK_STATUSES: readonly string[] = ["closed", "cancelled", "canceled"];
+
+/**
+ * Why the pipeline should stop before dispatching its next phase, or undefined
+ * to continue.
+ *
+ * Fails OPEN, unlike the tool-policy gate: an unknown status, an empty one, or a
+ * server we could not reach must NOT abort a paid run that is working. Over-
+ * running costs money; a false stop wastes the whole pipeline and reports a
+ * failure that did not happen.
+ */
+export function cancellationReason(status: string | undefined | null): string | undefined {
+  const normalized = (status ?? "").trim().toLowerCase().replace(/-/g, "_");
+  if (!normalized) return undefined;
+  const terminal = TERMINAL_TASK_STATUSES.find((s) => s.replace(/-/g, "_") === normalized);
+  return terminal ? `task ${terminal} while the run was in flight` : undefined;
 }
 
 export function isMaxTurnsExceededError(error: string | undefined): boolean {
@@ -1513,6 +1547,27 @@ async function runPhaseSequence(
       await writeTaskPhaseNote(phaseName, "failure", prePhaseBudgetReason, { retryable: false, budget: true });
       await ctx.markStuck(store, runId, projectId, taskId, taskTitle, progress, phaseName, prePhaseBudgetReason, config.projectPath, notifyClient);
       return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress, failedPhase: phaseName, failureReason: prePhaseBudgetReason };
+    }
+    // Honour a stop requested mid-run. This boundary is the only place it can be
+    // honoured cheaply: a phase already running owns a live agent, but the next
+    // one has not been dispatched yet. A throwing or unreachable check continues
+    // rather than aborting — see cancellationReason on why this fails open.
+    if (ctx.checkCancelled) {
+      let cancelStatus: string | undefined;
+      try {
+        cancelStatus = await ctx.checkCancelled(taskId);
+      } catch (error) {
+        ctx.log(`[PIPELINE] Cancellation check failed before ${phaseName}, continuing: ${String(error)}`);
+      }
+      const cancelReason = cancellationReason(cancelStatus);
+      if (cancelReason) {
+        ctx.log(`[PIPELINE] Cancelled before ${phaseName}: ${cancelReason}`);
+        await writeTaskPhaseNote(phaseName, "system", `Pipeline stopped before ${phaseName}: ${cancelReason}`, {
+          cancelled: true,
+          retryable: false,
+        });
+        return { success: false, phaseRecords, retryCounts, qaVerdictForLog, progress, failedPhase: phaseName, failureReason: cancelReason };
+      }
     }
     const agentName = `${phaseName}-${taskId}`;
     // Check if the first phase's artifact exists (for hasExplorerReport check).
