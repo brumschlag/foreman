@@ -1,7 +1,30 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { resolveWorkflowName } from '../workflow-loader.js';
 
 describe('resolveWorkflowName (TRD-006)', () => {
+  // Resolution consults ~/.foreman/workflows/ for installed workflows, so without
+  // an isolated home these assertions read the developer's own machine: a stale
+  // chore.yaml/docs.yaml/question.yaml left there by an older `foreman init` makes
+  // "removed task types fall back to default" fail, because the removed workflow
+  // is still installed locally. Point FOREMAN_HOME at an empty directory so only
+  // the BUNDLED workflows under src/defaults/workflows/ are visible.
+  let foremanHome: string;
+  const previousForemanHome = process.env.FOREMAN_HOME;
+
+  beforeAll(() => {
+    foremanHome = mkdtempSync(join(tmpdir(), 'foreman-resolve-wf-'));
+    process.env.FOREMAN_HOME = foremanHome;
+  });
+
+  afterAll(() => {
+    if (previousForemanHome === undefined) delete process.env.FOREMAN_HOME;
+    else process.env.FOREMAN_HOME = previousForemanHome;
+    rmSync(foremanHome, { recursive: true, force: true });
+  });
+
   describe('label override — highest priority', () => {
     it('returns label value when workflow: label present', () => {
       expect(resolveWorkflowName('bug', ['frontend', 'workflow:custom-wf'])).toBe('custom-wf');
