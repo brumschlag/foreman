@@ -41,6 +41,7 @@ const {
   mockCreateVcsBackend,
   mockDetectDefaultBranch,
   mockAddNotesToTask,
+  mockUpdateTaskStatus,
   mockEnqueueSetTaskStatus,
   mockProjectsList,
   mockPostgresGetRun,
@@ -51,6 +52,7 @@ const {
   mockCreateTaskClient,
 } = vi.hoisted(() => {
   const mockAddNotesToTask = vi.fn();
+  const mockUpdateTaskStatus = vi.fn();
   const mockEnqueueSetTaskStatus = vi.fn();
   const mockProjectsList = vi.fn().mockResolvedValue([]);
   const mockExecFileSync = vi.fn().mockReturnValue(Buffer.from(""));
@@ -73,6 +75,9 @@ const {
   const mockGetDb = vi.fn().mockReturnValue({});
   const MockForemanStore = vi.fn(function (this: Record<string, unknown>) {
     this.close = vi.fn();
+    // autoMerge's syncTaskStatusAfterMerge calls this; omitting it threw
+    // "updateTaskStatus is not a function" rather than failing an assertion.
+    this.updateTaskStatus = mockUpdateTaskStatus;
     this.getActiveRuns = mockGetActiveRuns;
     this.getProjectByPath = mockGetProjectByPath;
     this.getRunsByStatuses = mockGetRunsByStatuses;
@@ -179,6 +184,7 @@ const {
     mockCreateVcsBackend,
     mockDetectDefaultBranch,
     mockAddNotesToTask,
+    mockUpdateTaskStatus,
     mockEnqueueSetTaskStatus,
     mockProjectsList,
     mockPostgresGetRun,
@@ -307,6 +313,9 @@ function resetMocks(): void {
   });
   MockForemanStore.mockImplementation(function (this: Record<string, unknown>) {
     this.close = vi.fn();
+    // Must mirror the hoisted constructor: this mockImplementation REPLACES it,
+    // so a method added only there is silently dropped after the first reset.
+    this.updateTaskStatus = mockUpdateTaskStatus;
     this.getActiveRuns = mockGetActiveRuns;
     this.getProjectByPath = mockGetProjectByPath;
     this.getRunsByStatuses = mockGetRunsByStatuses;
@@ -555,7 +564,7 @@ describe("autoMerge() unit tests", () => {
 
 // ── Dispatch loop integration: auto-merge is called (or not) correctly ────────
 
-describe.skip("dispatch loop: auto-merge after each batch", () => {
+describe("dispatch loop: auto-merge after each batch", () => {
   beforeEach(resetMocks);
   afterEach(() => vi.restoreAllMocks());
 
@@ -754,7 +763,7 @@ describe.skip("dispatch loop: auto-merge after each batch", () => {
 // returned, causing completed branches to sit unmerged while long-running
 // agents occupied the watch.
 
-describe.skip("call ordering: autoMerge fires BEFORE watchRunsInk", () => {
+describe("call ordering: autoMerge fires BEFORE watchRunsInk", () => {
   beforeEach(resetMocks);
   afterEach(() => vi.restoreAllMocks());
 
@@ -828,7 +837,7 @@ describe.skip("call ordering: autoMerge fires BEFORE watchRunsInk", () => {
 
 // ── No post-dispatch merge draining in foreman run ───────────────────────────
 
-describe.skip("merge draining no longer runs after the dispatch loop", () => {
+describe("merge draining no longer runs after the dispatch loop", () => {
   beforeEach(resetMocks);
   afterEach(() => vi.restoreAllMocks());
 
@@ -1013,6 +1022,17 @@ describe.skip("merge draining no longer runs after the dispatch loop", () => {
 // Verifies that autoMerge() immediately updates the task status in native task store after
 // each merge outcome, rather than waiting for the next foreman startup.
 
+// SKIPPED: needs an ElixirMergeQueue mock, which this file does not have.
+//
+// These predate the Elixir cutover. autoMerge builds ElixirMergeQueue when the
+// project is REGISTERED (getProjectByPath returns an id, as these tests set up), so
+// `mockMergeQueueDequeue` is never consulted — that queue is unmocked, and a stale
+// entry from an earlier test arrives instead of the one under test.
+//
+// The status-sync behaviour is real and worth covering, so the assertions have been
+// re-pointed at what production actually does: store.updateTaskStatus(taskId,
+// status) directly, no longer enqueueSetTaskStatus. Only the queue mock is missing;
+// un-skip once ElixirMergeQueue is stubbed.
 describe.skip("autoMerge() — immediate task status sync", () => {
   beforeEach(resetMocks);
   afterEach(() => vi.restoreAllMocks());
@@ -1023,7 +1043,7 @@ describe.skip("autoMerge() — immediate task status sync", () => {
 
   it("enqueues set-status 'closed' when run status is 'merged'", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
-    mockEnqueueSetTaskStatus.mockClear();
+    mockUpdateTaskStatus.mockClear();
 
     const fakeEntry = {
       id: 1, branch_name: "foreman/s1", task_id: "s1", run_id: "r1",
@@ -1053,12 +1073,12 @@ describe.skip("autoMerge() — immediate task status sync", () => {
 
     expect(result.merged).toBeGreaterThan(0);
     // Status is enqueued via the task writer queue (not called directly)
-    expect(mockEnqueueSetTaskStatus).toHaveBeenCalledWith(expect.anything(), "s1", "closed", "auto-merge");
+    expect(mockUpdateTaskStatus).toHaveBeenCalledWith("s1", "closed");
   });
 
   it("enqueues set-status 'blocked' when run status is 'conflict'", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
-    mockEnqueueSetTaskStatus.mockClear();
+    mockUpdateTaskStatus.mockClear();
 
     const fakeEntry = {
       id: 2, branch_name: "foreman/s2", task_id: "s2", run_id: "r2",
@@ -1086,12 +1106,12 @@ describe.skip("autoMerge() — immediate task status sync", () => {
       projectPath: "/mock/project",
     });
 
-    expect(mockEnqueueSetTaskStatus).toHaveBeenCalledWith(expect.anything(), "s2", "blocked", "auto-merge");
+    expect(mockUpdateTaskStatus).toHaveBeenCalledWith("s2", "blocked");
   });
 
   it("enqueues set-status 'blocked' when run status is 'test-failed'", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
-    mockEnqueueSetTaskStatus.mockClear();
+    mockUpdateTaskStatus.mockClear();
 
     const fakeEntry = {
       id: 3, branch_name: "foreman/s3", task_id: "s3", run_id: "r3",
@@ -1118,12 +1138,12 @@ describe.skip("autoMerge() — immediate task status sync", () => {
       projectPath: "/mock/project",
     });
 
-    expect(mockEnqueueSetTaskStatus).toHaveBeenCalledWith(expect.anything(), "s3", "blocked", "auto-merge");
+    expect(mockUpdateTaskStatus).toHaveBeenCalledWith("s3", "blocked");
   });
 
   it("enqueues set-status 'failed' when refinery throws (exception path)", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
-    mockEnqueueSetTaskStatus.mockClear();
+    mockUpdateTaskStatus.mockClear();
 
     const fakeEntry = {
       id: 4, branch_name: "foreman/s4", task_id: "s4", run_id: "r4",
@@ -1148,12 +1168,12 @@ describe.skip("autoMerge() — immediate task status sync", () => {
     });
 
     expect(result.failed).toBe(1);
-    expect(mockEnqueueSetTaskStatus).toHaveBeenCalledWith(expect.anything(), "s4", "failed", "auto-merge");
+    expect(mockUpdateTaskStatus).toHaveBeenCalledWith("s4", "failed");
   });
 
   it("skips task update when getRun returns null (no run found)", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
-    mockEnqueueSetTaskStatus.mockClear();
+    mockUpdateTaskStatus.mockClear();
 
     const fakeEntry = {
       id: 5, branch_name: "foreman/s5", task_id: "s5", run_id: "r5",
@@ -1181,12 +1201,12 @@ describe.skip("autoMerge() — immediate task status sync", () => {
     });
 
     // enqueueSetTaskStatus should NOT have been called since no run was found
-    expect(mockEnqueueSetTaskStatus).not.toHaveBeenCalled();
+    expect(mockUpdateTaskStatus).not.toHaveBeenCalled();
   });
 
   it("is non-fatal: merge result is still reported when task status enqueue succeeds", async () => {
     mockGetProjectByPath.mockReturnValue({ id: "p1", path: "/mock/project" });
-    mockEnqueueSetTaskStatus.mockClear();
+    mockUpdateTaskStatus.mockClear();
 
     const fakeEntry = {
       id: 6, branch_name: "foreman/s6", task_id: "s6", run_id: "r6",
@@ -1216,6 +1236,6 @@ describe.skip("autoMerge() — immediate task status sync", () => {
       })
     ).resolves.toEqual({ merged: 1, conflicts: 0, failed: 0 });
 
-    expect(mockEnqueueSetTaskStatus).toHaveBeenCalledWith(expect.anything(), "s6", "closed", "auto-merge");
+    expect(mockUpdateTaskStatus).toHaveBeenCalledWith("s6", "closed");
   });
 });
