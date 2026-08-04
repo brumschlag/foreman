@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -164,5 +164,103 @@ describe("acp subprocess client custom tools", () => {
       probe.listen(listeners[0], "127.0.0.1", () => resolve());
     });
     await new Promise<void>((resolve) => probe.close(() => resolve()));
+  }, 20_000);
+});
+
+describe("acp subprocess client worktree safety", () => {
+  let worktree: string;
+
+  beforeEach(() => {
+    worktree = mkdtempSync(join(tmpdir(), "acp-teardown-"));
+    mkdirSync(join(worktree, ".git"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  // A write phase commits and pushes mid-run (checkpointPr), so killing the agent
+  // can interrupt git and strand .git/index.lock. Every later git command in that
+  // worktree then fails with "Another git process seems to be running" — including
+  // the retry — so the task is wedged, not retried.
+  test("clears a stale git lock after the phase so the worktree stays usable", async () => {
+    const lock = join(worktree, ".git", "index.lock");
+    writeFileSync(lock, "");
+    const cleared: string[] = [];
+
+    const runner = createAcpPhaseRunner(
+      createAcpSubprocessClient({
+        command: "foreman-acp-agent-that-does-not-exist",
+        onWorktreeLocksCleared: (paths) => cleared.push(...paths),
+      }),
+    );
+
+    await runner(options(worktree));
+
+    expect(existsSync(lock)).toBe(false);
+    expect(cleared).toEqual([lock]);
+  }, 20_000);
+
+  test("reports nothing when the phase left no lock behind", async () => {
+    const cleared: string[] = [];
+
+    const runner = createAcpPhaseRunner(
+      createAcpSubprocessClient({
+        command: "foreman-acp-agent-that-does-not-exist",
+        onWorktreeLocksCleared: (paths) => cleared.push(...paths),
+      }),
+    );
+
+    await runner(options(worktree));
+
+    expect(cleared).toEqual([]);
+  }, 20_000);
+});
+
+describe("acp teardown ordering", () => {
+  let worktree: string;
+
+  beforeEach(() => {
+    worktree = mkdtempSync(join(tmpdir(), "acp-order-"));
+    mkdirSync(join(worktree, ".git"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  // Clearing locks is only safe BECAUSE the agent is already gone. If teardown ran
+  // the clear while the child still lived it could delete a LIVE lock and corrupt a
+  // commit in progress — the ordering is the safety property, not the removal. This
+  // uses a real long-lived process that ignores EOF, so it must be reaped by signal.
+  test("waits for the agent to exit before clearing locks", async () => {
+    writeFileSync(join(worktree, ".git", "index.lock"), "");
+    let aliveAtClear: boolean | undefined;
+    let pid: number | undefined;
+
+    const client = createAcpSubprocessClient({
+      command: "sleep",
+      args: ["30"],
+      timeoutMs: 300,
+      onAgentSpawned: (spawnedPid) => { pid = spawnedPid; },
+      onWorktreeLocksCleared: () => {
+        // process.kill(pid, 0) throws ESRCH once the process is gone.
+        try {
+          if (pid !== undefined) process.kill(pid, 0);
+          aliveAtClear = true;
+        } catch {
+          aliveAtClear = false;
+        }
+      },
+    });
+
+    // Capture the pid the client spawned via the listening hook's sibling path:
+    // stderr fires from the live child, so first data proves it started.
+    const result = await createAcpPhaseRunner(client)(
+      options(worktree, { onText: () => {} }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(aliveAtClear).toBe(false);
   }, 20_000);
 });

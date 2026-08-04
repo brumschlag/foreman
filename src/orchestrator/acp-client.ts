@@ -8,6 +8,7 @@ import type { AcpClient, AcpPromptRequest, AcpPromptResult, AcpStopReason } from
 import {
   acpSpawnEnv,
   acpTokenAccounting,
+  clearStaleGitLocks,
   createAcpTurnAccumulator,
   foldSessionUpdate,
   resolvePermission,
@@ -52,6 +53,10 @@ export interface AcpSubprocessClientOptions {
   customTools?: ToolDefinition[];
   /** Fires with the tool server's bound port. For tests and diagnostics. */
   onToolServerListening?: (port: number) => void;
+  /** Fires with the git lock files teardown removed, if any. */
+  onWorktreeLocksCleared?: (paths: string[]) => void;
+  /** Fires with the agent's pid once spawned. For tests and diagnostics. */
+  onAgentSpawned?: (pid: number) => void;
 }
 
 export const DEFAULT_ACP_COMMAND = "claude-agent-acp";
@@ -71,6 +76,41 @@ function stopReasonOf(response: { stopReason?: string }): AcpStopReason {
       // value would otherwise silently pass a phase that did not finish.
       return "cancelled";
   }
+}
+
+/** How long teardown waits for the agent to exit on EOF before SIGTERM, then KILL. */
+const REAP_GRACE_MS = 250;
+const REAP_KILL_MS = 2_000;
+
+/**
+ * Wait for the agent process to actually exit.
+ *
+ * Teardown has to know the child is GONE before touching git locks: clearing a
+ * lock while the process might still be running would delete a live one. Escalates
+ * EOF → SIGTERM → SIGKILL and resolves regardless, since a hung teardown would
+ * stall the phase it is cleaning up after.
+ */
+async function reapChild(child: { exitCode: number | null; signalCode: NodeJS.Signals | null; kill: (signal?: NodeJS.Signals) => boolean; once: (event: "exit", listener: () => void) => unknown }): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(term);
+      clearTimeout(kill);
+      resolve();
+    };
+    const term = setTimeout(() => child.kill("SIGTERM"), REAP_GRACE_MS);
+    const kill = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish();
+    }, REAP_KILL_MS);
+    term.unref();
+    kill.unref();
+    child.once("exit", finish);
+  });
 }
 
 export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {}): AcpClient {
@@ -96,6 +136,8 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
         cwd: request.cwd,
         env: acpSpawnEnv({ model: request.model }, opts.env ?? process.env),
       });
+
+      if (child.pid !== undefined) opts.onAgentSpawned?.(child.pid);
 
       child.stderr?.setEncoding("utf-8");
       child.stderr?.on("data", (chunk: string) => opts.onStderr?.(chunk));
@@ -240,11 +282,16 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
         // the whole process group SIGTERMed at command end.
         child.stdout?.destroy();
         child.stdin?.end();
-        if (child.exitCode === null && child.signalCode === null) {
-          const reap = setTimeout(() => child.kill("SIGTERM"), 250);
-          reap.unref();
-          child.once("exit", () => clearTimeout(reap));
-        }
+        await reapChild(child);
+
+        // Only AFTER the agent is gone. A write phase commits and pushes mid-run
+        // (checkpointPr), so an interrupted git leaves .git/index.lock behind and
+        // every later git command in the worktree — the retry included — fails with
+        // "Another git process seems to be running". Clearing it while the child
+        // might still be running could instead delete a LIVE lock, so the ordering
+        // is the safety property, not the removal.
+        const cleared = clearStaleGitLocks(request.cwd);
+        if (cleared.length > 0) opts.onWorktreeLocksCleared?.(cleared);
       }
     },
   };

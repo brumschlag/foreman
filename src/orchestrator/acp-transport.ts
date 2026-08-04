@@ -1,4 +1,5 @@
-import { isAbsolute, relative } from "node:path";
+import { readFileSync, rmSync, statSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import type { ToolPolicyDecision } from "./pi-sdk-runner.js";
 
 /**
@@ -237,6 +238,78 @@ export function foldSessionUpdate(acc: AcpTurnAccumulator, update: AcpSessionUpd
       // update kinds added after this was written.
       return;
   }
+}
+
+// ── worktree lock safety ─────────────────────────────────────────────────
+
+/**
+ * Lock files git leaves behind when an operation is interrupted.
+ *
+ * `index.lock` is the one that matters: while it exists EVERY git command in that
+ * repository fails with "Another git process seems to be running", so a phase
+ * killed mid-commit wedges the worktree for the retry too.
+ */
+const GIT_LOCK_FILES = ["index.lock", "HEAD.lock", "config.lock"] as const;
+
+/**
+ * Resolve a worktree's git directory.
+ *
+ * In a git WORKTREE — which is where every Foreman phase runs — `.git` is a FILE
+ * containing `gitdir: <path>`, not a directory. Looking only for
+ * `<worktree>/.git/index.lock` therefore misses every case this needs to catch.
+ */
+function resolveGitDir(worktreePath: string): string | undefined {
+  const dotGit = join(worktreePath, ".git");
+  let stats;
+  try {
+    stats = statSync(dotGit);
+  } catch {
+    return undefined;
+  }
+  if (stats.isDirectory()) return dotGit;
+
+  try {
+    const pointer = readFileSync(dotGit, "utf-8").match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+    if (!pointer) return undefined;
+    return isAbsolute(pointer) ? pointer : join(worktreePath, pointer);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Absolute paths of git lock files present in this worktree's git directory. */
+export function findStaleGitLocks(worktreePath: string): string[] {
+  const gitDir = resolveGitDir(worktreePath);
+  if (!gitDir) return [];
+
+  return GIT_LOCK_FILES.map((name) => join(gitDir, name)).filter((path) => {
+    try {
+      return statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Remove git lock files left by an interrupted phase, returning what was removed.
+ *
+ * Safe because it runs only after Foreman has killed its own agent for this
+ * worktree: the "another git process" the lock refers to is the one just reaped.
+ * Never throws — it runs in teardown's finally, where an exception would mask the
+ * real phase error.
+ */
+export function clearStaleGitLocks(worktreePath: string): string[] {
+  const removed: string[] = [];
+  for (const lock of findStaleGitLocks(worktreePath)) {
+    try {
+      rmSync(lock, { force: true });
+      removed.push(lock);
+    } catch {
+      // Leave it: reporting a lock we could not clear beats throwing in teardown.
+    }
+  }
+  return removed;
 }
 
 // ── token accounting ─────────────────────────────────────────────────────

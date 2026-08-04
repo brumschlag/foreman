@@ -1,10 +1,15 @@
-import { describe, expect, test, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   acpSpawnEnv,
   foldSessionUpdate,
   createAcpTurnAccumulator,
   resolvePermission,
   acpTokenAccounting,
+  findStaleGitLocks,
+  clearStaleGitLocks,
   type AcpPermissionOption,
 } from "../acp-transport.js";
 
@@ -362,5 +367,73 @@ describe("resolvePermission audit identity", () => {
     });
 
     expect(seen).toEqual([["call_abc123", "Grep"]]);
+  });
+});
+
+describe("worktree lock safety", () => {
+  let worktree: string;
+
+  beforeEach(() => {
+    worktree = mkdtempSync(join(tmpdir(), "acp-lock-"));
+    mkdirSync(join(worktree, ".git"), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  // A phase killed mid-commit leaves .git/index.lock behind, and every later git
+  // operation in that worktree then fails with "Another git process seems to be
+  // running" — including the retry, so the task is wedged rather than retried.
+  test("reports a stale index lock left in the worktree", () => {
+    writeFileSync(join(worktree, ".git", "index.lock"), "");
+
+    expect(findStaleGitLocks(worktree)).toEqual([join(worktree, ".git", "index.lock")]);
+  });
+
+  test("reports nothing for a clean worktree", () => {
+    expect(findStaleGitLocks(worktree)).toEqual([]);
+  });
+
+  // A worktree's .git is a FILE pointing at the real gitdir, not a directory, so
+  // looking only for <worktree>/.git/index.lock misses every locked worktree —
+  // which is exactly where Foreman's phases run.
+  test("follows the gitdir pointer when .git is a file", () => {
+    const realGitDir = join(worktree, "actual-gitdir");
+    mkdirSync(realGitDir, { recursive: true });
+    rmSync(join(worktree, ".git"), { recursive: true, force: true });
+    writeFileSync(join(worktree, ".git"), `gitdir: ${realGitDir}\n`);
+    writeFileSync(join(realGitDir, "index.lock"), "");
+
+    expect(findStaleGitLocks(worktree)).toEqual([join(realGitDir, "index.lock")]);
+  });
+
+  test("finds the other lock files git leaves behind", () => {
+    for (const name of ["index.lock", "HEAD.lock", "config.lock"]) {
+      writeFileSync(join(worktree, ".git", name), "");
+    }
+
+    expect(findStaleGitLocks(worktree).map((p) => p.split("/").pop()).sort()).toEqual([
+      "HEAD.lock",
+      "config.lock",
+      "index.lock",
+    ]);
+  });
+
+  test("removes the locks it finds", () => {
+    writeFileSync(join(worktree, ".git", "index.lock"), "");
+
+    const removed = clearStaleGitLocks(worktree);
+
+    expect(removed).toHaveLength(1);
+    expect(findStaleGitLocks(worktree)).toEqual([]);
+  });
+
+  // Called on a path that is not a repo at all (a refused phase, a bad cwd), this
+  // must not throw — teardown runs in a finally and an exception there would mask
+  // the real phase error.
+  test("does not throw for a path with no git directory", () => {
+    expect(() => clearStaleGitLocks(join(worktree, "nope"))).not.toThrow();
+    expect(findStaleGitLocks(join(worktree, "nope"))).toEqual([]);
   });
 });
