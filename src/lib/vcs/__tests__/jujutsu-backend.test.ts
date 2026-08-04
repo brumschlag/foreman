@@ -64,7 +64,28 @@ function makeTempJjRepo(): string {
     cwd: dir,
     stdio: "pipe",
   });
+  // jj keeps its own user identity and does NOT read git's user.name/user.email,
+  // so without this the commits it creates have no author and `jj git push`
+  // refuses them: "Won't push commit <id> since it has no author and/or
+  // committer set".
+  //
+  // Passed as JJ_USER/JJ_EMAIL at init rather than written with `jj config set`:
+  // the working-copy commit is created BY init, and config applied afterwards
+  // only affects later commits ("The author of the working copy will stay <>"),
+  // which leaves the very first commit authorless. Env vars also keep this out of
+  // the developer's own jj config entirely.
   execFileSync("jj", ["git", "init", "--colocate"], {
+    cwd: dir,
+    stdio: "pipe",
+    env: { ...process.env, JJ_USER: "Test", JJ_EMAIL: "test@test.com" },
+  });
+  // Persisted repo-locally too, so operations the backend runs later (which do
+  // not inherit this call's env) still have an identity.
+  execFileSync("jj", ["config", "set", "--repo", "user.name", "Test"], {
+    cwd: dir,
+    stdio: "pipe",
+  });
+  execFileSync("jj", ["config", "set", "--repo", "user.email", "test@test.com"], {
     cwd: dir,
     stdio: "pipe",
   });
