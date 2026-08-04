@@ -90,7 +90,8 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
         );
       });
 
-      const acc = createAcpTurnAccumulator({ onText: opts.onText });
+      // cwd so reported absolute locations can be relativized against the worktree.
+      const acc = createAcpTurnAccumulator({ onText: opts.onText, cwd: request.cwd });
 
       const session = (async (): Promise<AcpPromptResult> => {
         const stream = acp.ndJsonStream(
@@ -139,6 +140,8 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
               `${request.systemPrompt}\n\n${request.prompt}`,
             );
 
+            let cancelledForTurnLimit = false;
+
             for (;;) {
               const message = await active.nextUpdate();
               if (message.kind === "stop") {
@@ -155,10 +158,25 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
                   toolCalls: acc.toolCalls,
                   toolBreakdown: acc.toolBreakdown,
                   outputText: acc.outputText || undefined,
+                  filesChanged: acc.filesChanged,
+                  // A cancel we initiated is a turn-limit abort, not the agent
+                  // stopping on its own; the runner needs that distinction to
+                  // report `maxTurns` rather than a bare cancellation.
+                  ...(cancelledForTurnLimit ? { stopReason: "max_turn_requests" as const } : {}),
                 } satisfies AcpPromptResult;
               }
 
               foldSessionUpdate(acc, message.notification.update as AcpSessionUpdate);
+
+              // Enforce the ceiling actively. Reading only the terminal stopReason
+              // would let a runaway phase burn its whole budget first — the
+              // developer phase allows 500 turns.
+              if (request.maxTurns && acc.turns > request.maxTurns && !cancelledForTurnLimit) {
+                cancelledForTurnLimit = true;
+                await ctx.notify(acp.methods.agent.session.cancel, {
+                  sessionId: active.sessionId,
+                });
+              }
             }
           });
         });

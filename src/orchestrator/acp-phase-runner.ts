@@ -40,6 +40,13 @@ export interface AcpPromptResult {
   toolBreakdown: Record<string, number>;
   /** Concatenated assistant text from `session/update` notifications. */
   outputText?: string;
+  /**
+   * Worktree-relative paths mutated this phase, from `ToolCall.locations`.
+   *
+   * Finalize's scope-expansion and changed-domain checks read this, so an empty
+   * list on a write phase produces a false pass rather than a visible gap.
+   */
+  filesChanged?: string[];
   errorMessage?: string;
 }
 
@@ -160,6 +167,7 @@ export function createAcpPhaseRunner(client: AcpClient): ConfiguredPhaseRunner {
       tokensOut: result.tokensOut,
       errorMessage,
       outputText: result.outputText,
+      filesChanged: result.filesChanged ?? [],
     };
   };
 }

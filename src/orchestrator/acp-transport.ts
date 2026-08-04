@@ -1,3 +1,4 @@
+import { isAbsolute, relative } from "node:path";
 import type { ToolPolicyDecision } from "./pi-sdk-runner.js";
 
 /**
@@ -47,6 +48,10 @@ export interface AcpSessionUpdate {
   title?: string;
   rawInput?: Record<string, unknown>;
   status?: string;
+  /** ACP `ToolKind`: read, edit, delete, move, search, execute, think, fetch, ... */
+  kind?: string;
+  /** Files the call touched. Absolute paths, per the schema. */
+  locations?: Array<{ path?: string; line?: number | null }>;
   /** Tokens currently in context — NOT per-turn input/output. */
   used?: number;
   /** Total context window size in tokens. */
@@ -80,16 +85,39 @@ export interface AcpTurnAccumulator {
   contextUsed: number;
   contextSize: number;
   seenToolCallIds: Set<string>;
+  /**
+   * Kind per tool call id. A `tool_call_update` carries no `kind`, so without this
+   * a read's late-arriving location would be recorded as a change.
+   */
+  toolCallKinds: Map<string, string>;
+  /**
+   * Worktree-relative paths of files MUTATED this phase.
+   *
+   * Relative because finalize's scope and changed-domain checks match repo-relative
+   * prefixes (`packages/foreman_server/`); absolute paths would make them silently
+   * never fire.
+   */
+  filesChanged: string[];
+  /**
+   * Reported locations that fall outside the worktree. Not changed repo files — a
+   * guardrail signal, kept separate so it cannot pollute the scope check.
+   */
+  locationsOutsideWorktree: string[];
+  /** Worktree root, for relativizing reported locations. */
+  cwd?: string;
   onText?: (text: string) => void;
 }
 
 export function createAcpTurnAccumulator(
-  opts: { onText?: (text: string) => void } = {},
+  opts: { onText?: (text: string) => void; cwd?: string } = {},
 ): AcpTurnAccumulator {
   return {
     outputText: "",
     turns: 0,
     inAssistantMessage: false,
+    filesChanged: [],
+    locationsOutsideWorktree: [],
+    cwd: opts.cwd,
     toolCalls: 0,
     toolBreakdown: {},
     costUsd: 0,
@@ -98,8 +126,48 @@ export function createAcpTurnAccumulator(
     contextUsed: 0,
     contextSize: 0,
     seenToolCallIds: new Set(),
+    toolCallKinds: new Map(),
     onText: opts.onText,
   };
+}
+
+/** ACP `ToolKind` values that mutate the filesystem. */
+const MUTATING_TOOL_KINDS = new Set(["edit", "delete", "move"]);
+
+/**
+ * Records the files a mutating tool call touched.
+ *
+ * Locations arrive on `tool_call` OR on a later `tool_call_update` (the path is
+ * often unknown until the write completes), so both paths call this.
+ */
+function recordLocations(acc: AcpTurnAccumulator, update: AcpSessionUpdate): void {
+  const id = update.toolCallId;
+  if (update.kind !== undefined && id !== undefined) acc.toolCallKinds.set(id, update.kind);
+
+  // An update carries no kind of its own, so fall back to the one its tool_call
+  // reported. Reads report locations too, but only mutations change files —
+  // counting reads would inflate finalize's scope-expansion check.
+  const kind = update.kind ?? (id !== undefined ? acc.toolCallKinds.get(id) : undefined);
+  if (kind !== undefined && !MUTATING_TOOL_KINDS.has(kind)) return;
+
+  for (const location of update.locations ?? []) {
+    const path = location?.path;
+    if (!path) continue;
+
+    if (!acc.cwd) {
+      if (!acc.filesChanged.includes(path)) acc.filesChanged.push(path);
+      continue;
+    }
+
+    const rel = relative(acc.cwd, path);
+    // Outside the worktree: `..`-prefixed or absolute after relativizing. A
+    // guardrail signal rather than a changed repo file.
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+      if (!acc.locationsOutsideWorktree.includes(path)) acc.locationsOutsideWorktree.push(path);
+      continue;
+    }
+    if (!acc.filesChanged.includes(rel)) acc.filesChanged.push(rel);
+  }
 }
 
 export function foldSessionUpdate(acc: AcpTurnAccumulator, update: AcpSessionUpdate): void {
@@ -123,6 +191,7 @@ export function foldSessionUpdate(acc: AcpTurnAccumulator, update: AcpSessionUpd
     case "tool_call": {
       // A tool call ends the assistant message, so text after it opens a new turn.
       acc.inAssistantMessage = false;
+      recordLocations(acc, update);
       const id = update.toolCallId;
       if (id !== undefined) {
         if (acc.seenToolCallIds.has(id)) return;
@@ -135,6 +204,9 @@ export function foldSessionUpdate(acc: AcpTurnAccumulator, update: AcpSessionUpd
     }
 
     case "tool_call_update": {
+      // Locations recorded even for an already-counted call: the path is often
+      // unknown at tool_call time and only reported once the write completes.
+      recordLocations(acc, update);
       // Progress on an already-counted call. Only an id never seen as a tool_call
       // counts, so out-of-order delivery cannot lose a call or double it.
       const id = update.toolCallId;

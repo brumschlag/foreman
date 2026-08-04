@@ -199,6 +199,122 @@ describe("resolvePermission", () => {
   });
 });
 
+describe("file change tracking", () => {
+  // ACP reports absolute paths, but finalize's scope and domain checks match
+  // repo-relative prefixes (e.g. "packages/foreman_server/"). Recording absolutes
+  // makes those checks silently never fire.
+  test("records written files relative to the worktree", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call",
+      toolCallId: "1",
+      title: "Write src/math.js",
+      locations: [{ path: "/work/repo/src/math.js" }],
+    });
+
+    expect(acc.filesChanged).toEqual(["src/math.js"]);
+  });
+
+  test("deduplicates a file touched by several tool calls", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    for (const id of ["1", "2"]) {
+      foldSessionUpdate(acc, {
+        sessionUpdate: "tool_call",
+        toolCallId: id,
+        title: "Edit src/math.js",
+        locations: [{ path: "/work/repo/src/math.js" }],
+      });
+    }
+
+    expect(acc.filesChanged).toEqual(["src/math.js"]);
+  });
+
+  test("captures every location a single tool call reports", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call",
+      toolCallId: "1",
+      title: "MultiEdit",
+      locations: [{ path: "/work/repo/a.ts" }, { path: "/work/repo/b.ts" }],
+    });
+
+    expect(acc.filesChanged).toEqual(["a.ts", "b.ts"]);
+  });
+
+  // A tool_call arrives before the write completes, so the path often lands on the
+  // tool_call_update instead. Missing it would under-report changed files.
+  test("records locations that arrive on a tool_call_update", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    foldSessionUpdate(acc, { sessionUpdate: "tool_call", toolCallId: "1", title: "Write" });
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "1",
+      status: "completed",
+      locations: [{ path: "/work/repo/src/late.js" }],
+    });
+
+    expect(acc.filesChanged).toEqual(["src/late.js"]);
+  });
+
+  // A tool_call_update carries no `kind`, so the kind must be remembered from the
+  // originating tool_call — otherwise a read's late-arriving location is recorded
+  // as a change and inflates the scope-expansion check.
+  test("does not record a late location for a call known to be a read", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call",
+      toolCallId: "1",
+      title: "Read src/math.js",
+      kind: "read",
+    });
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "1",
+      status: "completed",
+      locations: [{ path: "/work/repo/src/math.js" }],
+    });
+
+    expect(acc.filesChanged).toEqual([]);
+  });
+
+  // A path outside the worktree is a guardrail signal, not a changed repo file;
+  // relativizing it would produce a misleading "../../etc/passwd" entry.
+  test("ignores a location outside the worktree", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call",
+      toolCallId: "1",
+      title: "Write",
+      locations: [{ path: "/etc/passwd" }],
+    });
+
+    expect(acc.filesChanged).toEqual([]);
+    expect(acc.locationsOutsideWorktree).toEqual(["/etc/passwd"]);
+  });
+
+  // Reads report locations too, but only mutations change files. Counting reads
+  // would inflate the scope-expansion check with files nobody edited.
+  test("does not record a location from a read-only tool call", () => {
+    const acc = createAcpTurnAccumulator({ cwd: "/work/repo" });
+
+    foldSessionUpdate(acc, {
+      sessionUpdate: "tool_call",
+      toolCallId: "1",
+      title: "Read src/math.js",
+      kind: "read",
+      locations: [{ path: "/work/repo/src/math.js" }],
+    });
+
+    expect(acc.filesChanged).toEqual([]);
+  });
+});
+
 describe("acpTokenAccounting", () => {
   // The adapter reports the prompt's uncached input only. A live Bedrock phase came
   // back inputTokens=16 with cachedReadTokens=39086 and cachedWriteTokens=90933, so

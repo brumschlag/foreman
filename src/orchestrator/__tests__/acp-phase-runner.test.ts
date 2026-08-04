@@ -152,6 +152,20 @@ describe("acp phase runner", () => {
     expect(client.requests).toHaveLength(0);
   });
 
+  // Pi enforces maxTurns by ABORTING the session mid-run. Reading only the terminal
+  // stopReason would let a runaway phase burn its whole budget (developer allows
+  // 500 turns) before stopping on its own, so the runner must surface the limit and
+  // the client must be able to cancel.
+  test("reports files changed during the phase", async () => {
+    const runner = createAcpPhaseRunner(
+      stubClient({ filesChanged: ["src/math.js", "src/greet.js"] }),
+    );
+
+    const result = await runner(options(worktree));
+
+    expect(result.filesChanged).toEqual(["src/math.js", "src/greet.js"]);
+  });
+
   test("treats max_turn_requests as a turn-limit failure, not a crash", async () => {
     const runner = createAcpPhaseRunner(stubClient({ stopReason: "max_turn_requests", turns: 12 }));
 
