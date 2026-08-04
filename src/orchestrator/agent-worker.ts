@@ -81,6 +81,7 @@ import { runWorkspaceHook } from "../lib/setup.js";
 import { loadProjectConfig, type ProjectHooksConfig } from "../lib/project-config.js";
 import { foremanBackendMode } from "../lib/backend-mode.js";
 import { nativeTaskStatusForPhase } from "./task-phase-status.js";
+import { taskStatusForOperatorWait } from "./operator-resume.js";
 import { classifyFinalizeTestFailure, findFinalizeScopeViolations, finalizeValidationCommands, resolveProjectInstallCommand, resolveProjectTestCommand, resolveProjectTypecheckCommand } from "./finalize-guards.js";
 import { rotateReport } from "./agent-worker-finalize.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -2821,6 +2822,20 @@ async function runPipeline(
           projectPath: pipelineProjectPath,
           updates: { status: "waiting_for_operator", completed_at: now },
         });
+        // Park the TASK too, or the wait is terminal rather than pending. The
+        // scheduler dispatches on task status and the task is otherwise left at
+        // in-progress, which dispatchable? never matches — so the agent asks a
+        // question and the run strands forever. `blocked` is the existing
+        // parked-needs-a-human status, and unlike `ready` it will not re-dispatch
+        // immediately into asking the same question again.
+        if (taskId) {
+          try {
+            await runtimeTaskClient.update(taskId, { status: taskStatusForOperatorWait() });
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`[PIPELINE] operator-wait task park failed (non-fatal): ${msg}`);
+          }
+        }
         notifyClient.send({ type: "status", runId, status: "waiting_for_operator", timestamp: now, details: { question: waitingQuestion } });
         return;
       }

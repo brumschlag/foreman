@@ -913,7 +913,9 @@ defmodule ForemanServer.ProjectionStore do
       run
       |> put_in([:phase_status, phase_id], Map.get(payload, :status))
       |> Map.put(:recovery_next_action, Map.get(payload, :next_action))
+      |> resume_run_status(type)
     end)
+    |> resume_task_status(run_id, type)
   end
 
   defp apply_domain_event(
@@ -1370,6 +1372,37 @@ defmodule ForemanServer.ProjectionStore do
       do: counts,
       else: Map.update!(counts, :active, &(&1 + 1))
   end
+
+  # A resume has to lift the run out of waiting_for_operator. Recording the event
+  # while leaving the status parked is what made the wait terminal: the run reads as
+  # resumable and nothing can ever dispatch it. An interruption is left parked on
+  # purpose — it stays that way until an operator actually resumes.
+  defp resume_run_status(%{status: "waiting_for_operator"} = run, "InteractiveRecoveryResumed") do
+    Map.put(run, :status, "pending")
+  end
+
+  defp resume_run_status(run, _type), do: run
+
+  # And the TASK, because the scheduler dispatches on task status, not run status.
+  # The task was parked at `blocked` when the phase asked its question, and only
+  # `ready`/`approved` are dispatchable, so without this the resumed run is still
+  # invisible. Keyed through the run's task_id since the resume event carries only
+  # run_id.
+  defp resume_task_status(projection, run_id, "InteractiveRecoveryResumed") do
+    case get_in(projection, [:runs, run_id, :task_id]) do
+      nil ->
+        projection
+
+      task_id ->
+        update_in(projection, [:tasks, task_id], fn
+          nil -> nil
+          %{status: "blocked"} = task -> Map.put(task, :status, "ready")
+          task -> task
+        end)
+    end
+  end
+
+  defp resume_task_status(projection, _run_id, _type), do: projection
 
   defp dispatchable?(%{status: status} = task, tasks) when status in ["ready", "approved"] do
     task
