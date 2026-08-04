@@ -125,6 +125,17 @@ export class MergeValidator {
       const cmd = parts[0];
       const args = [...parts.slice(1), tmpFile];
 
+      // `tsc` resolves ambient @types by walking UP from the input file, so a
+      // temp file inherits whatever is installed above os.tmpdir() — a stray
+      // ~/node_modules with a broken @types package then fails validation for
+      // syntactically perfect code, letting the machine's home directory decide
+      // whether a conflict resolution is accepted. Point typeRoots at the temp
+      // dir so only the file under test is compiled. Type ERRORS in the content
+      // are still reported; only ambient declaration lookup is scoped out.
+      if (/(^|[\\/])tsc$/.test(cmd) && !args.includes("--typeRoots")) {
+        args.unshift("--typeRoots", path.join(tmpDir, "types"));
+      }
+
       return await new Promise<{ pass: boolean; error?: string }>((resolve) => {
         const child = execFile(
           cmd,

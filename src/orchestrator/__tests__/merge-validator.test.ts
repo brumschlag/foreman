@@ -310,3 +310,31 @@ describe("MergeValidator", () => {
     });
   });
 });
+
+describe("syntaxCheck isolation from ambient types", () => {
+  // The checker runs on a file in os.tmpdir(), so `tsc` walks UP from there and
+  // picks up whatever @types happen to be installed in a parent directory (e.g.
+  // a stray ~/node_modules). A broken ambient package then fails validation for
+  // syntactically perfect code, so a machine's home directory decides whether a
+  // conflict resolution is accepted. Verified real: a @types/glob + minimatch
+  // mismatch under /home/<user>/node_modules failed this with TS2694/TS18028.
+  it("accepts valid TypeScript regardless of ambient @types in parent directories", async () => {
+    const validator = new MergeValidator(DEFAULT_MERGE_CONFIG);
+
+    const result = await validator.syntaxCheck(
+      "shared.ts",
+      "const a = 1;\nconst b = 'merged';\nconst c = 3;\n",
+    );
+
+    expect(result.error ?? "").not.toMatch(/node_modules/);
+    expect(result.pass).toBe(true);
+  }, 30_000);
+
+  it("still rejects genuinely invalid TypeScript", async () => {
+    const validator = new MergeValidator(DEFAULT_MERGE_CONFIG);
+
+    const result = await validator.syntaxCheck("broken.ts", "const a: number = ;\n");
+
+    expect(result.pass).toBe(false);
+  }, 30_000);
+});
