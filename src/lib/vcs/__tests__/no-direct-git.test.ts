@@ -254,3 +254,26 @@ describe("AC-T-016: No direct git calls outside VCS backend layer", () => {
     expect(allKnown.length).toBeGreaterThanOrEqual(0); // always passes
   });
 });
+
+// ── git CLI portability ──────────────────────────────────────────────────────
+
+describe("git config invocation portability", () => {
+  // `git config get <key>` (space form) requires git >= 2.46. On older git it
+  // exits non-zero with "key does not contain a section: get", and both backends
+  // read git-town.main-branch inside a try/catch that swallows the error — so the
+  // user's configured trunk was silently demoted to origin/HEAD or `main`, and
+  // Foreman rebased and merged onto the wrong branch. `--get` works everywhere.
+  //
+  // A source-level assertion because the behavioural test only fails on git < 2.46,
+  // and the JujutsuBackend suite skips entirely when `jj` is not installed — which
+  // is exactly how this shipped in two backends at once.
+  const backends = ["git-backend.ts", "jujutsu-backend.ts"];
+
+  for (const backend of backends) {
+    it(`${backend} uses 'config --get' rather than the git >= 2.46 'config get' subcommand`, () => {
+      const source = readFileSync(srcPath("lib", "vcs", backend), "utf-8");
+
+      expect(source).not.toMatch(/["']config["']\s*,\s*["']get["']/);
+    });
+  }
+});

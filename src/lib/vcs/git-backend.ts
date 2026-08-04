@@ -112,7 +112,7 @@ export class GitBackend implements VcsBackend {
    * Detect the default/parent branch for a repository.
    *
    * Resolution order:
-   * 1. `git config get git-town.main-branch` — respect user's explicit development trunk config
+   * 1. `git config --get git-town.main-branch` — respect user's explicit development trunk config
    * 2. `git symbolic-ref refs/remotes/origin/HEAD --short` → strips "origin/" prefix
    *    (e.g. "origin/main" → "main"). Works when the remote has been fetched.
    * 3. Check whether "main" exists as a local branch.
@@ -121,14 +121,20 @@ export class GitBackend implements VcsBackend {
    */
   async detectDefaultBranch(repoPath: string): Promise<string> {
     // 1. Respect git-town.main-branch config (user's explicit development trunk)
+    //
+    // `--get`, not the `config get` subcommand: the space form needs git >= 2.46
+    // and on older git fails with "key does not contain a section: get", which the
+    // catch below swallows. That silently demoted a git-town user's configured
+    // trunk to whatever origin/HEAD or `main` resolved to, so Foreman rebased and
+    // merged onto the wrong branch. `--get` works on every supported git.
     try {
       const gtMain = await this.git(
-        ["config", "get", "git-town.main-branch"],
+        ["config", "--get", "git-town.main-branch"],
         repoPath,
       );
       if (gtMain) return gtMain;
     } catch {
-      // git-town not configured or command unavailable — fall through
+      // git-town not configured — fall through
     }
 
     // 2. Try origin/HEAD symbolic ref

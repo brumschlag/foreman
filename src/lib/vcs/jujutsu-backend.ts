@@ -149,10 +149,12 @@ export class JujutsuBackend implements VcsBackend {
   async detectDefaultBranch(repoPath: string): Promise<string> {
     // 1. Respect git-town.main-branch config (user's explicit development trunk)
     try {
-      const gtMain = await this.git(["config", "get", "git-town.main-branch"], repoPath);
+      // `--get`, not `config get`: the space form needs git >= 2.46 and fails on
+      // older git, and the catch would silently demote the user's configured trunk.
+      const gtMain = await this.git(["config", "--get", "git-town.main-branch"], repoPath);
       if (gtMain) return gtMain;
     } catch {
-      // git-town not configured or command unavailable — fall through
+      // git-town not configured — fall through
     }
 
     // 2. Try origin/HEAD symbolic ref from colocated git metadata
