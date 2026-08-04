@@ -12,6 +12,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { makeMockVcsBackend } from "./vcs-backend-mock.js";
+
+// A bare "## Verdict: PASS" is overridden to FAIL by the QA test-evidence gate
+// (qaReportHasTestEvidence), which loops the phase through its retries and makes
+// any per-phase assertion count wrong. An explicit skip is the gate's own
+// sanctioned way to pass without a suite.
+const QA_REPORT_PASS = "# QA\n\n- Test suite: SKIPPED\n\n## Verdict: PASS\n";
 
 function successResult() {
   return { success: true, costUsd: 0.01, turns: 5, tokensIn: 100, tokensOut: 50 };
@@ -75,11 +82,11 @@ describe("rebaseAfterPhase regression (PRD-2026-005)", () => {
     const { executePipeline } = await import("../pipeline-executor.js");
     const log = vi.fn();
     const rebaseFn = vi.fn().mockResolvedValue({ success: true, hasConflicts: false });
-    const vcsBackend = { name: "git", rebase: rebaseFn } as never;
+    const vcsBackend = makeMockVcsBackend({ rebase: rebaseFn });
 
     const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
       if (phaseName === "qa") {
-        writeFileSync(join(tmpDir, "QA_REPORT.md"), "# QA\n\n## Verdict: PASS\n");
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), QA_REPORT_PASS);
       }
       return successResult();
     });
@@ -95,13 +102,13 @@ describe("rebaseAfterPhase regression (PRD-2026-005)", () => {
     const { executePipeline } = await import("../pipeline-executor.js");
     const log = vi.fn();
     const rebaseFn = vi.fn().mockResolvedValue({ success: true, hasConflicts: false });
-    const vcsBackend = { name: "git", rebase: rebaseFn } as never;
+    const vcsBackend = makeMockVcsBackend({ rebase: rebaseFn });
 
     const phaseOrder: string[] = [];
     const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
       phaseOrder.push(phaseName);
       if (phaseName === "qa") {
-        writeFileSync(join(tmpDir, "QA_REPORT.md"), "# QA\n\n## Verdict: PASS\n");
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), QA_REPORT_PASS);
       }
       return successResult();
     });
@@ -128,7 +135,7 @@ describe("rebaseAfterPhase regression (PRD-2026-005)", () => {
 
     const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
       if (phaseName === "qa") {
-        writeFileSync(join(tmpDir, "QA_REPORT.md"), "# QA\n\n## Verdict: PASS\n");
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), QA_REPORT_PASS);
       }
       return successResult();
     });
@@ -152,11 +159,11 @@ describe("rebaseAfterPhase regression (PRD-2026-005)", () => {
     const { executePipeline } = await import("../pipeline-executor.js");
     const log = vi.fn();
     const rebaseFn = vi.fn().mockResolvedValue({ success: false, conflictingFiles: ["src/app.ts", "src/index.ts"] });
-    const vcsBackend = { name: "git", rebase: rebaseFn } as never;
+    const vcsBackend = makeMockVcsBackend({ rebase: rebaseFn });
 
     const runPhase = vi.fn().mockImplementation(async (phaseName: string) => {
       if (phaseName === "qa") {
-        writeFileSync(join(tmpDir, "QA_REPORT.md"), "# QA\n\n## Verdict: PASS\n");
+        writeFileSync(join(tmpDir, "QA_REPORT.md"), QA_REPORT_PASS);
       }
       return successResult();
     });
@@ -170,15 +177,16 @@ describe("rebaseAfterPhase regression (PRD-2026-005)", () => {
 
     await executePipeline(args as never);
 
-    // agent-error mail should have been sent with conflict details
-    expect(args.sendMail).toHaveBeenCalledWith(
-      expect.anything(),
-      "foreman",
-      "agent-error",
-      expect.objectContaining({
-        error: expect.stringContaining("Rebase onto origin/dev failed"),
-        retryable: false,
-      }),
-    );
+    // Assert on the agent-error call specifically. `toHaveBeenCalledWith` would
+    // match against the FIRST call, which is phase-started — and its mail client
+    // is null here, so `expect.anything()` rejects it before the kind is compared.
+    const agentErrorCalls = args.sendMail.mock.calls.filter((call) => call[2] === "agent-error");
+
+    expect(agentErrorCalls).toHaveLength(1);
+    expect(agentErrorCalls[0][1]).toBe("foreman");
+    expect(agentErrorCalls[0][3]).toMatchObject({
+      error: expect.stringContaining("Rebase onto origin/dev failed"),
+      retryable: false,
+    });
   });
 });
