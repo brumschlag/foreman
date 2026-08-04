@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -117,4 +118,51 @@ describe("acp subprocess client", () => {
   test("defaults to the Claude ACP adapter bin name", () => {
     expect(DEFAULT_ACP_COMMAND).toBe("claude-agent-acp");
   });
+});
+
+describe("acp subprocess client custom tools", () => {
+  let worktree: string;
+
+  beforeEach(() => {
+    worktree = mkdtempSync(join(tmpdir(), "acp-tools-"));
+  });
+
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  // Once tools are served over MCP the runner must stop refusing write phases,
+  // otherwise the whole port is inert.
+  test("advertises custom tool support when tools are supplied", () => {
+    const client = createAcpSubprocessClient({ customTools: [] });
+
+    expect(client.providesCustomTools).toBe(true);
+  });
+
+  test("does not advertise custom tool support when no tools are supplied", () => {
+    expect(createAcpSubprocessClient().providesCustomTools).toBe(false);
+  });
+
+  // The MCP server binds a port per phase. If a failed phase does not close it the
+  // listener leaks for the life of the worker, and a long run leaks one per phase.
+  test("closes the tool MCP server even when the phase fails", async () => {
+    const listeners: number[] = [];
+    const client = createAcpSubprocessClient({
+      command: "foreman-acp-agent-that-does-not-exist",
+      customTools: [],
+      onToolServerListening: (port) => listeners.push(port),
+    });
+
+    const result = await createAcpPhaseRunner(client)(options(worktree));
+
+    expect(result.success).toBe(false);
+    expect(listeners).toHaveLength(1);
+    // The port must be free again: rebinding it proves the listener was released.
+    const probe = createServer();
+    await new Promise<void>((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(listeners[0], "127.0.0.1", () => resolve());
+    });
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+  }, 20_000);
 });

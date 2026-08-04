@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { ToolPolicyDecision } from "./pi-sdk-runner.js";
+import { createForemanToolMcpServer } from "./foreman-tool-mcp-server.js";
 import type { AcpClient, AcpPromptRequest, AcpPromptResult, AcpStopReason } from "./acp-phase-runner.js";
 import {
   acpSpawnEnv,
@@ -41,6 +43,15 @@ export interface AcpSubprocessClientOptions {
   timeoutMs?: number;
   /** Receives the agent's stderr, which ACP reserves for logging. */
   onStderr?: (chunk: string) => void;
+  /**
+   * Foreman's workflow tools, served to the agent over MCP.
+   *
+   * The same Pi ToolDefinition objects the in-process runner uses — they close over
+   * this phase's context, so nothing about the run has to reach the subprocess.
+   */
+  customTools?: ToolDefinition[];
+  /** Fires with the tool server's bound port. For tests and diagnostics. */
+  onToolServerListening?: (port: number) => void;
 }
 
 export const DEFAULT_ACP_COMMAND = "claude-agent-acp";
@@ -67,11 +78,19 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
     // Foreman answers session/request_permission itself, so the gate is enforced
     // on the client side of the connection rather than inside the agent.
     enforcesToolPolicy: opts.toolPolicy !== undefined,
-    // Foreman's workflow tools have no ACP equivalent yet; until they are exposed
-    // through mcpServers a phase requiring them is refused by the runner.
-    providesCustomTools: false,
+    // Served over MCP and passed through on session/new, so the runner no longer
+    // has to refuse a phase that needs them.
+    providesCustomTools: opts.customTools !== undefined,
 
     async prompt(request: AcpPromptRequest): Promise<AcpPromptResult> {
+      // Bound before the spawn: session/new needs the URL, and binding after would
+      // race the agent's first tool call.
+      const toolServer = opts.customTools
+        ? createForemanToolMcpServer({ tools: opts.customTools })
+        : undefined;
+      const toolListener = toolServer ? await toolServer.listen() : undefined;
+      if (toolListener) opts.onToolServerListening?.(toolListener.port);
+
       const child = spawn(opts.command ?? DEFAULT_ACP_COMMAND, opts.args ?? [], {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: request.cwd,
@@ -135,7 +154,17 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
             clientCapabilities: {},
           });
 
-          return ctx.buildSession(request.cwd).withSession(async (active) => {
+          // The full NewSessionRequest form, so Foreman's tools ride along as an
+          // HTTP MCP server the agent connects back to.
+          return ctx
+            .buildSession({
+              cwd: request.cwd,
+              // `headers` is required by McpServerHttp even when empty.
+              mcpServers: toolListener
+                ? [{ type: "http" as const, name: "foreman", url: toolListener.url, headers: [] }]
+                : [],
+            })
+            .withSession(async (active) => {
             const turn = active.prompt(
               `${request.systemPrompt}\n\n${request.prompt}`,
             );
@@ -159,6 +188,12 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
                   toolBreakdown: acc.toolBreakdown,
                   outputText: acc.outputText || undefined,
                   filesChanged: acc.filesChanged,
+                  // Read from the tool server, not the turn: a control tool's return
+                  // value reaches the agent as text only, so this is the only path
+                  // by which an abort or retry request gets back to the pipeline.
+                  ...(toolServer?.controlOutcome()
+                    ? { controlOutcome: toolServer.controlOutcome() }
+                    : {}),
                   // A cancel we initiated is a turn-limit abort, not the agent
                   // stopping on its own; the runner needs that distinction to
                   // report `maxTurns` rather than a bare cancellation.
@@ -195,6 +230,9 @@ export function createAcpSubprocessClient(opts: AcpSubprocessClientOptions = {})
         return await Promise.race([session, spawnFailed, timedOut]);
       } finally {
         if (timer) clearTimeout(timer);
+        // Release the bound port on every exit path. A failed phase that leaves it
+        // open leaks a listener for the life of the worker — one per phase.
+        if (toolListener) await toolListener.close();
         // The adapter keeps writing after the turn resolves, so killing it outright
         // tears down the pipe under an in-flight write and it dies on an unhandled
         // EPIPE. Ending stdin lets it observe EOF and exit on its own; the kill is

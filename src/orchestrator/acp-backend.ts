@@ -46,6 +46,10 @@ export function createAcpBackend(config: AcpBackendConfig): ConfiguredPhaseRunne
       args: config.args,
       timeoutMs: config.timeoutMs,
       onText: opts.onText,
+      // Served to the agent over MCP. Left undefined when the phase registered no
+      // tools, so providesCustomTools stays false rather than claiming support for
+      // an empty set.
+      ...(opts.customTools ? { customTools: opts.customTools } : {}),
       // Only when the phase actually requests a gate. Passing an undefined policy
       // would advertise enforcement the phase never asked for.
       ...(policy

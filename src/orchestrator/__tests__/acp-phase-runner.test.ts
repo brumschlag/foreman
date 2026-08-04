@@ -166,6 +166,25 @@ describe("acp phase runner", () => {
     expect(result.filesChanged).toEqual(["src/math.js", "src/greet.js"]);
   });
 
+  // pipeline-executor reads result.controlOutcome to route ABORTED/NEEDS_RETRY.
+  // Without it an abort_phase call over MCP is just text to the agent and the
+  // phase continues as though nothing happened.
+  test("surfaces a control outcome raised by a tool", async () => {
+    const runner = createAcpPhaseRunner(
+      stubClient({
+        controlOutcome: { type: "ABORTED", reason: "approach is unworkable", suggestion: null },
+      }),
+    );
+
+    const result = await runner(options(worktree));
+
+    expect(result.controlOutcome).toEqual({
+      type: "ABORTED",
+      reason: "approach is unworkable",
+      suggestion: null,
+    });
+  });
+
   test("treats max_turn_requests as a turn-limit failure, not a crash", async () => {
     const runner = createAcpPhaseRunner(stubClient({ stopReason: "max_turn_requests", turns: 12 }));
 

@@ -1,4 +1,5 @@
 import type { PiRunResult } from "./pi-sdk-runner.js";
+import type { ControlOutcome } from "./pi-sdk-tools.js";
 import type { ConfiguredPhaseRunner, PhaseRunnerOptions } from "./phase-runner.js";
 
 /**
@@ -47,6 +48,13 @@ export interface AcpPromptResult {
    * list on a write phase produces a false pass rather than a visible gap.
    */
   filesChanged?: string[];
+  /**
+   * Control signal from a phase-control tool (abort_phase / needs_retry).
+   *
+   * Over MCP a tool's return value is only text to the agent, so this is the sole
+   * path by which the pipeline learns the phase asked to stop or retry.
+   */
+  controlOutcome?: ControlOutcome;
   errorMessage?: string;
 }
 
@@ -168,6 +176,7 @@ export function createAcpPhaseRunner(client: AcpClient): ConfiguredPhaseRunner {
       errorMessage,
       outputText: result.outputText,
       filesChanged: result.filesChanged ?? [],
+      ...(result.controlOutcome ? { controlOutcome: result.controlOutcome } : {}),
     };
   };
 }
